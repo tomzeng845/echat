@@ -221,6 +221,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
   const filteredConversations = conversations.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
+  const pendingRequestCount = requests.filter(item => item.status === "Pending").length;
 
   const decrypt = useCallback(async (message: Message): Promise<DecryptedMessage> => {
     if (message.state === "Recalled") return { ...message, plaintext: "这条消息已被撤回" };
@@ -284,13 +285,47 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
         }
       },
       onConversation: () => loadData().catch(() => undefined),
+      onContactRequest: request => {
+        setRequests(current => current.some(item => item.id === request.id) ? current : [request, ...current]);
+        toast.info(`${request.sender?.displayName || "有新用户"}请求添加你为好友`);
+        loadData().catch(() => undefined);
+      },
+      onContactUpdate: event => {
+        if (event.status === "Friend") toast.success(`${event.peer?.displayName || "好友"}已加入联系人`);
+        loadData().catch(() => undefined);
+      },
       onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
     });
+    let disposed = false;
+    let retryTimer: number | undefined;
+    const start = async () => {
+      if (disposed || connection.state !== "Disconnected") return;
+      try {
+        await connection.start();
+        if (!disposed) await loadData();
+      } catch {
+        if (!disposed) retryTimer = window.setTimeout(start, 3000);
+      }
+    };
     connectionRef.current = connection;
     setRealtimeConnection(connection);
-    connection.start().catch(() => toast.warning("实时连接正在重试"));
-    return () => { setRealtimeConnection(null); connection.stop(); };
+    connection.onreconnected(() => loadData().catch(() => undefined));
+    connection.onclose(() => { if (!disposed) retryTimer = window.setTimeout(start, 3000); });
+    start().catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+      setRealtimeConnection(null);
+      connection.stop();
+    };
   }, [decrypt, loadData]);
+
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") loadData().catch(() => undefined); };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { document.removeEventListener("visibilitychange", refresh); window.removeEventListener("focus", refresh); };
+  }, [loadData]);
 
   useEffect(() => {
     if (!selectedId) { setMessages([]); return; }
@@ -409,12 +444,12 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   ], []);
 
   return (
-    <main className="h-screen overflow-hidden bg-[#eef2f5] text-slate-900">
+    <main className="h-[100dvh] overflow-hidden bg-[#eef2f5] text-slate-900">
       <div className="mx-auto flex h-full max-w-[1680px] bg-white shadow-2xl shadow-slate-300/30">
         <aside className="hidden w-[76px] shrink-0 flex-col items-center bg-[#091827] py-5 text-slate-400 md:flex">
           <img src={LOGO} alt="E聊" className="mb-8 h-10 w-10 object-contain" />
           <div className="flex flex-1 flex-col gap-2">
-            {navItems.map(item => <button key={item.id} onClick={() => { setNav(item.id); if (item.id !== "chats") setMobileDetail(false); }} className={`group relative grid h-12 w-12 place-items-center rounded-2xl transition active:scale-95 ${nav === item.id ? "bg-teal-400 text-[#06211e]" : "hover:bg-white/10 hover:text-white"}`} title={item.label}><item.icon size={21} />{item.id === "chats" && conversations.some(x => x.lastSequence > x.readSequence) && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-400" />}</button>)}
+            {navItems.map(item => <button key={item.id} onClick={() => { setNav(item.id); if (item.id !== "chats") setMobileDetail(false); }} className={`group relative grid h-12 w-12 place-items-center rounded-2xl transition active:scale-95 ${nav === item.id ? "bg-teal-400 text-[#06211e]" : "hover:bg-white/10 hover:text-white"}`} title={item.label}><item.icon size={21} />{item.id === "chats" && conversations.some(x => x.lastSequence > x.readSequence) && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-400" />}{item.id === "contacts" && pendingRequestCount > 0 && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white ring-2 ring-[#091827]">{Math.min(99, pendingRequestCount)}</span>}</button>)}
           </div>
           {user.role === "Admin" && <button onClick={showAdmin} className={`mb-3 grid h-12 w-12 place-items-center rounded-2xl transition ${nav === "admin" ? "bg-teal-400 text-[#06211e]" : "hover:bg-white/10 hover:text-white"}`} title="管理后台"><Settings size={20} /></button>}
           <Avatar name={user.displayName} src={user.avatarUrl} size="sm" online />
@@ -436,8 +471,8 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
 
             {nav === "contacts" && <div className="space-y-5 px-1">
               <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70"><div className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserPlus size={17} className="text-teal-600" />添加好友</div><div className="flex gap-2"><input id="add-account" value={addAccount} onChange={e => setAddAccount(e.target.value)} onKeyDown={e => e.key === "Enter" && addFriend()} placeholder="输入 E聊账号" className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2.5 text-sm outline-none ring-teal-400/40 focus:ring-2" /><button disabled={busy} onClick={addFriend} className="rounded-xl bg-slate-900 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-50">发送</button></div><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => setShowScanner(true)} className="flex items-center justify-center gap-2 rounded-xl bg-teal-50 py-2.5 text-xs font-medium text-teal-700"><ScanLine size={15} />扫一扫</button><button onClick={() => setShowMyQr(true)} className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-xs font-medium text-slate-600"><QrCode size={15} />我的二维码</button></div></div>
-              {requests.filter(x => x.status === "Pending").length > 0 && <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">新的朋友</p>{requests.filter(x => x.status === "Pending").map(item => <div key={item.id} className="flex items-center gap-3 rounded-2xl bg-white p-3"><Avatar name="新朋友" size="sm" /><div className="min-w-0 flex-1"><p className="text-sm font-medium">好友申请</p><p className="truncate text-xs text-slate-500">{item.note || "请求添加你为好友"}</p></div><button onClick={() => acceptRequest(item.id)} className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700">接受</button></div>)}</div>}
-              <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">我的好友 · {contacts.filter(x => x.status === "Friend").length}</p>{contacts.filter(x => x.status === "Friend" && x.user.displayName.toLowerCase().includes(search.toLowerCase())).map(contact => <button key={contact.user.id} onClick={() => startChat(contact)} className="flex w-full items-center gap-3 rounded-2xl p-3 text-left transition hover:bg-white"><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" online /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{contact.remark || contact.user.displayName}</p><p className="truncate text-xs text-slate-500">@{contact.user.account}</p></div><MessageCircleMore size={17} className="text-slate-300" /></button>)}</div>
+              {pendingRequestCount > 0 && <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">新的朋友 · {pendingRequestCount}</p>{requests.filter(x => x.status === "Pending").map(item => <div key={item.id} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-rose-100"><Avatar name={item.sender?.displayName || "新朋友"} src={item.sender?.avatarUrl} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{item.sender?.displayName || "好友申请"}</p><p className="truncate text-xs text-slate-500">{item.sender?.account ? `@${item.sender.account} · ` : ""}{item.note || "请求添加你为好友"}</p></div><button onClick={() => acceptRequest(item.id)} className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700">接受</button></div>)}</div>}
+              <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">我的好友 · {contacts.filter(x => x.status === "Friend").length}</p>{contacts.filter(x => x.status === "Friend" && x.user.displayName.toLowerCase().includes(search.toLowerCase())).map(contact => <button key={contact.user.id} onClick={() => startChat(contact)} className="flex w-full items-center gap-3 rounded-2xl p-3 text-left transition hover:bg-white"><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" online /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{contact.remark || contact.user.displayName}</p><p className="truncate text-xs text-slate-500">@{contact.user.account}</p></div><span className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 md:hidden">发消息</span><MessageCircleMore size={17} className="hidden text-slate-300 md:block" /></button>)}</div>
               {!contacts.some(x => x.status === "Friend") && <EmptyState icon={Users} title="联系人还是空的" text="通过账号发送好友申请，对方接受后即可聊天。" compact />}
             </div>}
 
@@ -451,7 +486,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
             <>
               <header className="flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6"><button onClick={() => setMobileDetail(false)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100 md:hidden"><ChevronLeft size={20} /></button><Avatar name={selected.name} src={selected.avatarUrl} size="sm" online={selected.type === "Direct"} /><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{selected.name}</h2><p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600"><LockKeyhole size={11} />端到端加密 · {selected.type === "Group" ? `${selected.memberCount} 位成员` : "在线"}</p></div><div className="flex gap-1"><HeaderAction icon={Phone} label="语音通话" onClick={() => callManagerRef.current?.start(selected, "audio")} /><HeaderAction icon={Video} label="视频通话" onClick={() => callManagerRef.current?.start(selected, "video")} /><HeaderAction icon={MoreHorizontal} label="更多" onClick={() => toast.info("会话设置即将开放")} /></div></header>
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8"><div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end"><div className="mb-5 flex items-center justify-center"><span className="rounded-full bg-slate-200/70 px-3 py-1 text-[11px] text-slate-500">消息已使用 AES-GCM-256 加密</span></div>{messages.length ? messages.map(message => <MessageBubble key={message.id} message={message} mine={message.senderId === user.id} onRecall={() => recall(message)} />) : <div className="my-auto text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white shadow-sm"><LockKeyhole className="text-teal-500" /></div><p className="mt-4 text-sm font-medium">加密会话已建立</p><p className="mt-1 text-xs text-slate-500">从一声问候开始吧</p></div>}</div></div>
-              <footer className="border-t border-slate-200/80 bg-white p-3 md:p-5"><div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70"><div className="flex items-center gap-1 px-1 pb-1"><ComposerAction icon={SmilePlus} label="表情" /><button type="button" onClick={() => fileInputRef.current?.click()} title="发送文件或视频" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Paperclip size={17} /></button><button type="button" onClick={() => imageInputRef.current?.click()} title="发送图片" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Image size={17} /></button><VoiceRecorderButton disabled={busy} onRecorded={(blob, duration) => sendMedia(blob, "Voice", duration)} /><input ref={imageInputRef} type="file" accept="image/*" hidden onChange={event => { pickFile(event.target.files?.[0], "Image"); event.currentTarget.value = ""; }} /><input ref={fileInputRef} type="file" accept="*/*" hidden onChange={event => { pickFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />{busy && <span className="ml-2 text-[10px] text-teal-600">正在加密上传…</span>}</div><div className="flex items-end gap-2"><textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} rows={1} placeholder="输入消息，Enter 发送" className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400" /><button disabled={!draft.trim() || busy} onClick={sendMessage} className="grid h-11 w-11 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"><SendHorizontal size={18} /></button></div></div></footer>
+              <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5"><div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70"><div className="flex items-center gap-1 px-1 pb-1"><ComposerAction icon={SmilePlus} label="表情" /><button type="button" onClick={() => fileInputRef.current?.click()} title="发送文件或视频" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Paperclip size={17} /></button><button type="button" onClick={() => imageInputRef.current?.click()} title="发送图片" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Image size={17} /></button><VoiceRecorderButton disabled={busy} onRecorded={(blob, duration) => sendMedia(blob, "Voice", duration)} /><input ref={imageInputRef} type="file" accept="image/*" hidden onChange={event => { pickFile(event.target.files?.[0], "Image"); event.currentTarget.value = ""; }} /><input ref={fileInputRef} type="file" accept="*/*" hidden onChange={event => { pickFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />{busy && <span className="ml-2 text-[10px] text-teal-600">正在加密上传…</span>}</div><div className="flex items-end gap-2"><textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} rows={1} placeholder="输入消息" className="max-h-32 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400" /><button aria-label="发送消息" disabled={!draft.trim() || busy} onClick={sendMessage} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"><SendHorizontal size={18} /></button></div></div></footer>
             </>
           ) : <EmptyChat />}
         </section>
@@ -463,7 +498,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
 
       {showGroup && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-medium uppercase tracking-[.16em] text-teal-600">New encrypted group</p><h2 className="mt-2 text-xl font-semibold">创建加密群聊</h2></div><button onClick={() => setShowGroup(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-500"><X size={18} /></button></div><label className="mt-6 block text-sm font-medium">群名称<input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="例如：周末计划" className="mt-2 w-full rounded-xl bg-slate-100 px-4 py-3 text-sm outline-none ring-teal-400/40 focus:ring-2" /></label><p className="mb-2 mt-5 text-sm font-medium">选择好友 <span className="text-xs font-normal text-slate-400">至少 2 人</span></p><div className="max-h-64 space-y-1 overflow-y-auto">{contacts.filter(contact => contact.status === "Friend").map(contact => { const checked = groupMembers.includes(contact.user.id); return <button key={contact.user.id} onClick={() => setGroupMembers(current => checked ? current.filter(id => id !== contact.user.id) : [...current, contact.user.id])} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${checked ? "bg-teal-50" : "hover:bg-slate-50"}`}><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" /><span className="flex-1 text-sm font-medium">{contact.user.displayName}</span><span className={`grid h-5 w-5 place-items-center rounded-md border ${checked ? "border-teal-500 bg-teal-500 text-white" : "border-slate-300"}`}>{checked && <Check size={13} />}</span></button>; })}{contacts.filter(contact => contact.status === "Friend").length < 2 && <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">至少需要两位好友才能创建群聊。你可以先在联系人页添加更多好友。</p>}</div><button disabled={busy || !groupName.trim() || groupMembers.length < 2} onClick={createGroup} className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white transition active:scale-[.98] disabled:opacity-40">创建并分发群组密钥</button></div></div>}
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">{navItems.map(item => <button key={item.id} onClick={() => { setNav(item.id); setMobileDetail(false); }} className={`flex flex-col items-center gap-1 py-2.5 text-[10px] ${nav === item.id ? "text-teal-600" : "text-slate-400"}`}><item.icon size={21} /><span>{item.label}</span></button>)}</nav>
+      {!(mobileDetail && nav === "chats") && <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">{navItems.map(item => <button key={item.id} onClick={() => { setNav(item.id); setMobileDetail(false); }} className={`relative flex flex-col items-center gap-1 py-2.5 text-[10px] ${nav === item.id ? "text-teal-600" : "text-slate-400"}`}><item.icon size={21} />{item.id === "contacts" && pendingRequestCount > 0 && <span className="absolute left-1/2 top-1 ml-2 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-semibold text-white">{Math.min(99, pendingRequestCount)}</span>}<span>{item.label}</span></button>)}</nav>}
     </main>
   );
 }

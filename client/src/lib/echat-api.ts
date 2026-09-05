@@ -5,7 +5,8 @@ export type AuthResponse = { success: boolean; accessToken?: string; refreshToke
 export type Conversation = { id: string; type: "Direct" | "Group" | "System"; name: string; avatarUrl: string; lastSequence: number; lastMessagePreview: string; lastMessageAtUtc?: string; memberCount: number; readSequence: number; muted: boolean; pinned: boolean; keyEnvelope?: string };
 export type Message = { id: string; clientMessageId: string; conversationId: string; sequence: number; senderId: string; kind: "Text" | "Emoji" | "Image" | "Voice" | "Video" | "File" | "System"; ciphertext: string; nonce: string; algorithm: string; replyToMessageId?: string; metadata: Record<string, string>; state: "Accepted" | "Recalled"; sentAtUtc: string; recalledAtUtc?: string };
 export type Contact = { status: string; remark: string; user: User };
-export type FriendRequest = { id: string; senderId: string; receiverId: string; note: string; source: string; status: string; createdAtUtc: string };
+export type FriendRequest = { id: string; senderId: string; receiverId: string; note: string; source: string; status: string; createdAtUtc: string; sender?: User };
+export type ContactRealtimeEvent = { status?: string; peer?: User; peerId?: string; requestId?: string; sender?: User };
 export type ConversationMember = { userId: string; displayName: string; avatarUrl: string; role: "Owner" | "Admin" | "Member" };
 export type MediaAsset = { id: string; fileName: string; contentType: string; size: number; purpose: "Chat" | "Moment"; contentUrl: string };
 export type MomentLike = { userId: string; displayName: string; avatarUrl: string; createdAtUtc: string };
@@ -71,6 +72,8 @@ export type RealtimeHandlers = {
   onMessage?: (message: Message) => void;
   onMessageUpdate?: (message: Message) => void;
   onConversation?: () => void;
+  onContactRequest?: (event: FriendRequest) => void;
+  onContactUpdate?: (event: ContactRealtimeEvent) => void;
   onMoment?: () => void;
   onCallInvite?: (invite: CallInvite) => void;
   onCallAccepted?: (participant: CallParticipant) => void;
@@ -88,6 +91,8 @@ export function connectRealtime(handlers: RealtimeHandlers) {
   if (handlers.onMessage) connection.on("message.created", handlers.onMessage);
   if (handlers.onMessageUpdate) connection.on("message.updated", handlers.onMessageUpdate);
   if (handlers.onConversation) connection.on("conversation.updated", handlers.onConversation);
+  if (handlers.onContactRequest) connection.on("contact.requested", handlers.onContactRequest);
+  if (handlers.onContactUpdate) connection.on("contact.updated", handlers.onContactUpdate);
   if (handlers.onMoment) connection.on("moment.updated", handlers.onMoment);
   if (handlers.onCallInvite) connection.on("call.invited", handlers.onCallInvite);
   if (handlers.onCallAccepted) connection.on("call.accepted", handlers.onCallAccepted);

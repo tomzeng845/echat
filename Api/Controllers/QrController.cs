@@ -2,13 +2,14 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 
 namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/qr")]
 [EnableRateLimiting("auth")]
-public sealed class QrController(IChatRepository repository, SessionService sessions) : ControllerBase
+public sealed class QrController(IChatRepository repository, SessionService sessions, IHubContext<ChatHub> hub) : ControllerBase
 {
     [AllowAnonymous]
     [HttpPost("login/start")]
@@ -113,7 +114,20 @@ public sealed class QrController(IChatRepository repository, SessionService sess
         if (relation?.Status == RelationStatus.Blocked || reverse?.Status == RelationStatus.Blocked) return Forbid();
         if (relation?.Status == RelationStatus.Friend) return Conflict(new { error = "你们已经是好友" });
         var friendRequest = new FriendRequest { RequestId = $"qr-{token.Id}-{senderId}", SenderId = senderId, ReceiverId = token.OwnerId, Note = "通过二维码添加", Source = "qrcode" };
-        return Ok(await repository.AddFriendRequestAsync(friendRequest, ct));
+        var item = await repository.AddFriendRequestAsync(friendRequest, ct);
+        var sender = await repository.GetUserByIdAsync(senderId, ct);
+        await hub.Clients.Group($"user:{token.OwnerId}").SendAsync("contact.requested", new
+        {
+            item.Id,
+            item.SenderId,
+            item.ReceiverId,
+            item.Note,
+            item.Source,
+            item.Status,
+            item.CreatedAtUtc,
+            sender = sender is null ? null : SessionService.View(sender)
+        }, ct);
+        return Ok(item);
     }
 
     private async Task<QrLoginChallenge?> ValidLoginAsync(QrLoginTokenRequest request, CancellationToken ct)
