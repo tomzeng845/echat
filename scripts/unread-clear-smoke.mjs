@@ -82,7 +82,57 @@ try {
     return Boolean(row) && ![...row.querySelectorAll("span")].some(span => /^\d+$/.test(span.textContent || ""));
   }, { timeout: 8000 });
   await page.screenshot({ path: "/home/ubuntu/screenshots/echat-unread-cleared.png", fullPage: false });
-  console.log(`UNREAD_CLEAR_OK conversation=${conversation.id} before=3 opened=3 live=4 after=0 viewport=390x844`);
+
+  const desktopSenderAccount = `unreadd${suffix}`;
+  const desktopSender = await register(desktopSenderAccount, "桌面未读好友");
+  await request("/api/contacts/requests", desktopSender.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ requestId: `desktop-unread-${suffix}`, peerAccount: recipientAccount, note: "桌面未读测试", source: "account" }),
+  });
+  const desktopFriendRequest = (await request("/api/contacts/requests", recipient.accessToken)).find(item => item.senderId === desktopSender.user.id);
+  await request(`/api/contacts/requests/${desktopFriendRequest.id}/accept`, recipient.accessToken, { method: "POST" });
+  const desktopConversation = await request("/api/conversations/direct", desktopSender.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ peerAccount: recipientAccount, keyEnvelopes: { [desktopSender.user.id]: "desktop-envelope", [recipient.user.id]: "recipient-envelope" } }),
+  });
+  await request(`/api/conversations/${desktopConversation.id}/messages`, desktopSender.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ clientMessageId: `desktop-${suffix}-1`, kind: "Text", ciphertext: "desktop-cipher-1", nonce: "nonce", algorithm: "AES-GCM-256" }),
+  });
+  await request(`/api/conversations/${conversation.id}/messages`, sender.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ clientMessageId: `unread-${suffix}-5`, kind: "Text", ciphertext: "cipher-5", nonce: "nonce", algorithm: "AES-GCM-256" }),
+  });
+
+  const desktop = await browser.newPage();
+  await desktop.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
+  await desktop.goto(base, { waitUntil: "networkidle0" });
+  await desktop.evaluate(session => localStorage.setItem("echat.session.v1", JSON.stringify(session)), recipient);
+  await desktop.reload({ waitUntil: "networkidle0" });
+  await desktop.waitForFunction(() => {
+    const row = [...document.querySelectorAll("button")].find(button => button.textContent?.includes("桌面未读好友"));
+    return Boolean(row) && [...row.querySelectorAll("span")].some(span => span.textContent === "1");
+  }, { timeout: 8000 });
+  await desktop.evaluate(() => [...document.querySelectorAll("button")].find(button => button.textContent?.includes("桌面未读好友"))?.click());
+  await waitForRead(recipient.accessToken, desktopConversation.id, 1);
+  await desktop.waitForFunction(() => {
+    const row = [...document.querySelectorAll("button")].find(button => button.textContent?.includes("桌面未读好友"));
+    return Boolean(row) && ![...row.querySelectorAll("span")].some(span => /^\d+$/.test(span.textContent || ""));
+  }, { timeout: 8000 });
+
+  await request(`/api/conversations/${desktopConversation.id}/messages`, desktopSender.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ clientMessageId: `desktop-${suffix}-2`, kind: "Text", ciphertext: "desktop-cipher-2", nonce: "nonce", algorithm: "AES-GCM-256" }),
+  });
+  await waitForRead(recipient.accessToken, desktopConversation.id, 2);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const desktopUnread = await desktop.evaluate(() => {
+    const row = [...document.querySelectorAll("button")].find(button => button.textContent?.includes("桌面未读好友"));
+    return [...(row?.querySelectorAll("span") || [])].filter(span => /^\d+$/.test(span.textContent || "")).map(span => span.textContent);
+  });
+  if (desktopUnread.length) throw new Error(`desktop unread badge returned: ${desktopUnread.join(",")}`);
+  await desktop.screenshot({ path: "/home/ubuntu/screenshots/echat-desktop-unread-cleared.png", fullPage: false });
+  console.log(`UNREAD_CLEAR_OK mobile=3>0 live=4>0 desktop=1>0 live=2>0 viewports=390x844,1280x720`);
 } finally {
   await browser.close();
 }

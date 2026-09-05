@@ -217,8 +217,11 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
+  const readFloorRef = useRef(new Map<string, number>());
   const chatVisible = nav === "chats" && (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
   selectedRef.current = chatVisible ? selectedId : null;
+  conversationsRef.current = conversations;
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
   const filteredConversations = conversations.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
@@ -242,16 +245,25 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
         try { await storeConversationKey(conversation.id, await openKeyEnvelope(user.account, conversation.keyEnvelope)); } catch { /* Key belongs to a different device identity. */ }
       }
     }
-    setConversations(nextConversations); setContacts(nextContacts); setRequests(nextRequests);
+    setConversations(nextConversations.map(next => {
+      const pendingRead = readFloorRef.current.get(next.id) ?? 0;
+      if (next.readSequence >= pendingRead) readFloorRef.current.delete(next.id);
+      return pendingRead > next.readSequence ? { ...next, readSequence: pendingRead } : next;
+    }));
+    setContacts(nextContacts); setRequests(nextRequests);
     setSelectedId(current => current && nextConversations.some(x => x.id === current) ? current : nextConversations[0]?.id ?? null);
   }, [user.account]);
 
   const markConversationRead = useCallback(async (conversationId: string, sequence: number) => {
     if (sequence <= 0) return;
+    const knownLastSequence = conversationsRef.current.find(item => item.id === conversationId)?.lastSequence ?? sequence;
+    const targetSequence = Math.min(sequence, knownLastSequence);
+    readFloorRef.current.set(conversationId, Math.max(readFloorRef.current.get(conversationId) ?? 0, targetSequence));
     setConversations(current => current.map(item => item.id === conversationId ? { ...item, readSequence: Math.max(item.readSequence, Math.min(sequence, item.lastSequence)) } : item));
     try {
       await api<void>(`/api/conversations/${conversationId}/read/${sequence}`, { method: "POST" });
     } catch (cause) {
+      readFloorRef.current.delete(conversationId);
       loadData().catch(() => undefined);
       throw cause;
     }
@@ -308,6 +320,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
       },
       onReceipt: receipt => {
         if (receipt.userId !== user.id) return;
+        if (receipt.readSequence >= (readFloorRef.current.get(receipt.conversationId) ?? 0)) readFloorRef.current.delete(receipt.conversationId);
         setConversations(current => current.map(item => item.id === receipt.conversationId ? { ...item, readSequence: Math.max(item.readSequence, receipt.readSequence) } : item));
       },
       onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
@@ -479,7 +492,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
 
           <div className="flex-1 overflow-y-auto px-3 pb-24 md:pb-4">
             {nav === "chats" && (filteredConversations.length ? filteredConversations.map(item => (
-              <button key={item.id} onClick={() => { setConversations(current => current.map(value => value.id === item.id ? { ...value, readSequence: value.lastSequence } : value)); setSelectedId(item.id); setMobileDetail(true); }} className={`mb-1 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? "bg-white shadow-sm ring-1 ring-slate-200/60" : "hover:bg-white/70"}`}>
+              <button key={item.id} onClick={() => { setConversations(current => current.map(value => value.id === item.id ? { ...value, readSequence: value.lastSequence } : value)); markConversationRead(item.id, item.lastSequence).catch(() => undefined); setSelectedId(item.id); setMobileDetail(true); }} className={`mb-1 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? "bg-white shadow-sm ring-1 ring-slate-200/60" : "hover:bg-white/70"}`}>
                 <Avatar name={item.name} src={item.avatarUrl} online={item.type === "Direct"} />
                 <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{item.name}</span><time className="shrink-0 text-[11px] text-slate-400">{item.lastMessageAtUtc ? new Date(item.lastMessageAtUtc).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}</time></div><div className="mt-1 flex items-center justify-between gap-2"><p className="truncate text-xs text-slate-500">{item.lastMessagePreview}</p>{item.lastSequence > item.readSequence && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-teal-500 px-1 text-[10px] font-semibold text-white">{Math.min(99, item.lastSequence - item.readSequence)}</span>}</div></div>
               </button>
