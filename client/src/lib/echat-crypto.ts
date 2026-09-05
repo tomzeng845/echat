@@ -71,3 +71,13 @@ export async function decryptMessage(key: CryptoKey, ciphertext: string, nonce: 
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(nonce) }, key, base64ToBytes(ciphertext));
   return new TextDecoder().decode(plaintext);
 }
+
+export async function encryptBinary(key: CryptoKey, data: ArrayBuffer) {
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, data);
+  return { blob: new Blob([encrypted], { type: "application/octet-stream" }), nonce: bytesToBase64(nonce) };
+}
+
+export async function decryptBinary(key: CryptoKey, data: ArrayBuffer, nonce: string) {
+  return crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(nonce) }, key, data);
+}

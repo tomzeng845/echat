@@ -51,4 +51,23 @@ group_id="$(curl -fsS "$base/api/conversations/groups" -H "Authorization: Bearer
 group_count="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $charlie_token" | jq -r --arg id "$group_id" '[.[] | select(.id == $id)] | length')"
 [[ "$group_count" == "1" ]]
 
-printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s idempotent_message=%s read=%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$first_id" "$read_sequence"
+media_source="$(mktemp)"
+media_download="$(mktemp)"
+trap 'rm -f "$media_source" "$media_download"' EXIT
+printf 'encrypted-media-smoke-%s' "$suffix" >"$media_source"
+chat_asset="$(curl -fsS "$base/api/media" -H "Authorization: Bearer $alice_token" -F "file=@$media_source;filename=photo.e2ee;type=application/octet-stream" -F purpose=Chat -F "conversationId=$conversation_id" | jq -r .id)"
+media_message="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"clientMessageId\":\"media-$suffix\",\"kind\":\"Image\",\"ciphertext\":\"encrypted-payload\",\"nonce\":\"nonce\",\"algorithm\":\"AES-GCM-256\",\"metadata\":{\"assetId\":\"$chat_asset\"}}" | jq -r .kind)"
+[[ "$media_message" == "Image" ]]
+curl -fsSL "$base/api/media/$chat_asset/content" -H "Authorization: Bearer $bob_token" -o "$media_download"
+cmp "$media_source" "$media_download"
+
+moment_asset="$(curl -fsS "$base/api/media" -H "Authorization: Bearer $alice_token" -F "file=@$media_source;filename=moment.png;type=image/png" -F purpose=Moment | jq -r .id)"
+moment_id="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"text\":\"Smoke moment\",\"mediaAssetIds\":[\"$moment_asset\"]}" | jq -r .id)"
+feed_count="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$moment_id" '[.[] | select(.id == $id)] | length')"
+[[ "$feed_count" == "1" ]]
+curl -fsS -X POST "$base/api/moments/$moment_id/like" -H "Authorization: Bearer $bob_token" >/dev/null
+curl -fsS "$base/api/moments/$moment_id/comments" -H "Authorization: Bearer $bob_token" -H 'Content-Type: application/json' -d '{"text":"Nice moment"}' >/dev/null
+moment_social="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" | jq -r --arg id "$moment_id" '.[] | select(.id == $id) | "\(.likes|length):\(.comments|length)"')"
+[[ "$moment_social" == "1:1" ]]
+
+printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s media=%s moment=%s social=%s idempotent_message=%s read=%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$chat_asset" "$moment_id" "$moment_social" "$first_id" "$read_sequence"

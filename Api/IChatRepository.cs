@@ -27,4 +27,18 @@ public interface IChatRepository
     Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId, long afterSequence, int limit, CancellationToken ct = default);
     Task<ChatMessage?> GetMessageAsync(string id, CancellationToken ct = default);
     Task UpdateMessageAsync(ChatMessage message, CancellationToken ct = default);
+    Task<MediaAsset> AddMediaAssetAsync(MediaAsset asset, CancellationToken ct = default);
+    Task<MediaAsset?> GetMediaAssetAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<MediaAsset>> GetMediaAssetsAsync(IEnumerable<string> ids, CancellationToken ct = default);
+    Task<MomentPost> AddMomentAsync(MomentPost moment, CancellationToken ct = default);
+    Task<MomentPost?> GetMomentAsync(string id, CancellationToken ct = default);
+    Task UpdateMomentAsync(MomentPost moment, CancellationToken ct = default);
+    Task<IReadOnlyList<MomentPost>> GetMomentsAsync(IEnumerable<string> authorIds, DateTime? beforeUtc, int limit, CancellationToken ct = default);
+    Task<MomentLike> UpsertMomentLikeAsync(MomentLike like, CancellationToken ct = default);
+    Task RemoveMomentLikeAsync(string momentId, string userId, CancellationToken ct = default);
+    Task<IReadOnlyList<MomentLike>> GetMomentLikesAsync(IEnumerable<string> momentIds, CancellationToken ct = default);
+    Task<MomentComment> AddMomentCommentAsync(MomentComment comment, CancellationToken ct = default);
+    Task<MomentComment?> GetMomentCommentAsync(string id, CancellationToken ct = default);
+    Task UpdateMomentCommentAsync(MomentComment comment, CancellationToken ct = default);
+    Task<IReadOnlyList<MomentComment>> GetMomentCommentsAsync(IEnumerable<string> momentIds, CancellationToken ct = default);
 }

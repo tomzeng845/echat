@@ -48,6 +48,25 @@ public sealed class CoreTests
         Assert.False(service.Verify("000000", now));
     }
 
+    [Fact]
+    public async Task Moments_SupportMediaLikesAndComments()
+    {
+        var repository = new InMemoryChatRepository();
+        var asset = await repository.AddMediaAssetAsync(new MediaAsset { OwnerId = "u1", Purpose = MediaPurpose.Moment, StorageKey = "photo", FileName = "photo.jpg", ContentType = "image/jpeg", Size = 12 });
+        var moment = await repository.AddMomentAsync(new MomentPost { AuthorId = "u1", Text = "第一条动态", MediaAssetIds = [asset.Id] });
+        await repository.UpsertMomentLikeAsync(new MomentLike { Id = $"{moment.Id}:u2", MomentId = moment.Id, UserId = "u2" });
+        await repository.AddMomentCommentAsync(new MomentComment { MomentId = moment.Id, UserId = "u2", Text = "欢迎加入朋友圈" });
+
+        var feed = await repository.GetMomentsAsync(["u1"], null, 30);
+        Assert.Single(feed);
+        Assert.Single(await repository.GetMediaAssetsAsync(feed[0].MediaAssetIds));
+        Assert.Single(await repository.GetMomentLikesAsync([moment.Id]));
+        Assert.Single(await repository.GetMomentCommentsAsync([moment.Id]));
+
+        await repository.RemoveMomentLikeAsync(moment.Id, "u2");
+        Assert.Empty(await repository.GetMomentLikesAsync([moment.Id]));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CallManager, { type CallManagerHandle } from "@/components/chat/CallManager";
+import RichMessageContent from "@/components/chat/RichMessageContent";
+import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
+import MomentsPanel from "@/components/MomentsPanel";
 import {
   api,
   ApiError,
@@ -12,6 +16,7 @@ import {
   type Message,
   type User,
 } from "@/lib/echat-api";
+import { sendEncryptedMedia, type ChatMediaKind } from "@/lib/echat-media";
 import {
   createConversationKey,
   decryptMessage,
@@ -194,7 +199,11 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   const [showGroup, setShowGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [realtimeConnection, setRealtimeConnection] = useState<HubConnection | null>(null);
   const connectionRef = useRef<HubConnection | null>(null);
+  const callManagerRef = useRef<CallManagerHandle>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
 
@@ -248,21 +257,27 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   }, [loadData, user.account]);
 
   useEffect(() => {
-    const connection = connectRealtime(async message => {
-      if (message.conversationId === selectedRef.current) {
-        const value = await decrypt(message);
-        setMessages(current => current.some(x => x.id === value.id) ? current : [...current, value].sort((a, b) => a.sequence - b.sequence));
-      }
-      loadData().catch(() => undefined);
-    }, async message => {
-      if (message.conversationId === selectedRef.current) {
-        const value = await decrypt(message);
-        setMessages(current => current.map(item => item.id === value.id ? value : item));
-      }
-    }, () => loadData().catch(() => undefined));
+    const connection = connectRealtime({
+      onMessage: async message => {
+        if (message.conversationId === selectedRef.current) {
+          const value = await decrypt(message);
+          setMessages(current => current.some(x => x.id === value.id) ? current : [...current, value].sort((a, b) => a.sequence - b.sequence));
+        }
+        loadData().catch(() => undefined);
+      },
+      onMessageUpdate: async message => {
+        if (message.conversationId === selectedRef.current) {
+          const value = await decrypt(message);
+          setMessages(current => current.map(item => item.id === value.id ? value : item));
+        }
+      },
+      onConversation: () => loadData().catch(() => undefined),
+      onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
+    });
     connectionRef.current = connection;
+    setRealtimeConnection(connection);
     connection.start().catch(() => toast.warning("实时连接正在重试"));
-    return () => { connection.stop(); };
+    return () => { setRealtimeConnection(null); connection.stop(); };
   }, [decrypt, loadData]);
 
   useEffect(() => {
@@ -340,6 +355,29 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
     finally { setBusy(false); }
   }
 
+  async function sendMedia(file: File | Blob, kind: ChatMediaKind, duration?: number) {
+    if (!selectedId || busy) return;
+    setBusy(true);
+    try {
+      const created = await sendEncryptedMedia(selectedId, file, kind, {
+        fileName: file instanceof File ? file.name : `语音-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}.webm`,
+        mimeType: file.type,
+        duration,
+      });
+      const value = await decrypt(created);
+      setMessages(current => current.some(x => x.id === value.id) ? current : [...current, value]);
+      await api<void>(`/api/conversations/${selectedId}/read/${created.sequence}`, { method: "POST" });
+      await loadData();
+    } catch (cause) { toast.error(cause instanceof Error ? cause.message : "媒体发送失败"); }
+    finally { setBusy(false); }
+  }
+
+  function pickFile(file: File | undefined, preferred?: ChatMediaKind) {
+    if (!file) return;
+    const kind: ChatMediaKind = preferred ?? (file.type.startsWith("video/") ? "Video" : file.type.startsWith("image/") ? "Image" : "File");
+    sendMedia(file, kind);
+  }
+
   async function recall(message: DecryptedMessage) {
     try { await api(`/api/conversations/${message.conversationId}/messages/${message.id}/recall`, { method: "POST" }); }
     catch (cause) { toast.error(cause instanceof Error ? cause.message : "撤回失败"); }
@@ -370,7 +408,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
           <Avatar name={user.displayName} src={user.avatarUrl} size="sm" online />
         </aside>
 
-        <section className={`${mobileDetail && nav === "chats" ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-slate-200/80 bg-[#f7f9fa] md:w-[340px]`}>
+        <section className={`${nav === "discover" ? "hidden" : mobileDetail && nav === "chats" ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-slate-200/80 bg-[#f7f9fa] md:w-[340px]`}>
           <header className="px-5 pb-4 pt-5">
             <div className="flex items-center justify-between"><div><p className="text-xs font-medium tracking-[.16em] text-teal-600">E聊</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">{nav === "chats" ? "消息" : nav === "contacts" ? "联系人" : nav === "discover" ? "发现" : nav === "admin" ? "管理" : "我的"}</h1></div><button onClick={() => nav === "contacts" ? document.getElementById("add-account")?.focus() : nav === "chats" ? setShowGroup(true) : toast.info("请先返回消息或联系人页面")} className="grid h-10 w-10 place-items-center rounded-xl bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:text-teal-600 active:scale-95"><Plus size={19} /></button></div>
             {(nav === "chats" || nav === "contacts") && <div className="relative mt-5"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder={nav === "chats" ? "搜索会话" : "搜索联系人"} className="w-full rounded-xl border-0 bg-slate-200/70 py-2.5 pl-9 pr-3 text-sm outline-none ring-teal-400/40 transition placeholder:text-slate-400 focus:ring-2" /></div>}
@@ -391,23 +429,23 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
               {!contacts.some(x => x.status === "Friend") && <EmptyState icon={Users} title="联系人还是空的" text="通过账号发送好友申请，对方接受后即可聊天。" compact />}
             </div>}
 
-            {nav === "discover" && <div className="space-y-3 px-1">{[[Sparkles, "朋友圈", "分享生活，只给在意的人看", "P1"], [Search, "扫一扫", "添加好友、加入群聊", "P1"], [Video, "视频动态", "记录更鲜活的此刻", "规划中"]].map(([Icon, title, text, badge]) => <button key={String(title)} onClick={() => toast.info(`${title} 将在下一阶段开放`)} className="flex w-full items-center gap-4 rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-slate-200/50"><div className="grid h-11 w-11 place-items-center rounded-xl bg-teal-50 text-teal-600"><Icon size={20} /></div><div className="flex-1"><p className="text-sm font-semibold">{String(title)}</p><p className="mt-1 text-xs text-slate-500">{String(text)}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-500">{String(badge)}</span></button>)}</div>}
-
             {nav === "profile" && <ProfilePanel user={user} onLogout={onLogout} />}
             {nav === "admin" && <AdminPanel overview={adminOverview} />}
           </div>
         </section>
 
-        <section className={`${mobileDetail && nav === "chats" ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col bg-[#f3f6f7]`}>
-          {selected ? (
+        <section className={`${nav === "discover" ? "flex" : mobileDetail && nav === "chats" ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col bg-[#f3f6f7]`}>
+          {nav === "discover" ? <MomentsPanel user={user} /> : selected ? (
             <>
-              <header className="flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6"><button onClick={() => setMobileDetail(false)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100 md:hidden"><ChevronLeft size={20} /></button><Avatar name={selected.name} src={selected.avatarUrl} size="sm" online={selected.type === "Direct"} /><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{selected.name}</h2><p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600"><LockKeyhole size={11} />端到端加密 · {selected.type === "Group" ? `${selected.memberCount} 位成员` : "在线"}</p></div><div className="flex gap-1"><HeaderAction icon={Phone} label="语音通话" onClick={() => toast.info("音视频通话将在 P1 开放")} /><HeaderAction icon={Video} label="视频通话" onClick={() => toast.info("音视频通话将在 P1 开放")} /><HeaderAction icon={MoreHorizontal} label="更多" onClick={() => toast.info("会话设置即将开放")} /></div></header>
+              <header className="flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6"><button onClick={() => setMobileDetail(false)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100 md:hidden"><ChevronLeft size={20} /></button><Avatar name={selected.name} src={selected.avatarUrl} size="sm" online={selected.type === "Direct"} /><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{selected.name}</h2><p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600"><LockKeyhole size={11} />端到端加密 · {selected.type === "Group" ? `${selected.memberCount} 位成员` : "在线"}</p></div><div className="flex gap-1"><HeaderAction icon={Phone} label="语音通话" onClick={() => callManagerRef.current?.start(selected, "audio")} /><HeaderAction icon={Video} label="视频通话" onClick={() => callManagerRef.current?.start(selected, "video")} /><HeaderAction icon={MoreHorizontal} label="更多" onClick={() => toast.info("会话设置即将开放")} /></div></header>
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8"><div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end"><div className="mb-5 flex items-center justify-center"><span className="rounded-full bg-slate-200/70 px-3 py-1 text-[11px] text-slate-500">消息已使用 AES-GCM-256 加密</span></div>{messages.length ? messages.map(message => <MessageBubble key={message.id} message={message} mine={message.senderId === user.id} onRecall={() => recall(message)} />) : <div className="my-auto text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white shadow-sm"><LockKeyhole className="text-teal-500" /></div><p className="mt-4 text-sm font-medium">加密会话已建立</p><p className="mt-1 text-xs text-slate-500">从一声问候开始吧</p></div>}</div></div>
-              <footer className="border-t border-slate-200/80 bg-white p-3 md:p-5"><div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70"><div className="flex items-center gap-1 px-1 pb-1"><ComposerAction icon={SmilePlus} label="表情" /><ComposerAction icon={Paperclip} label="附件" /><ComposerAction icon={Image} label="图片" /><ComposerAction icon={Mic} label="语音" /></div><div className="flex items-end gap-2"><textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} rows={1} placeholder="输入消息，Enter 发送" className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400" /><button disabled={!draft.trim() || busy} onClick={sendMessage} className="grid h-11 w-11 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"><SendHorizontal size={18} /></button></div></div></footer>
+              <footer className="border-t border-slate-200/80 bg-white p-3 md:p-5"><div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70"><div className="flex items-center gap-1 px-1 pb-1"><ComposerAction icon={SmilePlus} label="表情" /><button type="button" onClick={() => fileInputRef.current?.click()} title="发送文件或视频" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Paperclip size={17} /></button><button type="button" onClick={() => imageInputRef.current?.click()} title="发送图片" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Image size={17} /></button><VoiceRecorderButton disabled={busy} onRecorded={(blob, duration) => sendMedia(blob, "Voice", duration)} /><input ref={imageInputRef} type="file" accept="image/*" hidden onChange={event => { pickFile(event.target.files?.[0], "Image"); event.currentTarget.value = ""; }} /><input ref={fileInputRef} type="file" accept="*/*" hidden onChange={event => { pickFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />{busy && <span className="ml-2 text-[10px] text-teal-600">正在加密上传…</span>}</div><div className="flex items-end gap-2"><textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} rows={1} placeholder="输入消息，Enter 发送" className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400" /><button disabled={!draft.trim() || busy} onClick={sendMessage} className="grid h-11 w-11 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"><SendHorizontal size={18} /></button></div></div></footer>
             </>
           ) : <EmptyChat />}
         </section>
       </div>
+
+      <CallManager ref={callManagerRef} user={user} connection={realtimeConnection} />
 
       {showGroup && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-medium uppercase tracking-[.16em] text-teal-600">New encrypted group</p><h2 className="mt-2 text-xl font-semibold">创建加密群聊</h2></div><button onClick={() => setShowGroup(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-500"><X size={18} /></button></div><label className="mt-6 block text-sm font-medium">群名称<input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="例如：周末计划" className="mt-2 w-full rounded-xl bg-slate-100 px-4 py-3 text-sm outline-none ring-teal-400/40 focus:ring-2" /></label><p className="mb-2 mt-5 text-sm font-medium">选择好友 <span className="text-xs font-normal text-slate-400">至少 2 人</span></p><div className="max-h-64 space-y-1 overflow-y-auto">{contacts.filter(contact => contact.status === "Friend").map(contact => { const checked = groupMembers.includes(contact.user.id); return <button key={contact.user.id} onClick={() => setGroupMembers(current => checked ? current.filter(id => id !== contact.user.id) : [...current, contact.user.id])} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${checked ? "bg-teal-50" : "hover:bg-slate-50"}`}><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" /><span className="flex-1 text-sm font-medium">{contact.user.displayName}</span><span className={`grid h-5 w-5 place-items-center rounded-md border ${checked ? "border-teal-500 bg-teal-500 text-white" : "border-slate-300"}`}>{checked && <Check size={13} />}</span></button>; })}{contacts.filter(contact => contact.status === "Friend").length < 2 && <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">至少需要两位好友才能创建群聊。你可以先在联系人页添加更多好友。</p>}</div><button disabled={busy || !groupName.trim() || groupMembers.length < 2} onClick={createGroup} className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white transition active:scale-[.98] disabled:opacity-40">创建并分发群组密钥</button></div></div>}
 
@@ -423,7 +461,8 @@ function ComposerAction({ icon: Icon, label }: { icon: typeof Phone; label: stri
   return <button onClick={() => toast.info(`${label}消息将在后续迭代开放`)} title={label} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"><Icon size={17} /></button>;
 }
 function MessageBubble({ message, mine, onRecall }: { message: DecryptedMessage; mine: boolean; onRecall: () => void }) {
-  return <div className={`group mb-4 flex ${mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}><div className={`rounded-[20px] px-4 py-3 text-sm leading-6 shadow-sm ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}>{message.plaintext}</div><div className={`mt-1.5 flex items-center gap-2 px-1 text-[10px] text-slate-400 ${mine ? "justify-end" : "justify-start"}`}><time>{new Date(message.sentAtUtc).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>{mine && message.state === "Accepted" && <><Check size={11} /><button onClick={onRecall} className="opacity-0 transition hover:text-slate-700 group-hover:opacity-100">撤回</button></>}</div></div></div>;
+  const rich = message.kind === "Image" || message.kind === "Voice" || message.kind === "Video" || message.kind === "File";
+  return <div className={`group mb-4 flex ${mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}><div className={`rounded-[20px] text-sm leading-6 shadow-sm ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}><RichMessageContent message={message} /></div><div className={`mt-1.5 flex items-center gap-2 px-1 text-[10px] text-slate-400 ${mine ? "justify-end" : "justify-start"}`}><time>{new Date(message.sentAtUtc).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>{mine && message.state === "Accepted" && <><Check size={11} /><button onClick={onRecall} className="opacity-0 transition hover:text-slate-700 group-hover:opacity-100">撤回</button></>}</div></div></div>;
 }
 function EmptyState({ icon: Icon, title, text, compact = false }: { icon: typeof Users; title: string; text: string; compact?: boolean }) {
   return <div className={`${compact ? "py-7" : "py-20"} px-7 text-center`}><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-slate-300 shadow-sm"><Icon size={24} /></div><p className="mt-4 text-sm font-semibold text-slate-600">{title}</p><p className="mt-1 text-xs leading-5 text-slate-400">{text}</p></div>;

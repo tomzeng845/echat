@@ -74,12 +74,31 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         return Ok(messages.Select(View).ToList());
     }
 
+    [HttpGet("{id}/members")]
+    public async Task<ActionResult<IReadOnlyList<ConversationMemberView>>> Members(string id, CancellationToken ct)
+    {
+        var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
+        var result = new List<ConversationMemberView>();
+        foreach (var member in conversation.Members.Where(x => x.LeftAtSequence is null))
+        {
+            var account = await repository.GetUserByIdAsync(member.UserId, ct);
+            if (account is not null) result.Add(new ConversationMemberView(account.Id, account.DisplayName, account.AvatarUrl, member.Role));
+        }
+        return Ok(result);
+    }
+
     [HttpPost("{id}/messages")]
     [RequestSizeLimit(64 * 1024)]
     public async Task<ActionResult<MessageView>> Send(string id, SendMessageRequest request, CancellationToken ct)
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
         if (string.IsNullOrWhiteSpace(request.ClientMessageId) || string.IsNullOrWhiteSpace(request.Ciphertext) || request.Ciphertext.Length > 50_000) return BadRequest(new { error = "消息格式无效或内容过大" });
+        if (request.Kind is MessageKind.Image or MessageKind.Voice or MessageKind.Video or MessageKind.File)
+        {
+            if (request.Metadata is null || !request.Metadata.TryGetValue("assetId", out var assetId)) return BadRequest(new { error = "富媒体消息缺少媒体资产" });
+            var asset = await repository.GetMediaAssetAsync(assetId, ct);
+            if (asset is null || asset.OwnerId != User.UserId() || asset.Purpose != MediaPurpose.Chat || asset.ConversationId != id) return BadRequest(new { error = "媒体资产无效" });
+        }
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Ciphertext = request.Ciphertext, Nonce = request.Nonce, Algorithm = request.Algorithm, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);

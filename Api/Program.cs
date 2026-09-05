@@ -13,6 +13,8 @@ builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializ
 builder.Services.AddSingleton<PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<TotpService>();
+builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
+builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
 var mongoConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI"));
 if (mongoConfigured) builder.Services.AddSingleton<IChatRepository, MongoChatRepository>();
@@ -60,7 +62,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.1.0", status = "healthy", utcNow = DateTime.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.2.0", status = "healthy", utcNow = DateTime.UtcNow }));
 app.MapFallbackToFile("index.html");
 
 await app.StartAsync();

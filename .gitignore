@@ -117,3 +117,4 @@ client/public/__manus__/version.json
 **/bin/
 **/obj/
 Api/wwwroot/
+Api/.media/

@@ -11,6 +11,10 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, ContactRelation> _relations = new();
     private readonly ConcurrentDictionary<string, Conversation> _conversations = new();
     private readonly ConcurrentDictionary<string, ChatMessage> _messages = new();
+    private readonly ConcurrentDictionary<string, MediaAsset> _mediaAssets = new();
+    private readonly ConcurrentDictionary<string, MomentPost> _moments = new();
+    private readonly ConcurrentDictionary<string, MomentLike> _momentLikes = new();
+    private readonly ConcurrentDictionary<string, MomentComment> _momentComments = new();
     private readonly ConcurrentDictionary<string, string> _messageIdempotency = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _conversationLocks = new();
 
@@ -98,4 +102,39 @@ public sealed class InMemoryChatRepository : IChatRepository
         Task.FromResult<IReadOnlyList<ChatMessage>>(_messages.Values.Where(x => x.ConversationId == conversationId && x.Sequence > afterSequence).OrderBy(x => x.Sequence).Take(limit).ToList());
     public Task<ChatMessage?> GetMessageAsync(string id, CancellationToken ct = default) => Task.FromResult(_messages.TryGetValue(id, out var item) ? item : null);
     public Task UpdateMessageAsync(ChatMessage message, CancellationToken ct = default) { _messages[message.Id] = message; return Task.CompletedTask; }
+
+    public Task<MediaAsset> AddMediaAssetAsync(MediaAsset asset, CancellationToken ct = default) { _mediaAssets[asset.Id] = asset; return Task.FromResult(asset); }
+    public Task<MediaAsset?> GetMediaAssetAsync(string id, CancellationToken ct = default) => Task.FromResult(_mediaAssets.TryGetValue(id, out var item) ? item : null);
+    public Task<IReadOnlyList<MediaAsset>> GetMediaAssetsAsync(IEnumerable<string> ids, CancellationToken ct = default)
+    {
+        var wanted = ids.ToHashSet(StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyList<MediaAsset>>(_mediaAssets.Values.Where(x => wanted.Contains(x.Id)).ToList());
+    }
+
+    public Task<MomentPost> AddMomentAsync(MomentPost moment, CancellationToken ct = default) { _moments[moment.Id] = moment; return Task.FromResult(moment); }
+    public Task<MomentPost?> GetMomentAsync(string id, CancellationToken ct = default) => Task.FromResult(_moments.TryGetValue(id, out var item) ? item : null);
+    public Task UpdateMomentAsync(MomentPost moment, CancellationToken ct = default) { _moments[moment.Id] = moment; return Task.CompletedTask; }
+    public Task<IReadOnlyList<MomentPost>> GetMomentsAsync(IEnumerable<string> authorIds, DateTime? beforeUtc, int limit, CancellationToken ct = default)
+    {
+        var authors = authorIds.ToHashSet(StringComparer.Ordinal);
+        var before = beforeUtc ?? DateTime.MaxValue;
+        return Task.FromResult<IReadOnlyList<MomentPost>>(_moments.Values.Where(x => authors.Contains(x.AuthorId) && x.DeletedAtUtc is null && x.CreatedAtUtc < before).OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
+    }
+
+    public Task<MomentLike> UpsertMomentLikeAsync(MomentLike like, CancellationToken ct = default) { _momentLikes[like.Id] = like; return Task.FromResult(like); }
+    public Task RemoveMomentLikeAsync(string momentId, string userId, CancellationToken ct = default) { _momentLikes.TryRemove($"{momentId}:{userId}", out _); return Task.CompletedTask; }
+    public Task<IReadOnlyList<MomentLike>> GetMomentLikesAsync(IEnumerable<string> momentIds, CancellationToken ct = default)
+    {
+        var wanted = momentIds.ToHashSet(StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyList<MomentLike>>(_momentLikes.Values.Where(x => wanted.Contains(x.MomentId)).OrderBy(x => x.CreatedAtUtc).ToList());
+    }
+
+    public Task<MomentComment> AddMomentCommentAsync(MomentComment comment, CancellationToken ct = default) { _momentComments[comment.Id] = comment; return Task.FromResult(comment); }
+    public Task<MomentComment?> GetMomentCommentAsync(string id, CancellationToken ct = default) => Task.FromResult(_momentComments.TryGetValue(id, out var item) ? item : null);
+    public Task UpdateMomentCommentAsync(MomentComment comment, CancellationToken ct = default) { _momentComments[comment.Id] = comment; return Task.CompletedTask; }
+    public Task<IReadOnlyList<MomentComment>> GetMomentCommentsAsync(IEnumerable<string> momentIds, CancellationToken ct = default)
+    {
+        var wanted = momentIds.ToHashSet(StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyList<MomentComment>>(_momentComments.Values.Where(x => wanted.Contains(x.MomentId) && x.DeletedAtUtc is null).OrderBy(x => x.CreatedAtUtc).ToList());
+    }
 }

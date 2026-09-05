@@ -10,6 +10,7 @@ public enum ConversationType { Direct, Group, System }
 public enum MemberRole { Owner, Admin, Member }
 public enum MessageKind { Text, Emoji, Image, Voice, Video, File, System }
 public enum MessageState { Accepted, Recalled }
+public enum MediaPurpose { Chat, Moment }
 
 public sealed class UserAccount
 {
@@ -119,6 +120,48 @@ public sealed class ChatMessage
     public DateTime? RecalledAtUtc { get; set; }
 }
 
+public sealed class MediaAsset
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string OwnerId { get; set; } = "";
+    public MediaPurpose Purpose { get; set; }
+    public string? ConversationId { get; set; }
+    public string StorageKey { get; set; } = "";
+    public string? LocalPath { get; set; }
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long Size { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class MomentPost
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string AuthorId { get; set; } = "";
+    public string Text { get; set; } = "";
+    public List<string> MediaAssetIds { get; set; } = [];
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAtUtc { get; set; }
+}
+
+public sealed class MomentLike
+{
+    [BsonId] public string Id { get; set; } = "";
+    public string MomentId { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class MomentComment
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string MomentId { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public string Text { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAtUtc { get; set; }
+}
+
 public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web");
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web");
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web");
@@ -132,3 +175,10 @@ public sealed record GroupCreateRequest(string Name, IReadOnlyList<string> Membe
 public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null);
 public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, string? KeyEnvelope);
 public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc);
+public sealed record MediaAssetView(string Id, string FileName, string ContentType, long Size, MediaPurpose Purpose, string ContentUrl);
+public sealed record CreateMomentRequest(string Text, IReadOnlyList<string>? MediaAssetIds = null);
+public sealed record AddMomentCommentRequest(string Text);
+public sealed record MomentLikeView(string UserId, string DisplayName, string AvatarUrl, DateTime CreatedAtUtc);
+public sealed record MomentCommentView(string Id, string UserId, string DisplayName, string AvatarUrl, string Text, DateTime CreatedAtUtc);
+public sealed record MomentView(string Id, UserView Author, string Text, IReadOnlyList<MediaAssetView> Media, IReadOnlyList<MomentLikeView> Likes, IReadOnlyList<MomentCommentView> Comments, bool LikedByMe, DateTime CreatedAtUtc);
+public sealed record ConversationMemberView(string UserId, string DisplayName, string AvatarUrl, MemberRole Role);
