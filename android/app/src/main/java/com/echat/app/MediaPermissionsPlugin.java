@@ -1,7 +1,10 @@
 package com.echat.app;
 
 import android.Manifest;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
@@ -9,6 +12,7 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -32,6 +36,79 @@ public class MediaPermissionsPlugin extends Plugin {
     private AudioFocusRequest audioFocusRequest;
     private MediaPlayer messagePlayer;
     private MediaPlayer callPlayer;
+    private BroadcastReceiver callListenerReceiver;
+
+    @Override
+    public void load() {
+        callListenerReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (CallListenerService.ACTION_INCOMING.equals(intent.getAction())) emitPendingCall(true);
+                else if (CallListenerService.ACTION_CLEARED.equals(intent.getAction())) {
+                    JSObject data = new JSObject();
+                    data.put("callId", intent.getStringExtra(CallListenerService.EXTRA_CALL_ID));
+                    notifyListeners("callListenerCleared", data);
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(CallListenerService.ACTION_INCOMING);
+        filter.addAction(CallListenerService.ACTION_CLEARED);
+        ContextCompat.registerReceiver(getContext(), callListenerReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    @PluginMethod
+    public void startCallListener(PluginCall call) {
+        String hubUrl = call.getString("hubUrl", "");
+        String token = call.getString("token", "");
+        String userId = call.getString("userId", "");
+        if (!hubUrl.startsWith("https://") || token.isBlank() || userId.isBlank()) {
+            call.reject("来电服务配置无效");
+            return;
+        }
+        CallListenerService.start(getContext(), hubUrl, token, userId);
+        emitPendingCall(true);
+        JSObject result = new JSObject();
+        result.put("running", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void stopCallListener(PluginCall call) {
+        CallListenerService.stop(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearCallListenerAlert(PluginCall call) {
+        CallListenerService.clear(getContext(), call.getString("callId", ""));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getPendingCall(PluginCall call) {
+        CallListenerService.IncomingCallPayload pending = CallListenerService.consumePendingCall(getContext());
+        JSObject result = toCallJson(pending);
+        result.put("available", pending != null);
+        call.resolve(result);
+    }
+
+    private void emitPendingCall(boolean retainUntilConsumed) {
+        CallListenerService.IncomingCallPayload pending = CallListenerService.consumePendingCall(getContext());
+        if (pending != null) notifyListeners("callListenerIncoming", toCallJson(pending), retainUntilConsumed);
+    }
+
+    private static JSObject toCallJson(CallListenerService.IncomingCallPayload call) {
+        JSObject result = new JSObject();
+        if (call == null) return result;
+        result.put("conversationId", call.conversationId);
+        result.put("callId", call.callId);
+        result.put("mode", call.mode);
+        result.put("callerId", call.callerId);
+        result.put("callerName", call.callerName);
+        result.put("callerAvatarUrl", call.callerAvatarUrl);
+        return result;
+    }
 
     @PluginMethod
     public void playAlertSound(PluginCall call) {
@@ -160,7 +237,28 @@ public class MediaPermissionsPlugin extends Plugin {
         releasePlayer(callPlayer);
         messagePlayer = null;
         callPlayer = null;
+        if (callListenerReceiver != null) {
+            getContext().unregisterReceiver(callListenerReceiver);
+            callListenerReceiver = null;
+        }
         super.handleOnDestroy();
+    }
+
+    @Override
+    protected void handleOnResume() {
+        CallListenerService.setAppActive(getContext(), true);
+        emitPendingCall(true);
+    }
+
+    @Override
+    protected void handleOnPause() {
+        CallListenerService.setAppActive(getContext(), false);
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        CallListenerService.setAppActive(getContext(), true);
+        emitPendingCall(true);
     }
 
     @PluginMethod

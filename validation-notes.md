@@ -266,3 +266,19 @@ Vitest 直接模拟服务端 `enabled=false`、APP 由前台切到后台的场�
 最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=13`、`versionName=0.8.5`，并声明 `android.permission.POST_NOTIFICATIONS`。文件 `EChat-0.8.5-debug.apk` 的 SHA-256 为 `cc600c4060f8c3c7c726871abec0b883fb4143eba688a2f2c9a2a1b69d8343fc`。
 
 本地通知只覆盖 APP 位于后台且进程/SignalR 仍存活的情况；设备进入 Doze、系统冻结 WebView、用户强制停止或进程被杀死后，可靠通知仍需配置 Firebase 客户端与服务端凭据。已配置 FCM 时，后台由 FCM 负责，客户端不会重复调度本地通知。
+
+## 2026-09-06 Android APP 0.8.6 常驻后台来电
+
+0.8.5 的本地通知仍依赖 WebView 内 SignalR；Android 暂停 WebView 或回收普通进程后，`call.invited` 无法到达 JavaScript。本轮按用户选定的“Android 常驻来电服务（无需 Firebase）”方案新增 `CallListenerService`：服务声明为 `remoteMessaging` 前台服务，使用 Microsoft SignalR 8 Java 客户端维护独立 WSS 连接，运行时显示低优先级“E聊正在接收来电”常驻通知；网络断开后按 1、3、8、15、30、60 秒阶梯重连，系统重建服务时从应用私有存储恢复配置。
+
+`POST /api/calls/listener-token` 签发七天有效、绑定当前 session 与 device 的 `scope=call_listener` JWT。ASP.NET Core 默认授权策略继续只接受 `scope=app`；ChatHub 仅允许监听 scope 建立连接，并让它只加入 `user:{userId}`，不加入会话组。所有可调用 Hub 方法在入口再次要求 app scope。端到端脚本确认该令牌访问 `/api/calls` 返回 403，调用 `MarkRead` 返回 `LISTENER_SCOPE_READ_ONLY`，但能接收来电邀请和清理事件。
+
+来电邀请由会话组广播改为向每位接听者的用户组发送；`android-call-listener-smoke.mjs` 特意先建立原生监听连接、再创建好友关系与会话，随后发起视频邀请，仍收到完整 `call.invited`。接听、拒绝和结束统一向参与者用户组发送 `call.listener.cleared`。最终输出 `ANDROID_CALL_LISTENER_OK ... scope=readonly api=403 late_conversation=received events=invited,cleared`；原有 `CALL_SIGNAL_OK` 同时通过，确认现有浏览器通话信令未受影响。
+
+APK 后台收到邀请时使用 `CATEGORY_CALL` 高优先级通知和循环 `echat_call.wav`；点击通知恢复现有 Activity，并把一次性来电载荷交给 React。来电载荷会在 WebRTC SignalR 尚未就绪时缓存，接听、拒绝或结束后清除；原生服务按当前用户编号过滤自己发起的通话，前台由 JavaScript 处理时也不会生成重复通知。退出账号或会话过期会停止服务并清除受限令牌。个人中心增加“后台来电 / 常驻服务运行中”状态。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 19 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_086_OK`、`ADMIN_086_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
+
+最终 APK 的合并 Manifest 包含 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_REMOTE_MESSAGING` 和 `foregroundServiceType=remoteMessaging`；DEX 同时包含 `com.echat.app.CallListenerService` 与 `com.microsoft.signalr`。16 KB zipalign 和 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=14`、`versionName=0.8.6`、最低 API 24、目标 API 36。文件 `EChat-0.8.6-debug.apk` 的 SHA-256 为 `d29037fa3d2d4f2095c044a6326aa3a9db4968a127fce6ec9c6a08739eaf134e`。
+
+系统边界：Android 用户执行“强制停止”后，系统会禁止 APP 的后台组件继续运行，必须重新打开 APP；部分厂商的极限省电策略也可能终止前台服务，需要允许 E聊后台运行。常驻服务解决音视频后台来电，不替代 APP 被完全终止后的普通消息 FCM 推送。

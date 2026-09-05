@@ -10,6 +10,11 @@ const fakes = vi.hoisted(() => ({
   register: vi.fn(),
   playAlertSound: vi.fn(),
   stopAlertSound: vi.fn(),
+  startCallListener: vi.fn(),
+  stopCallListener: vi.fn(),
+  clearCallListenerAlert: vi.fn(),
+  getPendingCall: vi.fn(),
+  nativeAddListener: vi.fn(),
   appGetState: vi.fn(),
   appAddListener: vi.fn(),
   localAddListener: vi.fn(),
@@ -30,6 +35,11 @@ vi.mock("@capacitor/core", () => ({
     requestPermissions: vi.fn(),
     playAlertSound: fakes.playAlertSound,
     stopAlertSound: fakes.stopAlertSound,
+    startCallListener: fakes.startCallListener,
+    stopCallListener: fakes.stopCallListener,
+    clearCallListenerAlert: fakes.clearCallListenerAlert,
+    getPendingCall: fakes.getPendingCall,
+    addListener: fakes.nativeAddListener,
   }),
 }));
 
@@ -66,6 +76,7 @@ vi.mock("../client/src/lib/echat-api", () => ({
 }));
 
 import {
+  getNativeCallListenerState,
   notifyIncomingEvent,
   playIncomingAlert,
   registerNativePush,
@@ -75,10 +86,15 @@ import {
 describe("Android push login guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fakes.api.mockResolvedValue({
-      enabled: false,
-      provider: "Firebase Cloud Messaging",
-    });
+    fakes.api.mockImplementation(async (path: string) =>
+      path === "/api/calls/listener-token"
+        ? {
+            token: "restricted-call-listener-token",
+            expiresAtUtc: "2099-01-01T00:00:00Z",
+            userId: "receiver-user",
+          }
+        : { enabled: false, provider: "Firebase Cloud Messaging" }
+    );
     fakes.appStateHandler = null;
     fakes.appGetState.mockResolvedValue({ isActive: true });
     fakes.appAddListener.mockImplementation(
@@ -94,10 +110,19 @@ describe("Android push login guard", () => {
     fakes.localCheckPermissions.mockResolvedValue({ display: "granted" });
     fakes.localCreateChannel.mockResolvedValue(undefined);
     fakes.localSchedule.mockResolvedValue({ notifications: [{ id: 1 }] });
+    fakes.nativeAddListener.mockResolvedValue({ remove: vi.fn() });
+    fakes.startCallListener.mockResolvedValue({ running: true });
+    fakes.getPendingCall.mockResolvedValue({ available: false });
   });
 
   it("uses a local notification fallback when the server has no FCM credentials", async () => {
     await expect(registerNativePush()).resolves.toBe("local");
+    expect(fakes.startCallListener).toHaveBeenCalledWith({
+      hubUrl: "/hubs/chat",
+      token: "restricted-call-listener-token",
+      userId: "receiver-user",
+    });
+    expect(getNativeCallListenerState()).toBe(true);
     expect(fakes.api).toHaveBeenCalledWith("/api/push/status");
     expect(fakes.localCheckPermissions).toHaveBeenCalledOnce();
     expect(fakes.localCreateChannel).toHaveBeenCalledTimes(2);
@@ -131,6 +156,20 @@ describe("Android push login guard", () => {
         }),
       ],
     });
+    await expect(
+      notifyIncomingEvent({
+        kind: "voice-call",
+        eventId: "native-background-call",
+        title: "来电",
+        body: "邀请你进行语音通话",
+        target: {
+          type: "call",
+          conversationId: "conversation-one",
+          callId: "native-background-call",
+        },
+      })
+    ).resolves.toBe(true);
+    expect(fakes.localSchedule).toHaveBeenCalledTimes(1);
   });
 
   it("plays each foreground event once and stops the looping call alert", async () => {

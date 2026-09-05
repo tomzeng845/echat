@@ -1,5 +1,29 @@
 # E聊开发跟踪
 
+## Android APP 0.8.6 常驻后台来电
+
+- [x] 确认根因是 Android 暂停 WebView 后 JavaScript SignalR 无法接收 `call.invited`
+- [x] 按用户选择实现无需 Firebase 的 Android 原生常驻来电方案
+- [x] 使用 Microsoft SignalR 8 Java 客户端建立独立 WSS 连接
+- [x] 以 Android `remoteMessaging` 前台服务运行，保留低优先级常驻状态通知
+- [x] 服务被系统重建时从应用私有存储恢复配置，并按 1–60 秒阶梯重连
+- [x] 签发七天有效且绑定当前 session/device 的 `call_listener` 令牌
+- [x] REST 默认仅接受 `scope=app`；监听令牌访问普通 API 返回 403
+- [x] 监听令牌只加入当前用户组，不订阅会话组或聊天密文
+- [x] 所有 Hub 交互方法再次要求 `scope=app`，只读令牌无法调用
+- [x] 来电改为发送到接听者用户组，监听连接先建立、会话后创建也能收到
+- [x] 后台语音/视频来电显示高优先级通知并循环播放铃声
+- [x] 点击通知恢复会话和来电界面；WebRTC 未就绪时来电载荷先缓存
+- [x] 接听、拒绝、双方结束时通过用户组清除原生通知和铃声
+- [x] 原生服务过滤当前用户自己发起的通话，并避免与 WebView 重复通知
+- [x] 退出账号或会话过期时停止服务并清除受限令牌
+- [x] 个人中心显示“后台来电 / 常驻服务运行中”状态
+- [x] `ANDROID_CALL_LISTENER_OK` 验证只读 scope、403、后建会话邀请和清理事件
+- [x] 原有 `CALL_SIGNAL_OK` 及 14 组全量回归通过
+- [x] `pnpm check`、Vitest 9 项、xUnit 19 项和生产构建通过
+- [x] Android 单测、lint、Manifest 服务类型、DEX 类、16 KB 对齐和 v2 签名通过
+- [x] 生成 `versionCode=14`、`versionName=0.8.6` 可覆盖安装 APK
+
 ## Android APP 0.8.5 后台通知栏
 
 - [x] 确认生产 `push.enabled=false`，定位为 Firebase 凭据尚未配置

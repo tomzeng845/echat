@@ -346,6 +346,32 @@ public sealed class CoreTests
         Assert.Equal("version-two-envelope", versionTwo!["u1:phone"]);
     }
 
+    [Fact]
+    public void CallListenerToken_IsRestrictedAndBoundToSessionAndDevice()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:Key"] = "unit-test-call-listener-signing-key"
+        }).Build();
+        var tokens = new TokenService(configuration);
+        var user = new UserAccount { Id = "listener-user", Account = "listener", DisplayName = "Listener" };
+        var (token, _) = tokens.CreateAccessToken(
+            user,
+            TimeSpan.FromDays(7),
+            "call_listener",
+            "listener-session",
+            "listener-device"
+        );
+
+        var principal = tokens.ValidateToken(token, "call_listener");
+
+        Assert.NotNull(principal);
+        Assert.Equal("listener-user", principal!.UserId());
+        Assert.Equal("listener-session", principal.SessionId());
+        Assert.Equal("listener-device", principal.DeviceId());
+        Assert.Null(tokens.ValidateToken(token, "app"));
+    }
+
     private sealed class StubHttpClientFactory(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(new StubHandler(responder), disposeHandler: true);

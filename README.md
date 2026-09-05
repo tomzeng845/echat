@@ -18,12 +18,12 @@
 | 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                | 已完成           |
 | 管理后台    | HTML5 响应式四大系统；按 V2 文档实现普通用户隔离、邀请码、日志、交易、Admin、公告、图片和聊天治理 API | 已完成 0.7.1     |
 | 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区     | 已完成 0.7.1     |
-| Android APP | Capacitor 8、本地 Web 资源、系统通知、通知深链、相机/麦克风权限、刘海屏和系统导航栏安全区             | 已完成 0.8.5     |
-| 消息推送    | 前台提示音、后台本地通知回退；FCM 高优先级通知、独立声音频道、失效令牌停用；通知不含聊天明文          | 应用层已完成     |
-| 音视频通话  | 双向远端音频、Android 通信音频模式、听筒/扬声器切换、静音、摄像头控制、通话记录、ICE 与 SignalR 信令  | 已完成 P1 应用层 |
+| Android APP | Capacitor 8、本地资源、原生 SignalR 常驻来电服务、媒体权限、刘海屏和系统栏安全区                      | 已完成 0.8.6     |
+| 消息推送    | 前台提示音、进程存活时后台本地通知；可选 FCM 高优先级通知、独立声音频道；通知不含聊天明文             | 应用层已完成     |
+| 音视频通话  | 后台原生来电通知、双向音频、通信音频模式、听筒/扬声器、静音、摄像头、记录、ICE 与 SignalR 信令        | 已完成 P1 应用层 |
 | 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                          | 已完成 P1        |
 
-> 当前版本已开放可在应用代码内完成的 P1 能力，但不是已经达到 10 万用户容量目标的生产成品。FCM 应用层已接通，但正式推送仍需项目方提供 Firebase 客户端配置和服务账号；TURN、SFU、转码和病毒扫描也属于生产环境外部基础设施。
+> 当前版本已开放可在应用代码内完成的 P1 能力，但不是已经达到 10 万用户容量目标的生产成品。Android 音视频后台来电不依赖 FCM；APP 被系统完全终止后的普通消息可靠推送仍需项目方配置 Firebase。TURN、SFU、转码和病毒扫描也属于生产环境外部基础设施。
 
 ### 管理后台 0.7.1
 
@@ -35,38 +35,40 @@
 
 ## 目录结构
 
-| 路径                                                | 说明                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------ |
-| `Api/`                                              | ASP.NET Core API、SignalR Hub、领域模型与 MongoDB/内存仓库         |
-| `Api/Controllers/`                                  | 账号、用户公钥、联系人、会话、媒体、朋友圈和管理接口               |
-| `Api/GeoIpService.cs`                               | GeoIP HTTPS 查询、私网识别、超时、缓存与失败降级                   |
-| `Api/PushNotificationService.cs`                    | FCM HTTP v1 消息、好友申请和来电推送                               |
-| `Api.Tests/`                                        | xUnit 核心业务测试                                                 |
-| `client/`                                           | React HTML5 响应式客户端                                           |
-| `client/src/pages/Admin.tsx`                        | 独立 HTML5 响应式管理后台，按路由懒加载                            |
-| `client/src/components/admin/RequirementPanels.tsx` | 后台需求文档专用页面、筛选表格与审核/配置弹窗                      |
-| `client/src/lib/echat-crypto.ts`                    | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密                    |
-| `client/src/lib/echat-media.ts`                     | 富媒体二进制加密、上传、下载和解密                                 |
-| `client/src/components/chat/CallManager.tsx`        | WebRTC 音视频通话和 SignalR 信令控制                               |
-| `client/src/components/qr/`                         | 二维码生成、摄像头/图片识别、登录确认和扫码名片流程                |
-| `client/src/lib/mobile-native.ts`                   | Android 推送、提示音去重、通知深链、媒体权限与通话音频路由原生桥   |
-| `android/`                                          | Capacitor 8 Android Studio/Gradle 原生工程                         |
-| `capacitor.config.ts`                               | Android 应用、System Bars 安全区与前台通知配置                     |
-| `scripts/e2e-smoke.sh`                              | 注册、好友、会话、富媒体和朋友圈冒烟测试                           |
-| `scripts/signalr-call-smoke.mjs`                    | 双账号通话邀请、接受、信令与结束事件测试                           |
-| `scripts/p1-qr-smoke.mjs`                           | 二维码登录、扫码加好友和远程退出设备测试                           |
-| `scripts/contact-realtime-smoke.mjs`                | 双账号好友申请、申请人资料和联系人双端实时更新测试                 |
-| `scripts/mobile-friend-chat-smoke.mjs`              | 390×844 手机视口好友接受、进入聊天和发送消息测试                   |
-| `scripts/unread-clear-smoke.mjs`                    | 390×844 手机与 1280×720 桌面双栏的未读角标、进入清零和实时已读测试 |
-| `scripts/admin-smoke.mjs`                           | 四大后台、每账号菜单、24 个 V2 页面及桌面/手机测试                 |
-| `scripts/admin-requirements-smoke.mjs`              | 认证、邀请码、日志、交易、TOTP、公告、建群和聊天治理 API 测试      |
-| `scripts/geoip-smoke.mjs`                           | 真实公网 IP 地区、用户地址、登录日志和缓存端到端测试               |
-| `scripts/android-push-smoke.mjs`                    | Android 推送设备注册、状态、停用和 health API 测试                 |
-| `scripts/android-safe-area-smoke.mjs`               | 刘海屏与底部系统导航栏 inset 布局测试                              |
-| `scripts/android-e2ee-smoke.mjs`                    | 新设备密钥轮换、版本化消息与真实界面解密测试                       |
-| `scripts/android-call-audio-smoke.mjs`              | 双端语音/视频远端音轨、自动播放与扬声器切换测试                    |
-| `scripts/generate-android-alert-sounds.py`          | 可重复生成消息提示音和循环来电铃声资源                             |
-| `Dockerfile`                                        | Node 构建前端、.NET 发布后端的多阶段生产镜像                       |
+| 路径                                                               | 说明                                                               |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `Api/`                                                             | ASP.NET Core API、SignalR Hub、领域模型与 MongoDB/内存仓库         |
+| `Api/Controllers/`                                                 | 账号、用户公钥、联系人、会话、媒体、朋友圈和管理接口               |
+| `Api/GeoIpService.cs`                                              | GeoIP HTTPS 查询、私网识别、超时、缓存与失败降级                   |
+| `Api/PushNotificationService.cs`                                   | FCM HTTP v1 消息、好友申请和来电推送                               |
+| `Api.Tests/`                                                       | xUnit 核心业务测试                                                 |
+| `client/`                                                          | React HTML5 响应式客户端                                           |
+| `client/src/pages/Admin.tsx`                                       | 独立 HTML5 响应式管理后台，按路由懒加载                            |
+| `client/src/components/admin/RequirementPanels.tsx`                | 后台需求文档专用页面、筛选表格与审核/配置弹窗                      |
+| `client/src/lib/echat-crypto.ts`                                   | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密                    |
+| `client/src/lib/echat-media.ts`                                    | 富媒体二进制加密、上传、下载和解密                                 |
+| `client/src/components/chat/CallManager.tsx`                       | WebRTC 音视频通话和 SignalR 信令控制                               |
+| `client/src/components/qr/`                                        | 二维码生成、摄像头/图片识别、登录确认和扫码名片流程                |
+| `client/src/lib/mobile-native.ts`                                  | Android 推送、提示音去重、通知深链、媒体权限与通话音频路由原生桥   |
+| `android/`                                                         | Capacitor 8 Android Studio/Gradle 原生工程                         |
+| `android/app/src/main/java/com/echat/app/CallListenerService.java` | Android 原生 SignalR 后台来电前台服务                              |
+| `capacitor.config.ts`                                              | Android 应用、System Bars 安全区与前台通知配置                     |
+| `scripts/e2e-smoke.sh`                                             | 注册、好友、会话、富媒体和朋友圈冒烟测试                           |
+| `scripts/signalr-call-smoke.mjs`                                   | 双账号通话邀请、接受、信令与结束事件测试                           |
+| `scripts/p1-qr-smoke.mjs`                                          | 二维码登录、扫码加好友和远程退出设备测试                           |
+| `scripts/contact-realtime-smoke.mjs`                               | 双账号好友申请、申请人资料和联系人双端实时更新测试                 |
+| `scripts/mobile-friend-chat-smoke.mjs`                             | 390×844 手机视口好友接受、进入聊天和发送消息测试                   |
+| `scripts/unread-clear-smoke.mjs`                                   | 390×844 手机与 1280×720 桌面双栏的未读角标、进入清零和实时已读测试 |
+| `scripts/admin-smoke.mjs`                                          | 四大后台、每账号菜单、24 个 V2 页面及桌面/手机测试                 |
+| `scripts/admin-requirements-smoke.mjs`                             | 认证、邀请码、日志、交易、TOTP、公告、建群和聊天治理 API 测试      |
+| `scripts/geoip-smoke.mjs`                                          | 真实公网 IP 地区、用户地址、登录日志和缓存端到端测试               |
+| `scripts/android-push-smoke.mjs`                                   | Android 推送设备注册、状态、停用和 health API 测试                 |
+| `scripts/android-safe-area-smoke.mjs`                              | 刘海屏与底部系统导航栏 inset 布局测试                              |
+| `scripts/android-e2ee-smoke.mjs`                                   | 新设备密钥轮换、版本化消息与真实界面解密测试                       |
+| `scripts/android-call-audio-smoke.mjs`                             | 双端语音/视频远端音轨、自动播放与扬声器切换测试                    |
+| `scripts/android-call-listener-smoke.mjs`                          | 受限令牌、后台来电用户组路由与清理事件测试                         |
+| `scripts/generate-android-alert-sounds.py`                         | 可重复生成消息提示音和循环来电铃声资源                             |
+| `Dockerfile`                                                       | Node 构建前端、.NET 发布后端的多阶段生产镜像                       |
 
 ## 本地运行
 
@@ -132,6 +134,10 @@ Android 13 及以上会在登录后请求系统通知权限，用于 FCM 或本�
 
 0.8.5 加入 Capacitor Local Notifications 回退。APP 切换到后台但进程仍保留 SignalR 连接时，新消息和音视频来电会立即写入 Android 通知栏；消息使用 `messages-v2` 频道，来电使用 `calls-v2` 高优先级频道，点击通知可回到对应会话。个人中心会显示“后台通知已开启”。如果 APP 被系统完全挂起、强制停止或杀死，本地代码无法再接收 SignalR，此时仍必须配置 FCM 才能可靠送达。
 
+0.8.6 将音视频来电从 WebView 生命周期中独立出来。登录后，APP 获取一个与当前登录会话和设备绑定、有效期七天的只读 `call_listener` 令牌，并启动 Android `remoteMessaging` 前台服务；服务使用 Microsoft SignalR Java 客户端维持独立 WebSocket、断线分级重连，并通过低优先级常驻通知说明“E聊正在接收来电”。WebView 被暂停或普通进程被系统回收时，服务仍可收到 `call.invited`，播放循环铃声并显示高优先级通知；点击通知恢复会话和来电界面，接听、拒绝、对方结束或本机结束都会清除通知与铃声。退出账号或登录会话失效时服务停止。
+
+`call_listener` 令牌不能访问普通 REST API，也不能调用已读、邀请、接听、拒绝、信令或结束等 Hub 方法；连接只加入当前用户组，不订阅聊天密文。Android **强制停止**应用会按系统规则禁止任何后台组件运行，必须由用户重新打开 APP；部分厂商的极限省电策略也可能终止常驻服务，需在系统设置中允许 E聊后台运行。普通消息在 APP 进程被完全终止后的可靠通知仍需 FCM，但音视频后台来电不再依赖 Firebase。
+
 Android 通话进入 `MODE_IN_COMMUNICATION` 并申请临时音频焦点；Android 12 及以上使用通信设备 API 在听筒与扬声器间切换，旧版本使用 speakerphone 路由。语音通话显式挂载远端 `audio`，视频通话在远端 `video` 就绪后主动播放；控制栏新增“打开/关闭扬声器”按钮。语音默认听筒，视频默认扬声器，结束通话后恢复系统普通音频模式。
 
 APP 在前台通过 SignalR 收到其他账号的新消息时播放短提示音；收到语音或视频来电时循环播放来电铃声，并在接听、拒绝、对方挂断或本机挂断时停止。前台 SignalR、后台本地通知与 FCM 以消息编号或通话编号去重，避免同一事件响两次。后台通知分别使用 `messages-v2` 与 `calls-v2` 声音频道；Android 通知频道设置可由用户在系统设置中单独关闭或调整。
@@ -181,10 +187,11 @@ node scripts/android-push-smoke.mjs http://127.0.0.1:2099
 node scripts/android-safe-area-smoke.mjs http://127.0.0.1:2099
 node scripts/android-e2ee-smoke.mjs http://127.0.0.1:2099
 node scripts/android-call-audio-smoke.mjs http://127.0.0.1:2099
+node scripts/android-call-listener-smoke.mjs http://127.0.0.1:2099
 pnpm android:apk
 ```
 
-`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒绝、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证普通用户/Admin 隔离、用户治理、交易明细、图片元数据、每账号菜单、角色权限白名单和全部 24 个 V2 页面。文档专用脚本进一步验证认证审核、八位邀请码选择、增强日志、失败 IP、幂等资金调整、管理员独立 TOTP、公告、后台加密建群、群发言、群邀请码、密文审计边界和五类下线模块。GeoIP 脚本使用公开测试 IP 验证第三方真实地区、用户资料、登录日志和进程缓存一致性；Android 推送脚本验证设备令牌注册与停用；Android E2EE 脚本会把当前版本本地密钥替换为错误 AES 密钥，再验证收到消息时强制恢复、发送前自动校准、好友端正常解密和消息提示音仅触发一次；Android 通话音频脚本建立双端语音及视频通话，确认双方远端音轨、自动播放、扬声器切换，以及两类来电铃声在接听时停止。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
+`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒绝、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证普通用户/Admin 隔离、用户治理、交易明细、图片元数据、每账号菜单、角色权限白名单和全部 24 个 V2 页面。文档专用脚本进一步验证认证审核、八位邀请码选择、增强日志、失败 IP、幂等资金调整、管理员独立 TOTP、公告、后台加密建群、群发言、群邀请码、密文审计边界和五类下线模块。GeoIP 脚本使用公开测试 IP 验证第三方真实地区、用户资料、登录日志和进程缓存一致性；Android 推送脚本验证设备令牌注册与停用；Android E2EE 脚本会把当前版本本地密钥替换为错误 AES 密钥，再验证收到消息时强制恢复、发送前自动校准、好友端正常解密和消息提示音仅触发一次；Android 通话音频脚本建立双端语音及视频通话，确认双方远端音轨、自动播放、扬声器切换，以及两类来电铃声在接听时停止；原生来电监听脚本验证受限令牌无法访问 API/交互 Hub 方法，并验证监听连接先建立、会话后创建时仍能通过用户组收到邀请和清理事件。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
 
 ## 生产部署
 
@@ -229,6 +236,7 @@ pnpm android:apk
 | POST                | `/api/moments/{id}/comments`                                                           | 发布评论                                        |
 | POST                | `/api/moments/{id}/reports`                                                            | 举报动态                                        |
 | GET                 | `/api/calls`                                                                           | 通话记录                                        |
+| POST                | `/api/calls/listener-token`                                                            | 签发会话绑定的只读 Android 来电监听令牌         |
 | GET                 | `/api/rtc/config`                                                                      | STUN/TURN 与媒体拓扑配置                        |
 | GET/POST            | `/api/push/status`、`/api/push/devices`                                                | 查询推送状态并注册 Android FCM 设备             |
 | DELETE              | `/api/push/devices/{deviceId}`                                                         | 停用当前账号的 Android 推送设备                 |

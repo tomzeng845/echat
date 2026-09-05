@@ -5,7 +5,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/calls")]
-public sealed class CallsController(IChatRepository repository) : ControllerBase
+public sealed class CallsController(IChatRepository repository, TokenService tokens) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CallRecordView>>> List(CancellationToken ct)
@@ -21,6 +21,22 @@ public sealed class CallsController(IChatRepository repository) : ControllerBase
             result.Add(new CallRecordView(call.Id, call.ConversationId, name, call.CallerId, call.Mode, call.Status, call.StartedAtUtc, call.AnsweredAtUtc, call.EndedAtUtc, call.EndReason));
         }
         return Ok(result);
+    }
+
+    [HttpPost("listener-token")]
+    public async Task<ActionResult> ListenerToken(CancellationToken ct)
+    {
+        var sessionId = User.SessionId();
+        var user = await repository.GetUserByIdAsync(User.UserId(), ct);
+        if (user is null || string.IsNullOrWhiteSpace(sessionId)) return Unauthorized();
+        var (token, expiresAtUtc) = tokens.CreateAccessToken(
+            user,
+            TimeSpan.FromDays(7),
+            "call_listener",
+            sessionId,
+            User.DeviceId()
+        );
+        return Ok(new { token, expiresAtUtc, userId = user.Id });
     }
 
     private async Task<string?> OtherUserNameAsync(Conversation? conversation, CancellationToken ct)

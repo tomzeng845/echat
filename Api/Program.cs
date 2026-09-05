@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using EChat.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,7 +42,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         },
         OnTokenValidated = async context =>
         {
-            if (context.Principal?.FindFirst("scope")?.Value != "app") return;
+            if (context.Principal?.FindFirst("scope")?.Value is not ("app" or "call_listener")) return;
             var sessionId = context.Principal.SessionId();
             if (string.IsNullOrWhiteSpace(sessionId)) return;
             var repository = context.HttpContext.RequestServices.GetRequiredService<IChatRepository>();
@@ -51,7 +52,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         }
     };
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.DefaultPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireClaim("scope", "app")
+        .Build();
+    options.AddPolicy("AppOrCallListener", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("scope", "app", "call_listener"));
+});
 var configuredOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -122,7 +132,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.8.5",
+    version = "0.8.6",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },

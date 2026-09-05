@@ -33,6 +33,8 @@ import {
   type User,
 } from "@/lib/echat-api";
 import {
+  clearNativeCallListenerAlert,
+  consumePendingNativeCall,
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
   notifyIncomingEvent,
@@ -224,6 +226,7 @@ const CallManager = forwardRef<
     pendingIce.current.clear();
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
+    if (active) await clearNativeCallListenerAlert(active.callId);
     await stopIncomingCallAlert();
     await endNativeCallAudioSession().catch(() => undefined);
     setLocalStream(null);
@@ -281,6 +284,7 @@ const CallManager = forwardRef<
   useEffect(() => {
     if (!connection) return;
     const invited = (invite: CallInvite) => {
+      if (callRef.current?.callId === invite.callId) return;
       if (callRef.current) {
         connection
           .invoke(
@@ -387,12 +391,24 @@ const CallManager = forwardRef<
     connection.on("call.signal", signaled);
     connection.on("call.rejected", rejected);
     connection.on("call.ended", ended);
+    const nativeInvited = (event: Event) =>
+      invited((event as CustomEvent<CallInvite>).detail);
+    const nativeCleared = (event: Event) => {
+      const callId = (event as CustomEvent<{ callId: string }>).detail.callId;
+      if (callRef.current?.callId === callId) finish(false);
+    };
+    window.addEventListener("echat-native-call", nativeInvited);
+    window.addEventListener("echat-native-call-cleared", nativeCleared);
+    const pendingNativeCall = consumePendingNativeCall();
+    if (pendingNativeCall) invited(pendingNativeCall);
     return () => {
       connection.off("call.invited", invited);
       connection.off("call.accepted", accepted);
       connection.off("call.signal", signaled);
       connection.off("call.rejected", rejected);
       connection.off("call.ended", ended);
+      window.removeEventListener("echat-native-call", nativeInvited);
+      window.removeEventListener("echat-native-call-cleared", nativeCleared);
     };
   }, [connection, remoteStreams, user.id]);
 

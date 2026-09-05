@@ -1,4 +1,12 @@
-# E聊 Android 0.8.5 集成说明
+# E聊 Android 0.8.6 集成说明
+
+## 0.8.6 原生常驻来电服务
+
+0.8.5 的后台来电仍由 WebView 内 SignalR 驱动；Android 暂停 WebView 或回收普通进程后，JavaScript 无法继续接收 `call.invited`。0.8.6 新增 `CallListenerService`，以 `remoteMessaging` 类型前台服务运行 Microsoft SignalR 8 Java 客户端。登录后 APP 从 `/api/calls/listener-token` 获取七天有效、与当前 session/device 绑定的 `call_listener` JWT；原生连接使用 WSS 加入当前用户组，收到语音或视频邀请后显示 `CATEGORY_CALL` 高优先级通知并循环播放 `echat_call.wav`。服务断开后以 1、3、8、15、30、60 秒阶梯重连，Android 重建服务时从私有 SharedPreferences 恢复受限令牌和地址。
+
+来电邀请改为向每位接听者的 `user:{userId}` 组发送，因而原生连接先建立、随后才创建的新会话也能收到。接听、拒绝和结束会额外广播 `call.listener.cleared`，原生服务据此停止铃声并清除通知。点击通知使用 `FLAG_ACTIVITY_SINGLE_TOP | CLEAR_TOP` 恢复现有 Activity；插件把一次性来电载荷送回 React，WebRTC 连接就绪后恢复来电界面。APP 前台由原有 JavaScript SignalR 处理；原生服务按 callerId 过滤当前用户自己发起的通话，避免双连接重复来电。
+
+服务令牌采用最小权限：ASP.NET Core 默认授权策略只接受 `scope=app`，只有 ChatHub 的连接策略额外接受 `call_listener`；该 scope 只加入用户组，不加入会话组，且所有 Hub 可调用方法在入口处再次要求 `scope=app`。因此原生令牌不能读取 REST 数据、订阅聊天密文、标记已读或发起/控制通话。退出账号和会话过期会停止服务并清除令牌。Android 强制停止应用后系统禁止后台组件运行，用户必须重新打开 APP；Google Play 发布还需声明 `remoteMessaging` 前台服务用途。
 
 ## 0.8.5 后台通知栏回退
 
@@ -36,23 +44,34 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 
 ## 官方依据
 
-| 主题             | 采用方式                                                                                                                        | 官方来源                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Android 容器     | Capacitor 8；最低 API 24，使用 Android System WebView                                                                           | [Capacitor Android](https://capacitorjs.com/docs/android)                                  |
-| 消息推送         | `@capacitor/push-notifications` 接收 FCM；Android 13+ 运行时请求通知权限；`google-services.json` 放在 `android/app/`            | [Capacitor Push Notifications](https://capacitorjs.com/docs/apis/push-notifications)       |
-| 后台本地通知     | `@capacitor/local-notifications` 在进程存活且 APP 位于后台时发布通知栏消息；点击通过 `extra` 跳转会话                           | [Capacitor Local Notifications](https://capacitorjs.com/docs/apis/local-notifications)     |
-| 服务端推送       | FCM HTTP v1；服务账号使用 OAuth 2.0 短期访问令牌；请求发送至 `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` | [Firebase FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api)       |
-| 刘海屏和系统栏   | Android 15 / target SDK 35+ 强制边到边；可点击内容需避开 system bars 与 display cutout insets                                   | [Android edge-to-edge](https://developer.android.com/develop/ui/views/layout/edge-to-edge) |
-| WebView 安全区   | Capacitor 8 System Bars 默认向 WebView 注入 `--safe-area-inset-*`，用于修复部分旧 WebView 的 CSS `env()` 安全区值               | [Capacitor System Bars](https://capacitorjs.com/docs/apis/system-bars)                     |
-| 摄像头权限       | Android 原生权限与 WebView 媒体授权结合；相册选择可使用系统 Photo Picker                                                        | [Capacitor Camera](https://capacitorjs.com/docs/apis/camera)                               |
-| 自定义权限桥     | `@CapacitorPlugin` 定义 CAMERA/RECORD_AUDIO 别名，使用 `requestPermissionForAliases` 和 `@PermissionCallback`                   | [Capacitor Android Plugin Guide](https://capacitorjs.com/docs/plugins/android)             |
-| 通话音频路由     | VoIP 使用 `MODE_IN_COMMUNICATION`；Android 12+ 通过 `setCommunicationDevice` 选择听筒或扬声器并在挂断时清除                     | [Android AudioManager](https://developer.android.com/reference/android/media/AudioManager) |
-| 音频焦点         | 播放通话语音前申请临时焦点，使用语音通信 AudioAttributes，结束后释放                                                            | [Manage audio focus](https://developer.android.com/media/optimize/audio-focus)             |
-| 消息与来电提示音 | `MediaPlayer` 播放应用 `res/raw` 音频；消息单次播放，前台来电循环并在通话状态变化时释放                                         | [Android MediaPlayer](https://developer.android.com/reference/android/media/MediaPlayer)   |
-| Android 构建工具 | 官方 Linux command line tools 包 `commandlinetools-linux-15859902_latest.zip`                                                   | [Android Studio downloads](https://developer.android.com/studio)                           |
+| 主题             | 采用方式                                                                                                                        | 官方来源                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Android 容器     | Capacitor 8；最低 API 24，使用 Android System WebView                                                                           | [Capacitor Android](https://capacitorjs.com/docs/android)                                                    |
+| 消息推送         | `@capacitor/push-notifications` 接收 FCM；Android 13+ 运行时请求通知权限；`google-services.json` 放在 `android/app/`            | [Capacitor Push Notifications](https://capacitorjs.com/docs/apis/push-notifications)                         |
+| 后台本地通知     | `@capacitor/local-notifications` 在进程存活且 APP 位于后台时发布通知栏消息；点击通过 `extra` 跳转会话                           | [Capacitor Local Notifications](https://capacitorjs.com/docs/apis/local-notifications)                       |
+| 原生来电连接     | Microsoft SignalR 8 Java 客户端使用 WSS 和受限 Bearer 令牌维护独立连接                                                          | [SignalR Java client](https://learn.microsoft.com/en-us/aspnet/core/signalr/java-client)                     |
+| 来电前台服务     | Android `remoteMessaging` 前台服务；声明类型及对应权限，并在 Google Play 申报用途                                               | [Foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types) |
+| 来电通知         | 高优先级 `CATEGORY_CALL` 通知、铃声和点击恢复；交互式接听/拒绝可进一步采用 CallStyle                                            | [CallStyle notifications](https://developer.android.com/develop/ui/views/notifications/call-style)           |
+| 服务端推送       | FCM HTTP v1；服务账号使用 OAuth 2.0 短期访问令牌；请求发送至 `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` | [Firebase FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api)                         |
+| 刘海屏和系统栏   | Android 15 / target SDK 35+ 强制边到边；可点击内容需避开 system bars 与 display cutout insets                                   | [Android edge-to-edge](https://developer.android.com/develop/ui/views/layout/edge-to-edge)                   |
+| WebView 安全区   | Capacitor 8 System Bars 默认向 WebView 注入 `--safe-area-inset-*`，用于修复部分旧 WebView 的 CSS `env()` 安全区值               | [Capacitor System Bars](https://capacitorjs.com/docs/apis/system-bars)                                       |
+| 摄像头权限       | Android 原生权限与 WebView 媒体授权结合；相册选择可使用系统 Photo Picker                                                        | [Capacitor Camera](https://capacitorjs.com/docs/apis/camera)                                                 |
+| 自定义权限桥     | `@CapacitorPlugin` 定义 CAMERA/RECORD_AUDIO 别名，使用 `requestPermissionForAliases` 和 `@PermissionCallback`                   | [Capacitor Android Plugin Guide](https://capacitorjs.com/docs/plugins/android)                               |
+| 通话音频路由     | VoIP 使用 `MODE_IN_COMMUNICATION`；Android 12+ 通过 `setCommunicationDevice` 选择听筒或扬声器并在挂断时清除                     | [Android AudioManager](https://developer.android.com/reference/android/media/AudioManager)                   |
+| 音频焦点         | 播放通话语音前申请临时焦点，使用语音通信 AudioAttributes，结束后释放                                                            | [Manage audio focus](https://developer.android.com/media/optimize/audio-focus)                               |
+| 消息与来电提示音 | `MediaPlayer` 播放应用 `res/raw` 音频；消息单次播放，前台来电循环并在通话状态变化时释放                                         | [Android MediaPlayer](https://developer.android.com/reference/android/media/MediaPlayer)                     |
+| Android 构建工具 | 官方 Linux command line tools 包 `commandlinetools-linux-15859902_latest.zip`                                                   | [Android Studio downloads](https://developer.android.com/studio)                                             |
 
 ## 安全与运行边界
 
 FCM 客户端文件 `google-services.json` 不包含服务端私钥，但按工程配置文件管理且不提交本仓库。`FCM_SERVICE_ACCOUNT_JSON` 或 `GOOGLE_APPLICATION_CREDENTIALS` 属于服务端秘密，只通过部署平台秘密变量注入。通知载荷不包含消息明文，只包含“加密消息/图片/语音/视频/文件”等摘要、会话编号和消息编号；用户点击通知后由客户端从 API 拉取密文并在设备上解密。
 
 应用通过精确允许的 `https://localhost` / `capacitor://localhost` Origin 访问生产 API，不开放任意生产跨域来源。所有 REST 与 SignalR 地址必须使用 HTTPS/WSS；Android Manifest 禁止明文 HTTP。摄像头和麦克风仅在用户执行扫码、录音或通话操作时请求，并可由用户在系统设置中撤销。
+
+## 常驻来电服务补充依据
+
+原生后台来电连接采用 Microsoft 官方 ASP.NET Core SignalR Java 客户端；官方说明该客户端支持 Android API 16+、仅支持 WebSocket，并可通过 `withAccessTokenProvider` 提供 Bearer 令牌：<https://learn.microsoft.com/en-us/aspnet/core/signalr/java-client>。
+
+Android 14+ 要求前台服务声明具体类型及对应权限。常驻服务采用 `remoteMessaging` 并声明 `FOREGROUND_SERVICE` 与 `FOREGROUND_SERVICE_REMOTE_MESSAGING`；该类型无运行时前置权限，但发布到 Google Play 时需在应用内容页面申报用途：<https://developer.android.com/develop/background-work/services/fgs/service-types>、<https://developer.android.com/develop/background-work/services/fgs/declare>。
+
+来电通知使用 `CATEGORY_CALL`、最高兼容优先级、声音频道和点击恢复。Android 官方还提供 `NotificationCompat.CallStyle.forIncomingCall`，未来增加通知栏直接接听/拒绝动作时应采用该模板：<https://developer.android.com/develop/ui/views/notifications/call-style>。

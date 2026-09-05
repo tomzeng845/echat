@@ -3,26 +3,32 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace EChat.Api;
 
-[Authorize]
+[Authorize(Policy = "AppOrCallListener")]
 public sealed class ChatHub(IChatRepository repository, IConfiguration configuration, PushNotificationService push) : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var userId = Context.User!.UserId();
-        var conversations = await repository.GetConversationsAsync(userId);
-        foreach (var conversation in conversations) await Groups.AddToGroupAsync(Context.ConnectionId, $"conversation:{conversation.Id}");
+        var principal = Context.User!;
+        var userId = principal.UserId();
+        if (principal.FindFirst("scope")?.Value == "app")
+        {
+            var conversations = await repository.GetConversationsAsync(userId);
+            foreach (var conversation in conversations) await Groups.AddToGroupAsync(Context.ConnectionId, $"conversation:{conversation.Id}");
+        }
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{userId}");
         await base.OnConnectedAsync();
     }
 
     public async Task JoinConversation(string conversationId)
     {
+        RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         await Groups.AddToGroupAsync(Context.ConnectionId, $"conversation:{conversation.Id}");
     }
 
     public async Task MarkRead(string conversationId, long sequence)
     {
+        RequireInteractiveScope();
         var userId = Context.User!.UserId();
         var conversation = await RequireConversationMemberAsync(conversationId);
         var member = conversation.Members.First(x => x.UserId == userId && x.LeftAtSequence is null);
@@ -33,6 +39,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
 
     public async Task CallInvite(string conversationId, string callId, string mode)
     {
+        RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         if (mode is not ("audio" or "video")) throw new HubException("INVALID_CALL_MODE");
         if (!Guid.TryParse(callId, out _)) throw new HubException("INVALID_CALL_ID");
@@ -42,30 +49,37 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var existing = await repository.GetCallAsync(callId);
         if (existing is null) await repository.UpsertCallAsync(new CallRecord { Id = callId, ConversationId = conversationId, CallerId = caller.Id, Mode = mode, ParticipantIds = participants });
         else if (existing.CallerId != caller.Id || existing.ConversationId != conversationId) throw new HubException("CALL_ID_CONFLICT");
-        await Clients.OthersInGroup($"conversation:{conversation.Id}").SendAsync("call.invited", new { conversationId, callId, mode, callerId = caller.Id, callerName = caller.DisplayName, callerAvatarUrl = caller.AvatarUrl });
+        var invite = new { conversationId, callId, mode, callerId = caller.Id, callerName = caller.DisplayName, callerAvatarUrl = caller.AvatarUrl };
+        foreach (var recipientId in participants.Where(x => x != caller.Id))
+            await Clients.Group($"user:{recipientId}").SendAsync("call.invited", invite);
         _ = push.SendCallInviteAsync(participants.Where(x => x != caller.Id), caller, conversationId, callId, mode, CancellationToken.None);
     }
 
     public async Task CallAccept(string conversationId, string callId)
     {
+        RequireInteractiveScope();
         await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
         if (call.Status == CallRecordStatus.Ringing) { call.Status = CallRecordStatus.Active; call.AnsweredAtUtc ??= DateTime.UtcNow; await repository.UpsertCallAsync(call); }
         var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.accepted", new { conversationId, callId, userId = user.Id, displayName = user.DisplayName, avatarUrl = user.AvatarUrl });
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
     }
 
     public async Task CallReject(string conversationId, string callId, string callerId, string reason = "declined")
     {
+        RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
         if (!conversation.Members.Any(x => x.UserId == callerId && x.LeftAtSequence is null)) throw new HubException("CALLER_NOT_IN_CONVERSATION");
         if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Ringing) { call.Status = CallRecordStatus.Rejected; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = reason; await repository.UpsertCallAsync(call); }
         await Clients.User(callerId).SendAsync("call.rejected", new { conversationId, callId, userId = Context.User!.UserId(), reason });
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
     }
 
     public async Task CallSignal(string conversationId, string callId, string targetUserId, string signalType, string payload)
     {
+        RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
         if (!conversation.Members.Any(x => x.UserId == targetUserId && x.LeftAtSequence is null) || !call.ParticipantIds.Contains(targetUserId)) throw new HubException("TARGET_NOT_IN_CALL");
@@ -75,10 +89,24 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
 
     public async Task CallEnd(string conversationId, string callId)
     {
+        RequireInteractiveScope();
         await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
         if (call.Status is CallRecordStatus.Ringing or CallRecordStatus.Active) { call.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = "ended"; await repository.UpsertCallAsync(call); }
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.ended", new { conversationId, callId, userId = Context.User!.UserId() });
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+    }
+
+    private async Task NotifyCallListenersClearedAsync(IEnumerable<string> participantIds, string callId)
+    {
+        foreach (var participantId in participantIds.Distinct())
+            await Clients.Group($"user:{participantId}").SendAsync("call.listener.cleared", new { callId });
+    }
+
+    private void RequireInteractiveScope()
+    {
+        if (Context.User?.FindFirst("scope")?.Value != "app")
+            throw new HubException("LISTENER_SCOPE_READ_ONLY");
     }
 
     private async Task<Conversation> RequireConversationMemberAsync(string conversationId)

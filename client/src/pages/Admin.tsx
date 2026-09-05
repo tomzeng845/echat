@@ -653,7 +653,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.8.5
+                ADMIN 0.8.6
               </div>
             </div>
           </a>

@@ -41,6 +41,7 @@ import {
   consumePendingNotification,
   notifyIncomingEvent,
   registerNativePush,
+  unregisterNativePush,
   type NativeNotificationTarget,
 } from "@/lib/mobile-native";
 import type { HubConnection } from "@microsoft/signalr";
@@ -2047,11 +2048,15 @@ export default function Home() {
     getSession()
   );
   const onLogout = () => {
+    unregisterNativePush().catch(() => undefined);
     setSession(null);
     setCurrentSession(null);
   };
   useEffect(() => {
-    const expire = () => setCurrentSession(null);
+    const expire = () => {
+      unregisterNativePush().catch(() => undefined);
+      setCurrentSession(null);
+    };
     window.addEventListener("echat-session-expired", expire);
     return () => window.removeEventListener("echat-session-expired", expire);
   }, []);

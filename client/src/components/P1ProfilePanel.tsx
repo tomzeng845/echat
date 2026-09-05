@@ -21,6 +21,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import {
+  getNativeCallListenerState,
   getNativePushState,
   isNativeAndroid,
   registerNativePush,
@@ -46,6 +47,9 @@ export default function P1ProfilePanel({
   const [pushState, setPushState] = useState<NativePushState>(() =>
     getNativePushState()
   );
+  const [callListenerRunning, setCallListenerRunning] = useState(() =>
+    getNativeCallListenerState()
+  );
   const [section, setSection] = useState<"home" | "devices" | "calls">("home");
 
   async function load() {
@@ -66,6 +70,13 @@ export default function P1ProfilePanel({
       setPushState((event as CustomEvent<NativePushState>).detail);
     window.addEventListener("echat-push-status", update);
     return () => window.removeEventListener("echat-push-status", update);
+  }, []);
+  useEffect(() => {
+    const update = (event: Event) =>
+      setCallListenerRunning((event as CustomEvent<boolean>).detail);
+    window.addEventListener("echat-call-listener-status", update);
+    return () =>
+      window.removeEventListener("echat-call-listener-status", update);
   }, []);
 
   async function revoke(id: string) {
@@ -104,7 +115,7 @@ export default function P1ProfilePanel({
         toast.warning("通知权限已关闭，请在 Android 系统设置中允许通知");
       else if (state === "unavailable")
         toast.warning("Android 客户端尚未配置 Firebase，请联系管理员");
-      else toast.success("正在连接 Android 消息推送");
+      else toast.success("Android 后台通知与来电服务已开启");
     } catch {
       toast.error("暂时无法启用 Android 消息推送");
     }
@@ -229,6 +240,18 @@ export default function P1ProfilePanel({
         icon={Bell}
         title="消息推送"
         value={pushLabel}
+        onClick={enablePush}
+      />
+      <Action
+        icon={Phone}
+        title="后台来电"
+        value={
+          isNativeAndroid()
+            ? callListenerRunning
+              ? "常驻服务运行中"
+              : "点击重新连接"
+            : "仅 Android APP"
+        }
         onClick={enablePush}
       />
       <Action
