@@ -81,7 +81,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.3.1", status = "healthy", utcNow = DateTime.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.3.2", status = "healthy", utcNow = DateTime.UtcNow }));
 app.MapFallbackToFile("index.html");
 
 await app.StartAsync();

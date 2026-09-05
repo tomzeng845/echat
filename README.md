@@ -12,7 +12,7 @@
 | 管理登录 | 管理员密码后追加 Google Authenticator 兼容 TOTP 验证 | 已完成后端链路 |
 | 联系人 | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单 | 已完成 P1 |
 | 会话 | 单聊、群聊、会话列表、会话成员权限 | 已完成 MVP |
-| 消息 | SignalR 实时事件、增量补拉、客户端消息号幂等、序号、已读游标、2 分钟撤回 | 已完成 MVP |
+| 消息 | SignalR 实时事件、增量补拉、幂等、序号、进入会话立即清零、实时已读回执、2 分钟撤回 | 已完成 P1 |
 | 富媒体 | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应 | 已完成基础版本 |
 | 端到端加密 | 浏览器生成 RSA-OAEP 身份密钥；文字及聊天附件使用会话 AES-GCM-256 密钥加密；服务器保存密文和成员密钥信封 | 已完成 MVP |
 | 响应式界面 | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏 | 已完成 |
@@ -39,6 +39,7 @@
 | `scripts/p1-qr-smoke.mjs` | 二维码登录、扫码加好友和远程退出设备测试 |
 | `scripts/contact-realtime-smoke.mjs` | 双账号好友申请、申请人资料和联系人双端实时更新测试 |
 | `scripts/mobile-friend-chat-smoke.mjs` | 390×844 手机视口好友接受、进入聊天和发送消息测试 |
+| `scripts/unread-clear-smoke.mjs` | 390×844 手机视口未读角标、进入清零和当前会话实时已读测试 |
 | `Dockerfile` | Node 构建前端、.NET 发布后端的多阶段生产镜像 |
 
 ## 本地运行
@@ -91,6 +92,7 @@ node scripts/signalr-call-smoke.mjs http://127.0.0.1:2099
 node scripts/p1-qr-smoke.mjs http://127.0.0.1:2099
 node scripts/contact-realtime-smoke.mjs http://127.0.0.1:2099
 node scripts/mobile-friend-chat-smoke.mjs http://127.0.0.1:2099
+node scripts/unread-clear-smoke.mjs http://127.0.0.1:2099
 ```
 
 `pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒接、ICE/SDP、结束、记录和 RTC 配置。

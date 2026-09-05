@@ -217,7 +217,8 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<string | null>(null);
-  selectedRef.current = selectedId;
+  const chatVisible = nav === "chats" && (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
+  selectedRef.current = chatVisible ? selectedId : null;
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
   const filteredConversations = conversations.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
@@ -245,12 +246,22 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
     setSelectedId(current => current && nextConversations.some(x => x.id === current) ? current : nextConversations[0]?.id ?? null);
   }, [user.account]);
 
+  const markConversationRead = useCallback(async (conversationId: string, sequence: number) => {
+    if (sequence <= 0) return;
+    setConversations(current => current.map(item => item.id === conversationId ? { ...item, readSequence: Math.max(item.readSequence, Math.min(sequence, item.lastSequence)) } : item));
+    try {
+      await api<void>(`/api/conversations/${conversationId}/read/${sequence}`, { method: "POST" });
+    } catch (cause) {
+      loadData().catch(() => undefined);
+      throw cause;
+    }
+  }, [loadData]);
+
   const loadMessages = useCallback(async (conversationId: string) => {
     const encrypted = await api<Message[]>(`/api/conversations/${conversationId}/messages?after=0&limit=100`);
     setMessages(await Promise.all(encrypted.map(decrypt)));
-    const latestSequence = encrypted.at(-1)?.sequence;
-    if (latestSequence) await api<void>(`/api/conversations/${conversationId}/read/${latestSequence}`, { method: "POST" });
-  }, [decrypt]);
+    if (encrypted.length) await markConversationRead(conversationId, Number.MAX_SAFE_INTEGER);
+  }, [decrypt, markConversationRead]);
 
   useEffect(() => {
     (async () => {
@@ -275,6 +286,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
         if (message.conversationId === selectedRef.current) {
           const value = await decrypt(message);
           setMessages(current => current.some(x => x.id === value.id) ? current : [...current, value].sort((a, b) => a.sequence - b.sequence));
+          await markConversationRead(message.conversationId, message.sequence).catch(() => undefined);
         }
         loadData().catch(() => undefined);
       },
@@ -293,6 +305,10 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
       onContactUpdate: event => {
         if (event.status === "Friend") toast.success(`${event.peer?.displayName || "好友"}已加入联系人`);
         loadData().catch(() => undefined);
+      },
+      onReceipt: receipt => {
+        if (receipt.userId !== user.id) return;
+        setConversations(current => current.map(item => item.id === receipt.conversationId ? { ...item, readSequence: Math.max(item.readSequence, receipt.readSequence) } : item));
       },
       onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
     });
@@ -318,7 +334,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
       setRealtimeConnection(null);
       connection.stop();
     };
-  }, [decrypt, loadData]);
+  }, [decrypt, loadData, markConversationRead, user.id]);
 
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === "visible") loadData().catch(() => undefined); };
@@ -328,10 +344,10 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   }, [loadData]);
 
   useEffect(() => {
-    if (!selectedId) { setMessages([]); return; }
+    if (!selectedId || !chatVisible) { if (!selectedId) setMessages([]); return; }
     loadMessages(selectedId).catch(cause => toast.error(cause.message));
     connectionRef.current?.invoke("JoinConversation", selectedId).catch(() => undefined);
-  }, [loadMessages, selectedId]);
+  }, [chatVisible, loadMessages, selectedId]);
 
   async function addFriend() {
     if (!addAccount.trim()) return;
@@ -463,7 +479,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
 
           <div className="flex-1 overflow-y-auto px-3 pb-24 md:pb-4">
             {nav === "chats" && (filteredConversations.length ? filteredConversations.map(item => (
-              <button key={item.id} onClick={() => { setSelectedId(item.id); setMobileDetail(true); }} className={`mb-1 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? "bg-white shadow-sm ring-1 ring-slate-200/60" : "hover:bg-white/70"}`}>
+              <button key={item.id} onClick={() => { setConversations(current => current.map(value => value.id === item.id ? { ...value, readSequence: value.lastSequence } : value)); setSelectedId(item.id); setMobileDetail(true); }} className={`mb-1 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? "bg-white shadow-sm ring-1 ring-slate-200/60" : "hover:bg-white/70"}`}>
                 <Avatar name={item.name} src={item.avatarUrl} online={item.type === "Direct"} />
                 <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{item.name}</span><time className="shrink-0 text-[11px] text-slate-400">{item.lastMessageAtUtc ? new Date(item.lastMessageAtUtc).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}</time></div><div className="mt-1 flex items-center justify-between gap-2"><p className="truncate text-xs text-slate-500">{item.lastMessagePreview}</p>{item.lastSequence > item.readSequence && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-teal-500 px-1 text-[10px] font-semibold text-white">{Math.min(99, item.lastSequence - item.readSequence)}</span>}</div></div>
               </button>
