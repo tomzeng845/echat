@@ -23,7 +23,7 @@ const admin = await fetchApi("/api/auth/login", null, {
 if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp) throw new Error("development bootstrap admin login failed");
 
 const overview = await fetchApi("/api/admin/overview", admin.accessToken);
-if (overview.version !== "0.4.1" || overview.metrics.users < 1) throw new Error("admin overview metrics invalid");
+if (overview.version !== "0.4.2" || overview.metrics.users < 1) throw new Error("admin overview metrics invalid");
 
 const normalAccount = `adminuser${suffix}`;
 const normal = await fetchApi("/api/auth/register", null, {
@@ -64,8 +64,8 @@ try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   await page.goto(`${base}/admin`, { waitUntil: "networkidle0" });
-  await page.type('input[type="password"]', adminPassword);
-  await page.evaluate(() => [...document.querySelectorAll("button")].find(button => button.textContent?.includes("进入管理后台"))?.click());
+  await page.waitForFunction(() => document.body.innerText.includes("使用预览管理员一键登录"), { timeout: 10000 });
+  await page.evaluate(() => [...document.querySelectorAll("button")].find(button => button.textContent?.includes("使用预览管理员一键登录"))?.click());
   await page.waitForFunction(() => document.body.innerText.includes("运营概览") && document.body.innerText.includes("用户总数"), { timeout: 10000 });
   await page.evaluate(() => [...document.querySelectorAll("button")].find(button => button.textContent?.includes("用户管理"))?.click());
   await page.waitForFunction(account => document.body.innerText.includes(account), { timeout: 10000 }, normalAccount);

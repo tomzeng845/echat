@@ -53,7 +53,7 @@ pnpm install
 pnpm dev
 ```
 
-浏览器访问 `http://localhost:2099`，管理后台位于 `http://localhost:2099/admin`。开发模式会创建默认管理账号 `E_Admin`（登录时大小写不敏感，实际标准化为 `e_admin`），初始密码为 `Heibai@99`。如果开发数据中已存在同名普通用户、旧密码、停用或锁定状态，启动时会自动恢复为可登录的预览管理员；生产环境绝不会执行此密码恢复。该默认值只用于开发预览，正式部署必须通过安全环境变量更换。如需更换本地端口，可设置 `ECHAT_PORT`。
+浏览器访问 `http://localhost:2099`，管理后台位于 `http://localhost:2099/admin`。开发模式以及未配置 MongoDB 的临时发布演示会创建默认管理账号 `E_Admin`（登录时大小写不敏感，实际标准化为 `e_admin`），初始密码为 `Heibai@99`。如果临时预览数据中已存在同名普通用户、旧密码、停用或锁定状态，启动时会自动恢复；管理登录页还提供“一键预览管理员登录”，避免手工输入差异。配置 MongoDB 后会自动切换到正式安全策略，不再使用或恢复默认密码。如需更换本地端口，可设置 `ECHAT_PORT`。
 
 ## MongoDB 配置
 
@@ -75,7 +75,7 @@ MongoDB 初始化会创建账号唯一索引、发送者与客户端消息号唯
 
 ## 安全配置
 
-生产环境必须设置 `JWT_SECRET`、`ADMIN_BOOTSTRAP_PASSWORD` 和 `ADMIN_TOTP_SECRET`，可选用 `ADMIN_BOOTSTRAP_ACCOUNT` 修改管理账号。`ADMIN_TOTP_SECRET` 使用 Base32 编码，可直接录入 Google Authenticator。普通用户登录不要求 TOTP；生产环境中角色为 `Admin` 的账号完成密码验证后，必须再提交 6 位动态验证码。生产模式不会使用代码中的开发默认密码，也不会在管理员已存在时自动重置密码。
+使用 MongoDB 的正式生产环境必须设置 `JWT_SECRET`、`ADMIN_BOOTSTRAP_PASSWORD` 和 `ADMIN_TOTP_SECRET`，可选用 `ADMIN_BOOTSTRAP_ACCOUNT` 修改管理账号。`ADMIN_TOTP_SECRET` 使用 Base32 编码，可直接录入 Google Authenticator。普通用户登录不要求 TOTP；持久化生产环境中角色为 `Admin` 的账号完成密码验证后，必须再提交 6 位动态验证码，且不会使用或重置演示默认密码。
 
 浏览器私钥以不可导出的 `CryptoKey` 保存到 IndexedDB。会话正文及聊天附件在浏览器使用 AES-GCM-256 加密后再发送。每个会话密钥通过成员 RSA-OAEP 公钥分别封装。服务端只保存密文、随机数、算法标识、媒体资产编号与成员密钥信封。
 

@@ -2,6 +2,14 @@ using Microsoft.AspNetCore.Identity;
 
 namespace EChat.Api;
 
+public static class RuntimeMode
+{
+    public static bool IsEphemeralPreview(IConfiguration configuration, IHostEnvironment environment) =>
+        environment.IsDevelopment()
+        || (string.IsNullOrWhiteSpace(configuration["Mongo:ConnectionString"])
+            && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI")));
+}
+
 public sealed class AdminBootstrapService(
     IChatRepository repository,
     PasswordHasher<UserAccount> passwordHasher,
@@ -11,12 +19,13 @@ public sealed class AdminBootstrapService(
 {
     public async Task EnsureAsync(CancellationToken ct = default)
     {
+        var previewMode = RuntimeMode.IsEphemeralPreview(configuration, environment);
         var account = (configuration["Admin:BootstrapAccount"]
             ?? Environment.GetEnvironmentVariable("ADMIN_BOOTSTRAP_ACCOUNT")
             ?? "E_Admin").Trim().ToLowerInvariant();
         var password = configuration["Admin:BootstrapPassword"]
             ?? Environment.GetEnvironmentVariable("ADMIN_BOOTSTRAP_PASSWORD")
-            ?? (environment.IsDevelopment() ? "Heibai@99" : null);
+            ?? (previewMode ? "Heibai@99" : null);
 
         if (string.IsNullOrWhiteSpace(password))
         {
@@ -36,7 +45,7 @@ public sealed class AdminBootstrapService(
                 logger.LogWarning("Existing bootstrap account {Account} was promoted to Admin", account);
             }
 
-            if (environment.IsDevelopment())
+            if (previewMode)
             {
                 var passwordMatches = passwordHasher.VerifyHashedPassword(existing, existing.PasswordHash, password) != PasswordVerificationResult.Failed;
                 if (!passwordMatches)
@@ -71,7 +80,7 @@ public sealed class AdminBootstrapService(
         try
         {
             await repository.AddUserAsync(admin, ct);
-            logger.LogWarning("Development bootstrap admin {Account} created; change the password before production use", account);
+            logger.LogWarning("Preview bootstrap admin {Account} created; configure MongoDB and secure admin credentials before production use", account);
         }
         catch
         {

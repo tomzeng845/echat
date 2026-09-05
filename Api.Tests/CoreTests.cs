@@ -183,6 +183,34 @@ public sealed class CoreTests
         Assert.NotEqual(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(restored, restored.PasswordHash, "Heibai@99"));
     }
 
+    [Fact]
+    public async Task AdminBootstrap_EphemeralProductionPreviewCreatesDocumentedAccount()
+    {
+        var repository = new InMemoryChatRepository();
+        var configuration = new ConfigurationBuilder().Build();
+        var environment = new TestHostEnvironment { EnvironmentName = Environments.Production };
+        var hasher = new PasswordHasher<UserAccount>();
+
+        Assert.True(RuntimeMode.IsEphemeralPreview(configuration, environment));
+        await new AdminBootstrapService(repository, hasher, configuration, environment, NullLogger<AdminBootstrapService>.Instance).EnsureAsync();
+
+        var admin = await repository.GetUserByAccountAsync("e_admin");
+        Assert.NotNull(admin);
+        Assert.NotEqual(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(admin!, admin!.PasswordHash, "Heibai@99"));
+    }
+
+    [Fact]
+    public async Task AdminBootstrap_PersistentProductionRequiresExplicitPassword()
+    {
+        var repository = new InMemoryChatRepository();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Mongo:ConnectionString"] = "mongodb://example.invalid" }).Build();
+        var environment = new TestHostEnvironment { EnvironmentName = Environments.Production };
+
+        Assert.False(RuntimeMode.IsEphemeralPreview(configuration, environment));
+        await new AdminBootstrapService(repository, new PasswordHasher<UserAccount>(), configuration, environment, NullLogger<AdminBootstrapService>.Instance).EnsureAsync();
+        Assert.Null(await repository.GetUserByAccountAsync("e_admin"));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

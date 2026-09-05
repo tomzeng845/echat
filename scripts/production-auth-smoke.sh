@@ -7,8 +7,8 @@ account="prodfix$(date +%s)"
 
 (
   cd "$(dirname "$0")/.."
-  env -u ADMIN_TOTP_SECRET ASPNETCORE_ENVIRONMENT=Production PORT=2199 JWT_SECRET="production-smoke-jwt-secret" \
-    dotnet run --no-build --project Api/EChat.Api.csproj >"$log" 2>&1
+  exec env -u ADMIN_TOTP_SECRET ASPNETCORE_ENVIRONMENT=Production PORT=2199 JWT_SECRET="production-smoke-jwt-secret" \
+    dotnet Api/bin/Debug/net8.0/EChat.Api.dll >"$log" 2>&1
 ) &
 pid=$!
 cleanup() { kill "$pid" >/dev/null 2>&1 || true; wait "$pid" >/dev/null 2>&1 || true; }
@@ -31,4 +31,15 @@ if [[ "$status" != "200" ]] || ! grep -q '"success":true' "$response_file"; then
   exit 1
 fi
 
-echo "PRODUCTION_AUTH_OK account=$account status=$status"
+admin_file="$(mktemp)"
+admin_status="$(curl -sS -o "$admin_file" -w '%{http_code}' "$base/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"E_Admin","password":"Heibai@99","deviceName":"Production preview admin smoke"}')"
+
+if [[ "$admin_status" != "200" ]] || ! grep -q '"role":"Admin"' "$admin_file"; then
+  echo "PRODUCTION_PREVIEW_ADMIN_FAILED status=$admin_status body=$(cat "$admin_file")" >&2
+  tail -80 "$log" >&2
+  exit 1
+fi
+
+echo "PRODUCTION_AUTH_OK account=$account status=$status preview_admin_status=$admin_status"

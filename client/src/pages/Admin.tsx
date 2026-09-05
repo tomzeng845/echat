@@ -68,18 +68,28 @@ function AdminLogin({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
   const [totp, setTotp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [runtime, setRuntime] = useState<{ version: string; previewAdminEnabled?: boolean } | null>(null);
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+  useEffect(() => {
+    fetch("/api/health").then(response => response.json()).then(setRuntime).catch(() => setRuntime(null));
+  }, []);
+
+  async function authenticate(loginAccount = account, loginPassword = password) {
+    setBusy(true); setError("");
     try {
       const result = pendingToken
         ? await api<AuthResponse>("/api/auth/totp", { method: "POST", body: JSON.stringify({ pendingToken, code: totp, deviceName: `E聊管理后台 · ${navigator.userAgent}` }) })
-        : await api<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ account, password, deviceName: `E聊管理后台 · ${navigator.userAgent}`, deviceId: getDeviceId() }) });
+        : await api<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ account: loginAccount, password: loginPassword, deviceName: `E聊管理后台 · ${navigator.userAgent}`, deviceId: getDeviceId() }) });
       if (result.requiresTotp && result.pendingToken) { setPendingToken(result.pendingToken); return; }
       if (!result.accessToken || !result.user || result.user.role !== "Admin") throw new Error("该账号没有管理权限");
       setSession(result); onAuthenticated(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "登录失败"); }
     finally { setBusy(false); }
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    await authenticate();
   }
 
   return (
@@ -107,6 +117,8 @@ function AdminLogin({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
               {error && <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
               <button disabled={busy || (pendingToken ? totp.length !== 6 : !account || !password)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-400 py-3.5 font-semibold text-[#04201d] transition hover:bg-teal-300 active:scale-[.98] disabled:opacity-50">{busy ? <RefreshCw className="animate-spin" size={18} /> : <KeyRound size={18} />}{pendingToken ? "验证并进入" : "进入管理后台"}</button>
             </form>
+            {!pendingToken && runtime?.previewAdminEnabled && <button type="button" disabled={busy} onClick={() => { setAccount("E_Admin"); setPassword("Heibai@99"); authenticate("E_Admin", "Heibai@99"); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-teal-300/25 bg-teal-300/10 py-3 text-sm font-medium text-teal-200 transition hover:bg-teal-300/15 disabled:opacity-50"><UserCheck size={17} />使用预览管理员一键登录</button>}
+            {!pendingToken && runtime && <p className="mt-4 text-center text-[11px] text-slate-500">当前 API {runtime.version}{runtime.previewAdminEnabled ? " · 预览管理员已启用" : " · 需要正式管理员凭据"}</p>}
             <a href="/" className="mt-5 block text-center text-sm text-slate-400 transition hover:text-teal-300">返回 E聊客户端</a>
           </div>
         </div>

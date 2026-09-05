@@ -5,7 +5,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, TotpService totp, IHostEnvironment environment) : ControllerBase
+public sealed class AdminController(IChatRepository repository, TotpService totp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -23,7 +23,7 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.4.1",
+            version = "0.4.2",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -41,7 +41,7 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
             security = new
             {
                 totpConfigured = totp.IsConfigured,
-                developmentPasswordLogin = environment.IsDevelopment(),
+                developmentPasswordLogin = RuntimeMode.IsEphemeralPreview(configuration, environment),
                 transport = "TLS required in production",
                 messagePayload = "client-side AES-GCM ciphertext"
             }

@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, SessionService sessions, IHostEnvironment environment) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, SessionService sessions, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
@@ -49,7 +49,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
 
         if (user.Role == UserRole.Admin)
         {
-            if (!environment.IsDevelopment())
+            if (!RuntimeMode.IsEphemeralPreview(configuration, environment))
             {
                 if (!totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
                 var (pending, expires) = tokens.CreateAccessToken(user, TimeSpan.FromMinutes(5), "admin_pending");
