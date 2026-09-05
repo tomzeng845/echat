@@ -4,18 +4,19 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
-    "check": "tsc --noEmit",
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build && dotnet publish Api/EChat.Api.csproj -c Release -o dist/dotnet",
+    "start": "dotnet dist/dotnet/EChat.Api.dll",
+    "check": "tsc --noEmit && dotnet build Api/EChat.Api.csproj --no-restore",
     "format": "prettier --write .",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests && dotnet test Api.Tests/EChat.Api.Tests.csproj",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",
     "@hookform/resolvers": "^5.2.2",
+    "@microsoft/signalr": "^10.0.11",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -111,5 +112,6 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     }
-  }
+  },
+  "description": "E聊：React HTML5 + ASP.NET Core SignalR + MongoDB 即时通信 MVP"
 }
