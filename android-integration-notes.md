@@ -1,4 +1,10 @@
-# E聊 Android 0.8.2 集成说明
+# E聊 Android 0.8.3 集成说明
+
+## 0.8.3 新消息密钥恢复与提示音
+
+0.8.2 的会话轮换只在会话主记录保留最新信封。`conversation.updated` 与 `message.created` 是两个独立 SignalR 事件；新消息先到、会话刷新尚未写入 IndexedDB 时，客户端会找不到该消息的 `keyVersion`，从而误显示“该消息发送于本设备加入加密会话之前”。同一 `deviceId` 重装后还可能在新公钥发布前由实时连接触发轮换。0.8.3 强制先发布当前设备公钥，再加载会话和启动 SignalR；同时在内存仓库与 MongoDB `conversationKeyEnvelopes` 集合为每个版本保存不可变设备信封快照，并提供只向会话成员返回当前设备指定版本信封的 API。客户端解密前若本地缺钥，会即时获取、用本机不可导出 RSA 私钥打开并保存，再解密该条消息。真正没有历史设备信封时仍保持原安全提示。
+
+Android 原生桥使用 `MediaPlayer` 播放 `res/raw/echat_message.wav` 与 `res/raw/echat_call.wav`。消息音短促且只播放一次；语音和视频来电铃声循环播放，在接听、拒绝、对方结束、本机挂断或 Activity 销毁时释放。前台 SignalR 和前台 FCM 以消息/通话编号做 5 秒去重；FCM 后台通知迁移到带自定义声音的 `messages-v2` 与 `calls-v2` 频道，避免既有 Android 通知频道声音不可变导致升级后仍静音。
 
 ## 0.8.2 消息解密与通话音频
 
@@ -29,6 +35,7 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 | 自定义权限桥     | `@CapacitorPlugin` 定义 CAMERA/RECORD_AUDIO 别名，使用 `requestPermissionForAliases` 和 `@PermissionCallback`                   | [Capacitor Android Plugin Guide](https://capacitorjs.com/docs/plugins/android)             |
 | 通话音频路由     | VoIP 使用 `MODE_IN_COMMUNICATION`；Android 12+ 通过 `setCommunicationDevice` 选择听筒或扬声器并在挂断时清除                     | [Android AudioManager](https://developer.android.com/reference/android/media/AudioManager) |
 | 音频焦点         | 播放通话语音前申请临时焦点，使用语音通信 AudioAttributes，结束后释放                                                            | [Manage audio focus](https://developer.android.com/media/optimize/audio-focus)             |
+| 消息与来电提示音 | `MediaPlayer` 播放应用 `res/raw` 音频；消息单次播放，前台来电循环并在通话状态变化时释放                                         | [Android MediaPlayer](https://developer.android.com/reference/android/media/MediaPlayer)   |
 | Android 构建工具 | 官方 Linux command line tools 包 `commandlinetools-linux-15859902_latest.zip`                                                   | [Android Studio downloads](https://developer.android.com/studio)                           |
 
 ## 安全与运行边界

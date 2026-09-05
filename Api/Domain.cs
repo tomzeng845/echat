@@ -172,6 +172,15 @@ public sealed class Conversation
     public bool IsDissolved { get; set; }
 }
 
+public sealed class ConversationKeyEnvelopeRecord
+{
+    [BsonId] public string Id { get; set; } = "";
+    public string ConversationId { get; set; } = "";
+    public int KeyVersion { get; set; } = 1;
+    public Dictionary<string, string> KeyEnvelopes { get; set; } = [];
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class ChatMessage
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");

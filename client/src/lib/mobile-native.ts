@@ -7,6 +7,7 @@ import {
 import {
   PushNotifications,
   type ActionPerformed,
+  type PushNotificationSchema,
   type Token,
 } from "@capacitor/push-notifications";
 import { api, getDeviceId } from "./echat-api";
@@ -27,9 +28,14 @@ export type NativeNotificationTarget = {
   requestId?: string;
   callId?: string;
 };
+export type AlertSoundKind = "message" | "voice-call" | "video-call";
 
 type MediaPermissionsPlugin = {
   getCapabilities(): Promise<{ firebaseConfigured: boolean }>;
+  playAlertSound(options: {
+    kind: AlertSoundKind;
+  }): Promise<{ playing: boolean }>;
+  stopAlertSound(options: { kind: "message" | "call" | "all" }): Promise<void>;
   setCallAudioRoute(options: {
     speaker: boolean;
   }): Promise<{ speaker: boolean; applied: boolean }>;
@@ -48,6 +54,7 @@ let pushState: NativePushState = Capacitor.isNativePlatform()
 let listeners: PluginListenerHandle[] = [];
 let appListener: PluginListenerHandle | null = null;
 let pushStarted = false;
+const recentAlerts = new Map<string, number>();
 
 export function isNativeAndroid() {
   return Capacitor.getPlatform() === "android";
@@ -82,6 +89,53 @@ function openNotificationTarget(
   );
 }
 
+function alertFromPush(notification: PushNotificationSchema) {
+  const data = notification.data || {};
+  const type = typeof data.type === "string" ? data.type : "";
+  if (type === "message")
+    return playIncomingAlert(
+      "message",
+      typeof data.messageId === "string" ? data.messageId : undefined
+    );
+  if (type === "call")
+    return playIncomingAlert(
+      data.mode === "video" ? "video-call" : "voice-call",
+      typeof data.callId === "string" ? data.callId : undefined
+    );
+  return Promise.resolve(false);
+}
+
+export async function playIncomingAlert(
+  kind: AlertSoundKind,
+  eventId?: string
+) {
+  const now = Date.now();
+  for (const [key, timestamp] of Array.from(recentAlerts.entries()))
+    if (now - timestamp > 10_000) recentAlerts.delete(key);
+  const dedupeKey = `${kind}:${eventId || now}`;
+  if (eventId && now - (recentAlerts.get(dedupeKey) || 0) < 5_000) return false;
+  recentAlerts.set(dedupeKey, now);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(
+      new CustomEvent("echat-alert-sound", {
+        detail: { kind, eventId: eventId || "" },
+      })
+    );
+  if (!isNativeAndroid()) return true;
+  return MediaPermissions.playAlertSound({ kind })
+    .then(result => result.playing)
+    .catch(() => false);
+}
+
+export async function stopIncomingCallAlert() {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event("echat-alert-sound-stopped"));
+  if (!isNativeAndroid()) return;
+  await MediaPermissions.stopAlertSound({ kind: "call" }).catch(
+    () => undefined
+  );
+}
+
 export function consumePendingNotification(): NativeNotificationTarget | null {
   try {
     const value = JSON.parse(
@@ -102,7 +156,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.2",
+      appVersion: "0.8.3",
     }),
   });
   updatePushState("registered");
@@ -142,6 +196,9 @@ export async function registerNativePush() {
         "pushNotificationActionPerformed",
         openNotificationTarget
       ),
+      PushNotifications.addListener("pushNotificationReceived", notification =>
+        alertFromPush(notification).catch(() => undefined)
+      ),
     ]);
     appListener = await App.addListener("appStateChange", ({ isActive }) => {
       if (isActive && pushState === "registered")
@@ -165,20 +222,22 @@ export async function registerNativePush() {
   try {
     await Promise.all([
       PushNotifications.createChannel({
-        id: "messages",
+        id: "messages-v2",
         name: "聊天消息",
         description: "新消息与好友申请",
         importance: 4,
         visibility: 1,
         vibration: true,
+        sound: "echat_message.wav",
       }),
       PushNotifications.createChannel({
-        id: "calls",
+        id: "calls-v2",
         name: "音视频通话",
         description: "E聊语音与视频来电",
         importance: 5,
         visibility: 1,
         vibration: true,
+        sound: "echat_call.wav",
       }),
     ]);
     await PushNotifications.register();

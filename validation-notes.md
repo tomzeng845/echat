@@ -230,3 +230,15 @@ Capacitor System Bars 以 CSS 变量注入系统 inset。`android-safe-area-smok
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 8 项、xUnit 17 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量遇错即停回归同时返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_082_OK`、`ADMIN_082_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
 
 最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=10`、`versionName=0.8.2`、最低 API 24、目标 API 36。文件 `EChat-0.8.2-debug.apk` 的 SHA-256 为 `894cc5727c217eb40920a950bd2f2777b5dc4b2e425f9ae065ed8d7ce4058f73`。
+
+## 2026-09-06 Android APP 0.8.3 新消息密钥恢复与提示音
+
+新消息误显示“该消息发送于本设备加入加密会话之前”包含两个并发条件：`message.created` 可能先于 `conversation.updated` 的会话刷新到达；同一 `deviceId` 重装后，SignalR 也可能在新 RSA 公钥发布前触发密钥轮换。0.8.3 强制先发布当前设备公钥，再加载会话和启动 SignalR；内存仓库与 MongoDB 另外按会话编号及 `keyVersion` 保存不可变设备信封。客户端本地缺少某条消息对应密钥时，会调用成员鉴权的指定版本信封 API，以当前设备不可导出私钥导入并保存后再解密。真正没有历史设备信封的旧消息仍保留原安全提示。
+
+真实三设备回归主动删除接收端 IndexedDB 中的版本 3 会话密钥，再由好友发送版本 3 新消息。最终返回 `ANDROID_E2EE_OK ... realtime_recovery=ok message_sound=once`：SignalR 新消息已到达，客户端从 API 恢复当前设备信封并正常显示明文，提示音事件只触发一次。该回归同时覆盖同一设备编号更换 RSA 身份时先发布公钥再轮换，以及版本 1 历史消息仍由旧设备解密、过期版本发送返回 409。
+
+Android 原生层已打包 `echat_message.wav` 和 `echat_call.wav`。前台其他账号新消息播放一次短提示音；语音或视频来电循环播放铃声，接听、拒绝、结束或 Activity 销毁时停止。前台 SignalR 与 FCM 按消息/通话编号在 5 秒内去重；后台通知分别使用带自定义声音的 `messages-v2` 和 `calls-v2` 频道。双端真实 WebRTC 回归返回 `ANDROID_CALL_AUDIO_OK ... alerts=voice,video stopped=accept`，确认语音和视频两类来电都触发提示并在接听时停止，同时双方远端音轨、自动播放和扬声器切换继续正常。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 18 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量遇错即停回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_083_OK`、`ADMIN_083_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
+
+最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=11`、`versionName=0.8.3`、最低 API 24、目标 API 36，且两个 `res/raw` 提示音均已打包。文件 `EChat-0.8.3-debug.apk` 的 SHA-256 为 `e9be67864cfbe53153892d378d0573871cc4e56dfe0e7dacc8ca1beae4eb6d90`。

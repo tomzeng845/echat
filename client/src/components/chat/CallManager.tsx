@@ -35,7 +35,9 @@ import {
 import {
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
+  playIncomingAlert,
   setNativeCallAudioRoute,
+  stopIncomingCallAlert,
 } from "@/lib/mobile-native";
 
 export type CallManagerHandle = {
@@ -222,6 +224,7 @@ const CallManager = forwardRef<
     pendingIce.current.clear();
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
+    await stopIncomingCallAlert();
     await endNativeCallAudioSession().catch(() => undefined);
     setLocalStream(null);
     setRemoteStreams({});
@@ -301,6 +304,10 @@ const CallManager = forwardRef<
       };
       setCall(next);
       callRef.current = next;
+      playIncomingAlert(
+        invite.mode === "video" ? "video-call" : "voice-call",
+        invite.callId
+      ).catch(() => undefined);
     };
     const accepted = async (participant: CallParticipant) => {
       if (callRef.current?.callId !== participant.callId) return;
@@ -385,6 +392,7 @@ const CallManager = forwardRef<
     const active = callRef.current;
     if (!active || !connection) return;
     try {
+      await stopIncomingCallAlert();
       await acquire(active.mode);
       setMembers(
         await api<ConversationMember[]>(

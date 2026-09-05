@@ -19,6 +19,7 @@ import {
   type AuthResponse,
   type Contact,
   type Conversation,
+  type ConversationKeyEnvelope,
   type ConversationMember,
   type FriendRequest,
   type Message,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/echat-crypto";
 import {
   consumePendingNotification,
+  playIncomingAlert,
   registerNativePush,
   type NativeNotificationTarget,
 } from "@/lib/mobile-native";
@@ -482,6 +484,7 @@ function Messenger({
   const [showMyQr, setShowMyQr] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [identityReady, setIdentityReady] = useState(false);
   const [realtimeConnection, setRealtimeConnection] =
     useState<HubConnection | null>(null);
   const connectionRef = useRef<HubConnection | null>(null);
@@ -506,15 +509,34 @@ function Messenger({
     item => item.status === "Pending"
   ).length;
 
+  const resolveMessageKey = useCallback(
+    async (message: Message) => {
+      const version = message.keyVersion || 1;
+      const stored = await getConversationKey(message.conversationId, version);
+      if (stored) return stored;
+      try {
+        const record = await api<ConversationKeyEnvelope>(
+          `/api/conversations/${message.conversationId}/keys/${version}`
+        );
+        const imported = await openKeyEnvelope(
+          user.account,
+          record.keyEnvelope
+        );
+        await storeConversationKey(message.conversationId, imported, version);
+        return imported;
+      } catch {
+        return undefined;
+      }
+    },
+    [user.account]
+  );
+
   const decrypt = useCallback(
     async (message: Message): Promise<DecryptedMessage> => {
       if (message.state === "Recalled")
         return { ...message, plaintext: "这条消息已被撤回" };
       try {
-        const key = await getConversationKey(
-          message.conversationId,
-          message.keyVersion || 1
-        );
+        const key = await resolveMessageKey(message);
         if (!key)
           return {
             ...message,
@@ -537,7 +559,7 @@ function Messenger({
         };
       }
     },
-    []
+    [resolveMessageKey]
   );
 
   const ensureConversationKey = useCallback(
@@ -704,6 +726,7 @@ function Messenger({
             deviceId: getDeviceId(),
           }),
         });
+        setIdentityReady(true);
         await loadData();
       } catch (cause) {
         if (
@@ -724,6 +747,7 @@ function Messenger({
   }, [user.id]);
 
   useEffect(() => {
+    if (!identityReady) return;
     const openTarget = async (target: NativeNotificationTarget | null) => {
       if (!target) return;
       await loadData().catch(() => undefined);
@@ -741,11 +765,14 @@ function Messenger({
     window.addEventListener("echat-open-notification", onOpen);
     openTarget(consumePendingNotification()).catch(() => undefined);
     return () => window.removeEventListener("echat-open-notification", onOpen);
-  }, [loadData]);
+  }, [identityReady, loadData]);
 
   useEffect(() => {
+    if (!identityReady) return;
     const connection = connectRealtime({
       onMessage: async message => {
+        if (message.senderId !== user.id)
+          playIncomingAlert("message", message.id).catch(() => undefined);
         if (message.conversationId === selectedRef.current) {
           const value = await decrypt(message);
           setMessages(current =>
@@ -833,11 +860,11 @@ function Messenger({
       setRealtimeConnection(null);
       connection.stop();
     };
-  }, [decrypt, loadData, markConversationRead, user.id]);
+  }, [decrypt, identityReady, loadData, markConversationRead, user.id]);
 
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible")
+      if (identityReady && document.visibilityState === "visible")
         loadData().catch(() => undefined);
     };
     document.addEventListener("visibilitychange", refresh);
@@ -846,7 +873,7 @@ function Messenger({
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [loadData]);
+  }, [identityReady, loadData]);
 
   useEffect(() => {
     if (!selectedId || !chatVisible) {

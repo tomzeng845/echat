@@ -98,6 +98,21 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         return Ok(result);
     }
 
+    [HttpGet("{id}/keys/{keyVersion:int}")]
+    public async Task<ActionResult> KeyEnvelope(string id, int keyVersion, CancellationToken ct)
+    {
+        var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
+        if (keyVersion < 1 || keyVersion > conversation.KeyVersion) return NotFound(new { error = "会话密钥版本不存在" });
+        var envelopes = keyVersion == conversation.KeyVersion
+            ? conversation.KeyEnvelopes
+            : await repository.GetConversationKeyEnvelopesAsync(id, keyVersion, ct);
+        if (envelopes is null) return NotFound(new { error = "该历史密钥版本尚未保存" });
+        var envelope = EnvelopeFor(envelopes, User.UserId(), CurrentDeviceId());
+        return envelope is null
+            ? NotFound(new { error = "当前设备没有该版本的密钥信封" })
+            : Ok(new { conversationId = id, keyVersion, keyEnvelope = envelope });
+    }
+
     [HttpPut("{id}/key")]
     public async Task<ActionResult> RotateKey(string id, RotateConversationKeyRequest request, CancellationToken ct)
     {
@@ -109,9 +124,11 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             return BadRequest(new { error = "会话密钥信封无效" });
         if (activeMemberIds.Any(userId => !request.KeyEnvelopes.Keys.Any(key => key == userId || key.StartsWith(userId + ":", StringComparison.Ordinal))))
             return BadRequest(new { error = "会话成员密钥信封不完整" });
+        await repository.UpsertConversationKeyEnvelopesAsync(conversation.Id, conversation.KeyVersion, conversation.KeyEnvelopes, ct);
         conversation.KeyVersion = request.KeyVersion;
         conversation.KeyEnvelopes = new Dictionary<string, string>(request.KeyEnvelopes);
         await repository.UpdateConversationAsync(conversation, ct);
+        await repository.UpsertConversationKeyEnvelopesAsync(conversation.Id, conversation.KeyVersion, conversation.KeyEnvelopes, ct);
         await hub.Clients.Users(activeMemberIds).SendAsync("conversation.updated", new { conversationId = id, action = "key-rotated", keyVersion = conversation.KeyVersion }, ct);
         return NoContent();
     }
@@ -172,9 +189,12 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     private string? CurrentDeviceId() => Request.Headers["X-EChat-Device-Id"].FirstOrDefault();
 
     private static string? EnvelopeFor(Conversation conversation, string userId, string? deviceId)
+        => EnvelopeFor(conversation.KeyEnvelopes, userId, deviceId);
+
+    private static string? EnvelopeFor(IReadOnlyDictionary<string, string> keyEnvelopes, string userId, string? deviceId)
     {
-        if (!string.IsNullOrWhiteSpace(deviceId) && conversation.KeyEnvelopes.TryGetValue($"{userId}:{deviceId}", out var deviceEnvelope)) return deviceEnvelope;
-        return conversation.KeyEnvelopes.TryGetValue(userId, out var legacyEnvelope) ? legacyEnvelope : null;
+        if (!string.IsNullOrWhiteSpace(deviceId) && keyEnvelopes.TryGetValue($"{userId}:{deviceId}", out var deviceEnvelope)) return deviceEnvelope;
+        return keyEnvelopes.TryGetValue(userId, out var legacyEnvelope) ? legacyEnvelope : null;
     }
 
     private static MessageView View(ChatMessage m) => new(m.Id, m.ClientMessageId, m.ConversationId, m.Sequence, m.SenderId, m.Kind, m.Ciphertext, m.Nonce, m.Algorithm, Math.Max(1, m.KeyVersion), m.ReplyToMessageId, m.Metadata, m.State, m.SentAtUtc, m.RecalledAtUtc);

@@ -8,6 +8,8 @@ const fakes = vi.hoisted(() => ({
   requestPermissions: vi.fn(),
   createChannel: vi.fn(),
   register: vi.fn(),
+  playAlertSound: vi.fn(),
+  stopAlertSound: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
@@ -18,6 +20,8 @@ vi.mock("@capacitor/core", () => ({
   registerPlugin: () => ({
     getCapabilities: fakes.getCapabilities,
     requestPermissions: vi.fn(),
+    playAlertSound: fakes.playAlertSound,
+    stopAlertSound: fakes.stopAlertSound,
   }),
 }));
 
@@ -40,7 +44,11 @@ vi.mock("../client/src/lib/echat-api", () => ({
   getDeviceId: () => "test-device",
 }));
 
-import { registerNativePush } from "../client/src/lib/mobile-native";
+import {
+  playIncomingAlert,
+  registerNativePush,
+  stopIncomingCallAlert,
+} from "../client/src/lib/mobile-native";
 
 describe("Android push login guard", () => {
   beforeEach(() => {
@@ -60,5 +68,30 @@ describe("Android push login guard", () => {
     expect(fakes.requestPermissions).not.toHaveBeenCalled();
     expect(fakes.createChannel).not.toHaveBeenCalled();
     expect(fakes.register).not.toHaveBeenCalled();
+  });
+
+  it("plays each incoming event once and stops the looping call alert", async () => {
+    fakes.playAlertSound.mockResolvedValue({ playing: true });
+    fakes.stopAlertSound.mockResolvedValue(undefined);
+
+    await expect(playIncomingAlert("message", "message-one")).resolves.toBe(
+      true
+    );
+    await expect(playIncomingAlert("message", "message-one")).resolves.toBe(
+      false
+    );
+    await expect(playIncomingAlert("video-call", "call-one")).resolves.toBe(
+      true
+    );
+    await stopIncomingCallAlert();
+
+    expect(fakes.playAlertSound).toHaveBeenCalledTimes(2);
+    expect(fakes.playAlertSound).toHaveBeenNthCalledWith(1, {
+      kind: "message",
+    });
+    expect(fakes.playAlertSound).toHaveBeenNthCalledWith(2, {
+      kind: "video-call",
+    });
+    expect(fakes.stopAlertSound).toHaveBeenCalledWith({ kind: "call" });
   });
 });

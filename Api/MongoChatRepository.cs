@@ -13,6 +13,7 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<FriendRequest> _friendRequests;
     private readonly IMongoCollection<ContactRelation> _relations;
     private readonly IMongoCollection<Conversation> _conversations;
+    private readonly IMongoCollection<ConversationKeyEnvelopeRecord> _conversationKeys;
     private readonly IMongoCollection<ChatMessage> _messages;
     private readonly IMongoCollection<MediaAsset> _mediaAssets;
     private readonly IMongoCollection<MomentPost> _moments;
@@ -37,6 +38,7 @@ public sealed class MongoChatRepository : IChatRepository
         _friendRequests = db.GetCollection<FriendRequest>("friendRequests");
         _relations = db.GetCollection<ContactRelation>("contactRelations");
         _conversations = db.GetCollection<Conversation>("conversations");
+        _conversationKeys = db.GetCollection<ConversationKeyEnvelopeRecord>("conversationKeyEnvelopes");
         _messages = db.GetCollection<ChatMessage>("messages");
         _mediaAssets = db.GetCollection<MediaAsset>("mediaAssets");
         _moments = db.GetCollection<MomentPost>("moments");
@@ -53,6 +55,7 @@ public sealed class MongoChatRepository : IChatRepository
         await _users.Indexes.CreateOneAsync(new CreateIndexModel<UserAccount>(Builders<UserAccount>.IndexKeys.Ascending(x => x.Account), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.SenderId).Ascending(x => x.ClientMessageId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.Sequence), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _conversationKeys.Indexes.CreateOneAsync(new CreateIndexModel<ConversationKeyEnvelopeRecord>(Builders<ConversationKeyEnvelopeRecord>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.KeyVersion), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _moments.Indexes.CreateOneAsync(new CreateIndexModel<MomentPost>(Builders<MomentPost>.IndexKeys.Descending(x => x.CreatedAtUtc)), cancellationToken: ct);
         await _momentLikes.Indexes.CreateOneAsync(new CreateIndexModel<MomentLike>(Builders<MomentLike>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentComments.Indexes.CreateOneAsync(new CreateIndexModel<MomentComment>(Builders<MomentComment>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.CreatedAtUtc)), cancellationToken: ct);
@@ -158,9 +161,31 @@ public sealed class MongoChatRepository : IChatRepository
     public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) => _relations.ReplaceOneAsync(x => x.Id == relation.Id, relation, new ReplaceOptions { IsUpsert = true }, ct);
     public async Task<ContactRelation?> GetRelationAsync(string userId, string peerId, CancellationToken ct = default) => await _relations.Find(x => x.UserId == userId && x.PeerUserId == peerId).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default) => await _relations.Find(x => x.UserId == userId && x.Status != RelationStatus.Deleted).ToListAsync(ct);
-    public async Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default) { await _conversations.InsertOneAsync(conversation, cancellationToken: ct); return conversation; }
+    public async Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default)
+    {
+        await _conversations.InsertOneAsync(conversation, cancellationToken: ct);
+        await UpsertConversationKeyEnvelopesAsync(conversation.Id, Math.Max(1, conversation.KeyVersion), conversation.KeyEnvelopes, ct);
+        return conversation;
+    }
     public Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default) => _conversations.ReplaceOneAsync(x => x.Id == conversation.Id, conversation, cancellationToken: ct);
     public async Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default) => await _conversations.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+    public Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default)
+    {
+        var id = $"{conversationId}:{keyVersion}";
+        var record = new ConversationKeyEnvelopeRecord
+        {
+            Id = id,
+            ConversationId = conversationId,
+            KeyVersion = keyVersion,
+            KeyEnvelopes = new Dictionary<string, string>(keyEnvelopes)
+        };
+        return _conversationKeys.ReplaceOneAsync(x => x.Id == id, record, new ReplaceOptions { IsUpsert = true }, ct);
+    }
+    public async Task<IReadOnlyDictionary<string, string>?> GetConversationKeyEnvelopesAsync(string conversationId, int keyVersion, CancellationToken ct = default)
+    {
+        var record = await _conversationKeys.Find(x => x.ConversationId == conversationId && x.KeyVersion == keyVersion).FirstOrDefaultAsync(ct);
+        return record?.KeyEnvelopes;
+    }
     public async Task<Conversation?> FindDirectConversationAsync(string a, string b, CancellationToken ct = default) => await _conversations.Find(x => x.Type == ConversationType.Direct && x.Members.Any(m => m.UserId == a) && x.Members.Any(m => m.UserId == b)).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default) => await _conversations.Find(x => !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence == null)).SortByDescending(x => x.LastMessageAtUtc).ToListAsync(ct);
 

@@ -38,6 +38,11 @@ export type Conversation = {
   keyVersion: number;
   keyEnvelope?: string;
 };
+export type ConversationKeyEnvelope = {
+  conversationId: string;
+  keyVersion: number;
+  keyEnvelope: string;
+};
 export type Message = {
   id: string;
   clientMessageId: string;

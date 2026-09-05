@@ -349,10 +349,147 @@ try {
   );
   if ((await decrypt(peerKeyV3, latest.at(-1))) !== appUiText)
     throw new Error("Peer failed to decrypt the Android UI message");
+
+  await page.evaluate(
+    async ({ conversationId, keyVersion }) => {
+      window.__echatAlertEvents = [];
+      window.addEventListener("echat-alert-sound", event =>
+        window.__echatAlertEvents.push(event.detail)
+      );
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("echat-secure-vault", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("keys", "readwrite");
+        tx.objectStore("keys").delete(
+          `conversation:${conversationId}:v${keyVersion}`
+        );
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+    { conversationId: conversation.id, keyVersion: 3 }
+  );
+  const incomingText = "新消息即时恢复密钥且提示一次";
+  await request(`/api/conversations/${conversation.id}/messages`, {
+    token: authB.accessToken,
+    deviceId: peerDevice,
+    method: "POST",
+    body: {
+      clientMessageId: `incoming-${suffix}`,
+      kind: "Text",
+      keyVersion: 3,
+      ...(await encrypt(peerKeyV3, incomingText)),
+    },
+  });
+  await page.waitForFunction(() => window.__echatAlertEvents?.length === 1, {
+    timeout: 10000,
+  });
+  try {
+    await page.waitForFunction(
+      text => document.body.innerText.includes(text),
+      { timeout: 10000 },
+      incomingText
+    );
+  } catch (error) {
+    const state = await page.evaluate(
+      async ({ token, deviceId, conversationId, account }) => {
+        const response = await fetch(
+          `/api/conversations/${conversationId}/keys/3`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "X-EChat-Device-Id": deviceId,
+            },
+          }
+        );
+        const keyRecord = JSON.parse(await response.text());
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open("echat-secure-vault", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const pair = await new Promise((resolve, reject) => {
+          const request = db
+            .transaction("keys", "readonly")
+            .objectStore("keys")
+            .get(`identity:${account}`);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        let envelopeDecrypt = "missing-identity";
+        if (pair?.privateKey) {
+          try {
+            const bytes = Uint8Array.from(atob(keyRecord.keyEnvelope), char =>
+              char.charCodeAt(0)
+            );
+            await crypto.subtle.decrypt(
+              { name: "RSA-OAEP" },
+              pair.privateKey,
+              bytes
+            );
+            envelopeDecrypt = "ok";
+          } catch (cause) {
+            envelopeDecrypt = cause instanceof Error ? cause.name : "failed";
+          }
+        }
+        return {
+          text: document.body.innerText.slice(-1200),
+          alerts: window.__echatAlertEvents,
+          keyEndpoint: {
+            status: response.status,
+            body: keyRecord,
+            envelopeDecrypt,
+          },
+        };
+      },
+      {
+        token: authA.accessToken,
+        deviceId: appDevice,
+        conversationId: conversation.id,
+        account: authA.user.account,
+      }
+    );
+    throw new Error(
+      `Realtime message arrived but decryption failed: ${JSON.stringify(state)}`,
+      { cause: error }
+    );
+  }
+  const recovery = await page.evaluate(
+    async ({ conversationId }) => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("echat-secure-vault", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const keyRestored = await new Promise((resolve, reject) => {
+        const request = db
+          .transaction("keys", "readonly")
+          .objectStore("keys")
+          .get(`conversation:${conversationId}:v3`);
+        request.onsuccess = () => resolve(Boolean(request.result));
+        request.onerror = () => reject(request.error);
+      });
+      return {
+        keyRestored,
+        alerts: window.__echatAlertEvents,
+      };
+    },
+    { conversationId: conversation.id }
+  );
+  if (
+    !recovery.keyRestored ||
+    recovery.alerts.filter(event => event.eventId).length !== 1
+  )
+    throw new Error(
+      `Realtime key recovery failed: ${JSON.stringify(recovery)}`
+    );
 } finally {
   await browser.close();
 }
 
 console.log(
-  `ANDROID_E2EE_OK conversation=${conversation.id} versions=1,2,3 devices=3 legacy=decryptable app=decryptable peer=decryptable stale=409 ui=ok`
+  `ANDROID_E2EE_OK conversation=${conversation.id} versions=1,2,3 devices=3 legacy=decryptable app=decryptable peer=decryptable stale=409 ui=ok realtime_recovery=ok message_sound=once`
 );

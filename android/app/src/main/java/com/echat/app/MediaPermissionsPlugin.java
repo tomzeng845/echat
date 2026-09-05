@@ -6,6 +6,8 @@ import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Build;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -28,6 +30,73 @@ import java.util.List;
 public class MediaPermissionsPlugin extends Plugin {
     private final AudioManager.OnAudioFocusChangeListener audioFocusListener = focusChange -> {};
     private AudioFocusRequest audioFocusRequest;
+    private MediaPlayer messagePlayer;
+    private MediaPlayer callPlayer;
+
+    @PluginMethod
+    public void playAlertSound(PluginCall call) {
+        String kind = call.getString("kind", "message");
+        boolean incomingCall = "voice-call".equals(kind) || "video-call".equals(kind);
+        MediaPlayer existing = incomingCall ? callPlayer : messagePlayer;
+        releasePlayer(existing);
+        int resourceId = getContext().getResources().getIdentifier(
+            incomingCall ? "echat_call" : "echat_message",
+            "raw",
+            getContext().getPackageName()
+        );
+        if (resourceId == 0) {
+            call.reject("提示音资源不存在");
+            return;
+        }
+        try {
+            Uri uri = Uri.parse("android.resource://" + getContext().getPackageName() + "/" + resourceId);
+            MediaPlayer player = new MediaPlayer();
+            player.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(incomingCall ? AudioAttributes.USAGE_NOTIFICATION_RINGTONE : AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build());
+            player.setDataSource(getContext(), uri);
+            player.setLooping(incomingCall);
+            player.setOnCompletionListener(completed -> {
+                releasePlayer(completed);
+                if (completed == messagePlayer) messagePlayer = null;
+            });
+            player.prepare();
+            player.start();
+            if (incomingCall) callPlayer = player;
+            else messagePlayer = player;
+            JSObject result = new JSObject();
+            result.put("playing", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("无法播放提示音", error);
+        }
+    }
+
+    @PluginMethod
+    public void stopAlertSound(PluginCall call) {
+        String kind = call.getString("kind", "all");
+        if ("all".equals(kind) || "message".equals(kind)) {
+            releasePlayer(messagePlayer);
+            messagePlayer = null;
+        }
+        if ("all".equals(kind) || "call".equals(kind)) {
+            releasePlayer(callPlayer);
+            callPlayer = null;
+        }
+        call.resolve();
+    }
+
+    private static void releasePlayer(MediaPlayer player) {
+        if (player == null) return;
+        try {
+            if (player.isPlaying()) player.stop();
+        } catch (IllegalStateException ignored) {
+            // The player may already be completing or released.
+        }
+        player.reset();
+        player.release();
+    }
 
     @PluginMethod
     public void setCallAudioRoute(PluginCall call) {
@@ -73,6 +142,8 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PluginMethod
     public void endCallAudioSession(PluginCall call) {
+        releasePlayer(callPlayer);
+        callPlayer = null;
         AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audioManager.clearCommunicationDevice();
         else audioManager.setSpeakerphoneOn(false);
@@ -81,6 +152,15 @@ public class MediaPermissionsPlugin extends Plugin {
         else audioManager.abandonAudioFocus(audioFocusListener);
         audioManager.setMode(AudioManager.MODE_NORMAL);
         call.resolve();
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        releasePlayer(messagePlayer);
+        releasePlayer(callPlayer);
+        messagePlayer = null;
+        callPlayer = null;
+        super.handleOnDestroy();
     }
 
     @PluginMethod

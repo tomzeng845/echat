@@ -1,5 +1,23 @@
 # E聊开发跟踪
 
+## Android APP 0.8.3 新消息与提示音修复
+
+- [x] 定位新消息先于会话刷新到达时，本地尚无该 `keyVersion` 的竞态
+- [x] 登录后先发布当前设备公钥，再加载会话和启动 SignalR
+- [x] 内存仓库与 MongoDB 按会话和版本保存设备密钥信封快照
+- [x] 新增成员鉴权的指定版本当前设备信封 API
+- [x] 解密前缺钥时即时获取、导入并保存信封，再显示新消息
+- [x] 真正没有历史设备信封的旧消息仍保留端到端加密边界提示
+- [x] APP 前台收到其他账号消息播放一次短提示音
+- [x] APP 前台收到语音/视频来电循环播放铃声，接听/拒绝/结束时停止
+- [x] SignalR 与前台 FCM 按消息或通话编号去重，避免重复响铃
+- [x] FCM 后台通知迁移到 `messages-v2` / `calls-v2` 自定义声音频道
+- [x] 自动生成并打包 `echat_message.wav` 与 `echat_call.wav`
+- [x] 三设备回归删除当前本地密钥后输出 `realtime_recovery=ok message_sound=once`
+- [x] 双端语音/视频回归输出 `alerts=voice,video stopped=accept`
+- [x] Vitest 9 项、xUnit 18 项、Android 单测/lint/APK 构建通过
+- [x] 生成 `versionCode=11`、`versionName=0.8.3` 修复 APK
+
 ## Android APP 0.8.2 消息与通话修复
 
 - [x] 将账号单一 RSA 公钥升级为按 `deviceId` 保存的设备级公钥

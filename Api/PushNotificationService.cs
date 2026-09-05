@@ -107,6 +107,7 @@ public sealed class PushNotificationService(
             timeout.CancelAfter(TimeSpan.FromSeconds(6));
             var credential = await GetCredentialAsync(timeout.Token);
             var accessToken = await credential.UnderlyingCredential.GetAccessTokenForRequestAsync(cancellationToken: timeout.Token);
+            var isCall = data.TryGetValue("type", out var notificationType) && notificationType == "call";
             using var request = new HttpRequestMessage(HttpMethod.Post, $"https://fcm.googleapis.com/v1/projects/{Uri.EscapeDataString(ProjectId)}/messages:send");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             var payload = new
@@ -121,9 +122,11 @@ public sealed class PushNotificationService(
                         priority = highPriority ? "high" : "normal",
                         notification = new
                         {
-                            channel_id = highPriority ? "calls" : "messages",
-                            sound = "default",
-                            tag = data.TryGetValue("conversationId", out var conversationId) ? $"conversation-{conversationId}" : "echat"
+                            channel_id = isCall ? "calls-v2" : "messages-v2",
+                            sound = isCall ? "echat_call" : "echat_message",
+                            tag = isCall && data.TryGetValue("callId", out var callId)
+                                ? $"call-{callId}"
+                                : data.TryGetValue("conversationId", out var conversationId) ? $"conversation-{conversationId}" : "echat"
                         }
                     }
                 }

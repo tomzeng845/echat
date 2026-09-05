@@ -38,6 +38,8 @@ public interface IChatRepository
     Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default);
     Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default);
     Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default);
+    Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, string>?> GetConversationKeyEnvelopesAsync(string conversationId, int keyVersion, CancellationToken ct = default);
     Task<Conversation?> FindDirectConversationAsync(string userA, string userB, CancellationToken ct = default);
     Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default);
     Task<ChatMessage> AddMessageIdempotentlyAsync(ChatMessage message, CancellationToken ct = default);

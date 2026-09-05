@@ -322,6 +322,30 @@ public sealed class CoreTests
         Assert.Single(await repository.GetPushDevicesAsync(["u2"]));
     }
 
+    [Fact]
+    public async Task ConversationKeyEnvelopes_PreserveEachVersion()
+    {
+        var repository = new InMemoryChatRepository();
+        var conversation = new Conversation
+        {
+            Id = "conversation-keys",
+            KeyVersion = 1,
+            KeyEnvelopes = new() { ["u1:phone"] = "version-one-envelope" }
+        };
+        await repository.AddConversationAsync(conversation);
+        await repository.UpsertConversationKeyEnvelopesAsync(
+            conversation.Id,
+            2,
+            new Dictionary<string, string> { ["u1:phone"] = "version-two-envelope" }
+        );
+
+        var versionOne = await repository.GetConversationKeyEnvelopesAsync(conversation.Id, 1);
+        var versionTwo = await repository.GetConversationKeyEnvelopesAsync(conversation.Id, 2);
+
+        Assert.Equal("version-one-envelope", versionOne!["u1:phone"]);
+        Assert.Equal("version-two-envelope", versionTwo!["u1:phone"]);
+    }
+
     private sealed class StubHttpClientFactory(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(new StubHandler(responder), disposeHandler: true);

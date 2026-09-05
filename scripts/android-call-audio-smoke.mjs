@@ -170,6 +170,17 @@ try {
       "呼叫方"
     ),
   ]);
+  await pageB.evaluate(() => {
+    window.__echatCallAlerts = [];
+    window.__echatCallStops = 0;
+    window.addEventListener("echat-alert-sound", event =>
+      window.__echatCallAlerts.push(event.detail)
+    );
+    window.addEventListener(
+      "echat-alert-sound-stopped",
+      () => (window.__echatCallStops += 1)
+    );
+  });
   await pageA.evaluate(() => {
     const button = Array.from(document.querySelectorAll("button")).find(item =>
       item.textContent?.includes("接听方")
@@ -186,6 +197,10 @@ try {
     visible: true,
     timeout: 10000,
   });
+  await pageB.waitForFunction(
+    () => window.__echatCallAlerts?.some(item => item.kind === "voice-call"),
+    { timeout: 4000 }
+  );
   await pageB.click('button[aria-label="接听通话"]');
   await Promise.all([
     pageA.waitForSelector("audio", { timeout: 15000 }),
@@ -235,6 +250,10 @@ try {
     visible: true,
     timeout: 10000,
   });
+  await pageB.waitForFunction(
+    () => window.__echatCallAlerts?.some(item => item.kind === "video-call"),
+    { timeout: 4000 }
+  );
   await pageB.click('button[aria-label="接听通话"]');
   await Promise.all([
     pageA.waitForSelector("video:not([muted])", { timeout: 15000 }),
@@ -257,13 +276,25 @@ try {
   );
   if (videoAudioTracks.some(count => count < 1))
     throw new Error(`Video call audio tracks missing: ${videoAudioTracks}`);
+  const alertState = await pageB.evaluate(() => ({
+    kinds: window.__echatCallAlerts.map(item => item.kind),
+    stops: window.__echatCallStops,
+  }));
+  if (
+    !alertState.kinds.includes("voice-call") ||
+    !alertState.kinds.includes("video-call") ||
+    alertState.stops < 2
+  )
+    throw new Error(
+      `Incoming call alert invalid: ${JSON.stringify(alertState)}`
+    );
   await pageA.click('button[aria-label="结束通话"]');
   await pageB.waitForSelector('button[aria-label="结束通话"]', {
     hidden: true,
     timeout: 8000,
   });
   console.log(
-    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.join(",")} autoplay=true speaker=toggle video_speaker=default_on`
+    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.join(",")} autoplay=true speaker=toggle video_speaker=default_on alerts=voice,video stopped=accept`
   );
 } finally {
   await contextA.close();
