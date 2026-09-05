@@ -41,7 +41,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             if (string.IsNullOrWhiteSpace(sessionId)) return;
             var repository = context.HttpContext.RequestServices.GetRequiredService<IChatRepository>();
             var active = await repository.GetSessionsAsync(context.Principal.UserId(), context.HttpContext.RequestAborted);
-            if (!active.Any(x => x.Id == sessionId)) context.Fail("SESSION_REVOKED");
+            var user = await repository.GetUserByIdAsync(context.Principal.UserId(), context.HttpContext.RequestAborted);
+            if (!active.Any(x => x.Id == sessionId) || user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled) context.Fail("SESSION_REVOKED");
         }
     };
 });
@@ -85,8 +86,8 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseCors();
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
@@ -95,7 +96,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.5.0",
+    version = "0.5.1",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     utcNow = DateTime.UtcNow

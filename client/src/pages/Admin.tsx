@@ -11,7 +11,9 @@ import {
   ClipboardList,
   Clock3,
   Coins,
+  Copy,
   ContactRound,
+  Download,
   FileClock,
   FileWarning,
   Gauge,
@@ -25,6 +27,7 @@ import {
   Menu,
   MessageCircleMore,
   MessagesSquare,
+  MoreHorizontal,
   PackageSearch,
   RefreshCw,
   Search,
@@ -33,7 +36,9 @@ import {
   ShieldCheck,
   Smartphone,
   TicketCheck,
+  Upload,
   UserCheck,
+  UserPlus,
   Users,
   WalletCards,
   X,
@@ -109,6 +114,37 @@ type AdminUser = {
   createdAtUtc: string;
   lastSeenAtUtc: string;
   activeSessions: number;
+  mobilePhone: string;
+  riskLevel1: number;
+  riskLevel2: number;
+  accountBalance: number;
+  frozenBalance: number;
+  online: boolean;
+  accountLocked: boolean;
+  loginLocked: boolean;
+  bankCardLocked: boolean;
+  cancellationEnabled: boolean;
+  realNameVerified: boolean;
+  enterpriseVerified: boolean;
+  redFlagged: boolean;
+  registrationSource: string;
+  inviteSource: string;
+  loginIpRestriction: string;
+  lastLoginAtUtc?: string;
+  loginPasswordChangedAtUtc?: string;
+  lockoutUntilUtc?: string;
+  failedLoginAttempts: number;
+  lastLoginAddress: string;
+  lastLoginIp: string;
+  lastOnlineIp: string;
+  lastNodeIp: string;
+};
+type AdminUserPage = {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 };
 type ModuleRecord = {
   id: string;
@@ -582,7 +618,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.5
+                ADMIN 0.5.1
               </div>
             </div>
           </a>
@@ -876,121 +912,933 @@ function UsersPanel({
   refresh: number;
   currentUserId: string;
 }) {
-  const [search, setSearch] = useState(""),
-    [status, setStatus] = useState("all"),
-    [nonce, setNonce] = useState(0);
-  const path = `/api/admin/users?limit=200${search ? `&search=${encodeURIComponent(search)}` : ""}${status !== "all" ? `&status=${status}` : ""}`;
-  const {
-    data: users,
-    loading,
-    reload,
-  } = useData<AdminUser[]>(path, refresh + nonce, []);
-  async function change(user: AdminUser, next: UserStatus) {
-    await api(`/api/admin/users/${user.account}/status`, {
-      method: "POST",
-      body: JSON.stringify({ status: next, reason: "后台用户管理" }),
+  const emptyFilters = {
+    search: "",
+    status: "",
+    role: "",
+    online: "",
+    hasMobile: "",
+    realNameVerified: "",
+    enterpriseVerified: "",
+    todayOnline: "",
+    accountLocked: "",
+    loginLocked: "",
+    cancellationEnabled: "",
+    redFlagged: "",
+    registrationSource: "",
+    registeredFromUtc: "",
+    registeredToUtc: "",
+    lastSeenFromUtc: "",
+    lastSeenToUtc: "",
+    lastLoginIp: "",
+    lastOnlineIp: "",
+    lastNodeIp: "",
+    failedLoginMin: "",
+    failedLoginMax: "",
+  };
+  const [draft, setDraft] = useState(emptyFilters);
+  const [filters, setFilters] = useState(emptyFilters);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [menuId, setMenuId] = useState<string>();
+  const [createMode, setCreateMode] = useState<"single" | "batch">();
+  const [busy, setBusy] = useState(false);
+  const path = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
     });
-    toast.success("用户状态已更新");
-    reload();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (!value) return;
+      const normalized = key.endsWith("FromUtc")
+        ? `${value}T00:00:00Z`
+        : key.endsWith("ToUtc")
+          ? `${value}T23:59:59Z`
+          : value;
+      params.set(key, normalized);
+    });
+    return `/api/admin/users?${params}`;
+  }, [filters, page, pageSize]);
+  const { data, loading, reload } = useData<AdminUserPage>(path, refresh, {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 20,
+    totalPages: 1,
+  });
+
+  async function request(path: string, init: RequestInit, success: string) {
+    setBusy(true);
+    try {
+      await api(path, init);
+      toast.success(success);
+      setMenuId(undefined);
+      reload();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
   }
+  const change = (user: AdminUser, next: UserStatus) =>
+    request(
+      `/api/admin/users/${user.account}/status`,
+      {
+        method: "POST",
+        body: JSON.stringify({ status: next, reason: "后台用户管理" }),
+      },
+      "用户状态已更新"
+    );
+  const profile = (user: AdminUser, values: Record<string, string>) =>
+    request(
+      `/api/admin/users/${user.account}/profile`,
+      { method: "PUT", body: JSON.stringify(values) },
+      "用户资料已更新"
+    );
+  const security = (
+    user: AdminUser,
+    values: Record<string, boolean | number | string>
+  ) =>
+    request(
+      `/api/admin/users/${user.account}/security`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ...values, reason: "后台用户管理" }),
+      },
+      "用户安全状态已更新"
+    );
+  async function exportUsers() {
+    const response = await authorizedFetch(
+      `/api/admin/users/export?${path.split("?")[1]}`
+    );
+    if (!response.ok) return toast.error("导出失败");
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `echat-users-${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  async function sameIp(user: AdminUser) {
+    const matches = await api<
+      { account: string; displayName: string; lastLoginIp: string }[]
+    >(`/api/admin/users/${user.account}/same-ip`);
+    toast.info(
+      matches.length
+        ? matches.map(x => `${x.displayName}(@${x.account})`).join("、")
+        : "未发现同登录 IP 的其他账号",
+      { duration: 7000 }
+    );
+    setMenuId(undefined);
+  }
+  const askProfile = (
+    user: AdminUser,
+    field: "displayName" | "inviteSource" | "loginIpRestriction",
+    label: string,
+    current: string
+  ) => {
+    const value = window.prompt(label, current);
+    if (value !== null) profile(user, { [field]: value });
+  };
+  const resetPassword = (user: AdminUser) => {
+    const password = window.prompt(
+      `为 @${user.account} 设置新登录密码（至少 8 位）`
+    );
+    if (password)
+      request(
+        `/api/admin/users/${user.account}/password`,
+        { method: "PUT", body: JSON.stringify({ password }) },
+        "登录密码已重置，原设备已下线"
+      );
+  };
+  const duplicate = (user: AdminUser) => {
+    const account = window.prompt("输入新用户账号");
+    if (!account) return;
+    const password = window.prompt("输入新用户初始密码（至少 8 位）");
+    if (!password) return;
+    request(
+      `/api/admin/users/${user.account}/duplicate`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          account,
+          password,
+          displayName: `${user.displayName} 副本`,
+          mobilePhone: "",
+          inviteSource: user.inviteSource,
+        }),
+      },
+      "用户已复制"
+    );
+  };
+  const filter = (key: keyof typeof draft, value: string) =>
+    setDraft(current => ({ ...current, [key]: value }));
+  const badge = (active: boolean, yes: string, no: string) => (
+    <span
+      className={`inline-flex whitespace-nowrap px-2 py-0.5 text-xs ${active ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500"}`}
+    >
+      {active ? yes : no}
+    </span>
+  );
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <PanelTitle
         title="用户管理"
-        description="查询账号、查看状态和设备，并执行限制、停用或恢复。"
+        description="分页筛选用户，查看资金、认证、在线与登录信息，并执行完整账户治理。"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setCreateMode("batch")}
+              className="admin-secondary"
+            >
+              <Upload size={15} />
+              批量新增账号
+            </button>
+            <button
+              onClick={() => setCreateMode("single")}
+              className="admin-secondary"
+            >
+              <UserPlus size={15} />
+              新增用户
+            </button>
+            <button onClick={exportUsers} className="admin-secondary">
+              <Download size={15} />
+              导出数据
+            </button>
+          </div>
+        }
       />
-      <Card className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 text-slate-400" size={17} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="搜索账号或昵称"
-            className="w-full rounded-xl bg-slate-100 py-2.5 pl-10 pr-3 text-sm outline-none"
-          />
+      <Card className="space-y-3 p-3">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(1)}
+            className="admin-filter-button"
+          >
+            «
+          </button>
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(value => Math.max(1, value - 1))}
+            className="admin-filter-button"
+          >
+            ‹
+          </button>
+          <span className="min-w-10 border border-slate-200 bg-white px-3 py-2 text-center">
+            {data.page}
+          </span>
+          <button
+            disabled={page >= data.totalPages}
+            onClick={() =>
+              setPage(value => Math.min(data.totalPages, value + 1))
+            }
+            className="admin-filter-button"
+          >
+            ›
+          </button>
+          <button
+            disabled={page >= data.totalPages}
+            onClick={() => setPage(data.totalPages)}
+            className="admin-filter-button"
+          >
+            »
+          </button>
+          <span>共 {data.totalPages} 页</span>
+          <select
+            value={pageSize}
+            onChange={event => {
+              setPageSize(Number(event.target.value));
+              setPage(1);
+            }}
+            className="admin-filter-select !w-20"
+          >
+            <option>20</option>
+            <option>50</option>
+            <option>100</option>
+          </select>
+          <span>条 | 共 {data.total.toLocaleString()} 条记录</span>
+          <button
+            onClick={reload}
+            className="admin-filter-button"
+            aria-label="刷新"
+          >
+            <RefreshCw size={15} />
+          </button>
+          <div className="ml-auto flex w-auto flex-wrap gap-2">
+            <select
+              value={draft.role}
+              onChange={e => filter("role", e.target.value)}
+              className="admin-filter-select !w-auto min-w-32"
+            >
+              <option value="">全部角色</option>
+              <option>User</option>
+              <option>Reviewer</option>
+              <option>Operator</option>
+              <option>Admin</option>
+            </select>
+            <select
+              value={draft.realNameVerified}
+              onChange={e => filter("realNameVerified", e.target.value)}
+              className="admin-filter-select !w-auto min-w-36"
+            >
+              <option value="">全部实名状态</option>
+              <option value="true">已实名</option>
+              <option value="false">未实名</option>
+            </select>
+            <select
+              value={draft.enterpriseVerified}
+              onChange={e => filter("enterpriseVerified", e.target.value)}
+              className="admin-filter-select !w-auto min-w-40"
+            >
+              <option value="">全部企业认证状态</option>
+              <option value="true">已认证</option>
+              <option value="false">未认证</option>
+            </select>
+          </div>
         </div>
-        <select
-          value={status}
-          onChange={e => setStatus(e.target.value)}
-          className="rounded-xl bg-slate-100 px-3 text-sm"
-        >
-          <option value="all">全部状态</option>
-          <option value="Active">正常</option>
-          <option value="Restricted">受限</option>
-          <option value="Disabled">停用</option>
-        </select>
-        <button
-          onClick={() => setNonce(v => v + 1)}
-          className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm text-white"
-        >
-          查询
-        </button>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <input
+            value={draft.search}
+            onChange={e => filter("search", e.target.value)}
+            placeholder="用户ID / 账号 / 昵称 / 手机"
+            className="admin-filter-input"
+          />
+          <select
+            value={draft.status}
+            onChange={e => filter("status", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">全部账户状态</option>
+            <option>Active</option>
+            <option>Restricted</option>
+            <option>Disabled</option>
+            <option>PendingDeletion</option>
+          </select>
+          <select
+            value={draft.online}
+            onChange={e => filter("online", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">在线状态</option>
+            <option value="true">在线</option>
+            <option value="false">离线</option>
+          </select>
+          <select
+            value={draft.todayOnline}
+            onChange={e => filter("todayOnline", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">今日是否上线</option>
+            <option value="true">今日上线</option>
+            <option value="false">今日未上线</option>
+          </select>
+          <select
+            value={draft.hasMobile}
+            onChange={e => filter("hasMobile", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">是否手机号</option>
+            <option value="true">有手机号</option>
+            <option value="false">无手机号</option>
+          </select>
+          <select
+            value={draft.registrationSource}
+            onChange={e => filter("registrationSource", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">全部注册来源</option>
+            <option>邀请注册</option>
+            <option>后台开户</option>
+          </select>
+          <select
+            value={draft.accountLocked}
+            onChange={e => filter("accountLocked", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">账号锁定状态</option>
+            <option value="true">已锁定</option>
+            <option value="false">未锁定</option>
+          </select>
+          <select
+            value={draft.loginLocked}
+            onChange={e => filter("loginLocked", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">登录锁定状态</option>
+            <option value="true">已锁定</option>
+            <option value="false">未锁定</option>
+          </select>
+          <select
+            value={draft.cancellationEnabled}
+            onChange={e => filter("cancellationEnabled", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">注销状态</option>
+            <option value="true">已开启</option>
+            <option value="false">正常</option>
+          </select>
+          <select
+            value={draft.redFlagged}
+            onChange={e => filter("redFlagged", e.target.value)}
+            className="admin-filter-select"
+          >
+            <option value="">红号状态</option>
+            <option value="true">红号</option>
+            <option value="false">普通</option>
+          </select>
+          <input
+            type="date"
+            value={draft.registeredFromUtc}
+            onChange={e => filter("registeredFromUtc", e.target.value)}
+            className="admin-filter-input"
+            title="注册开始时间"
+          />
+          <input
+            type="date"
+            value={draft.registeredToUtc}
+            onChange={e => filter("registeredToUtc", e.target.value)}
+            className="admin-filter-input"
+            title="注册结束时间"
+          />
+          <input
+            type="date"
+            value={draft.lastSeenFromUtc}
+            onChange={e => filter("lastSeenFromUtc", e.target.value)}
+            className="admin-filter-input"
+            title="最后在线开始"
+          />
+          <input
+            type="date"
+            value={draft.lastSeenToUtc}
+            onChange={e => filter("lastSeenToUtc", e.target.value)}
+            className="admin-filter-input"
+            title="最后在线结束"
+          />
+          <input
+            value={draft.lastLoginIp}
+            onChange={e => filter("lastLoginIp", e.target.value)}
+            placeholder="最后登录 IP"
+            className="admin-filter-input"
+          />
+          <input
+            value={draft.lastOnlineIp}
+            onChange={e => filter("lastOnlineIp", e.target.value)}
+            placeholder="最后在线 IP"
+            className="admin-filter-input"
+          />
+          <input
+            value={draft.lastNodeIp}
+            onChange={e => filter("lastNodeIp", e.target.value)}
+            placeholder="最后节点 IP"
+            className="admin-filter-input"
+          />
+          <div className="flex gap-1">
+            <input
+              type="number"
+              min="0"
+              value={draft.failedLoginMin}
+              onChange={e => filter("failedLoginMin", e.target.value)}
+              placeholder="失败起"
+              className="admin-filter-input min-w-0"
+            />
+            <input
+              type="number"
+              min="0"
+              value={draft.failedLoginMax}
+              onChange={e => filter("failedLoginMax", e.target.value)}
+              placeholder="失败止"
+              className="admin-filter-input min-w-0"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setFilters({ ...draft });
+              setPage(1);
+            }}
+            className="admin-primary !w-auto inline-flex items-center gap-2"
+          >
+            <Search size={15} />
+            查询
+          </button>
+          <button
+            onClick={() => {
+              setDraft({ ...emptyFilters });
+              setFilters({ ...emptyFilters });
+              setPage(1);
+            }}
+            className="admin-danger"
+          >
+            <X size={15} />
+            重置
+          </button>
+        </div>
       </Card>
       {loading ? (
         <Loading />
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500">
-              <tr>
-                <th className="p-4">用户</th>
-                <th>角色</th>
-                <th>状态</th>
-                <th>设备</th>
-                <th>最近活跃</th>
-                <th className="pr-4 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.id} className="border-t border-slate-100">
-                  <td className="p-4">
-                    <b>{user.displayName}</b>
-                    <div className="text-xs text-slate-400">
-                      @{user.account}
-                    </div>
-                  </td>
-                  <td>{user.role}</td>
-                  <td>
-                    <Status value={user.status} />
-                  </td>
-                  <td>{user.activeSessions}</td>
-                  <td>{formatTime(user.lastSeenAtUtc)}</td>
-                  <td className="pr-4 text-right">
-                    {user.id !== currentUserId && (
-                      <div className="flex justify-end gap-2">
-                        {user.status !== "Active" ? (
-                          <button
-                            onClick={() => change(user, "Active")}
-                            className="admin-mini bg-emerald-50 text-emerald-700"
-                          >
-                            恢复
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => change(user, "Restricted")}
-                              className="admin-mini bg-amber-50 text-amber-700"
-                            >
-                              限制
-                            </button>
-                            <button
-                              onClick={() => change(user, "Disabled")}
-                              className="admin-mini bg-rose-50 text-rose-700"
-                            >
-                              停用
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </td>
+        <Card className="overflow-hidden p-0">
+          <div className="max-h-[640px] overflow-auto">
+            <table className="w-full min-w-[3600px] border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-20 bg-slate-100 text-slate-600">
+                <tr className="border-b border-slate-300 text-center">
+                  <th
+                    rowSpan={2}
+                    className="sticky left-0 z-30 w-28 bg-slate-100 p-2"
+                  >
+                    操作
+                  </th>
+                  <th colSpan={6} className="border-l border-slate-300 p-2">
+                    基本资料
+                  </th>
+                  <th colSpan={2} className="border-l border-slate-300 p-2">
+                    额度信息
+                  </th>
+                  <th colSpan={10} className="border-l border-slate-300 p-2">
+                    状态信息
+                  </th>
+                  <th colSpan={12} className="border-l border-slate-300 p-2">
+                    其他信息
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+                <tr className="border-b border-slate-300">
+                  {[
+                    "用户ID",
+                    "风险1",
+                    "风险2",
+                    "用户账号",
+                    "昵称",
+                    "手机号码",
+                    "账户余额",
+                    "冻结金额",
+                    "在线状态",
+                    "账号锁定",
+                    "登录锁定",
+                    "银行卡锁定",
+                    "注销状态",
+                    "实名认证",
+                    "企业认证",
+                    "今日上线",
+                    "红号",
+                    "角色",
+                    "注册来源",
+                    "邀请码来源",
+                    "注册时间",
+                    "登录密码修改时间",
+                    "最后上线时间",
+                    "最后登录地址",
+                    "最后在线IP",
+                    "最后节点IP",
+                    "登录失败次数",
+                    "设备数",
+                    "登录IP限制",
+                    "账户状态",
+                  ].map(label => (
+                    <th
+                      key={label}
+                      className="whitespace-nowrap border-l border-slate-200 px-2 py-2 font-medium"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map(user => (
+                  <tr
+                    key={user.id}
+                    className={`${user.redFlagged ? "bg-rose-50" : "bg-white"} border-b border-slate-200 hover:bg-amber-50/40`}
+                  >
+                    <td
+                      className={`sticky left-0 z-10 border-r border-slate-200 p-2 ${user.redFlagged ? "bg-rose-50" : "bg-white"}`}
+                    >
+                      {user.id !== currentUserId ? (
+                        <div className="relative">
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              setMenuId(value =>
+                                value === user.id ? undefined : user.id
+                              )
+                            }
+                            className="flex items-center gap-1 bg-sky-600 px-3 py-1.5 font-medium text-white"
+                          >
+                            <MoreHorizontal size={14} />
+                            操作
+                          </button>
+                          {menuId === user.id && (
+                            <div className="user-action-menu absolute left-0 top-9 z-50 w-44 border border-slate-200 bg-white py-1 text-sm shadow-xl">
+                              <button onClick={() => sameIp(user)}>
+                                同IP会员检测
+                              </button>
+                              <button onClick={() => duplicate(user)}>
+                                <Copy size={13} />
+                                复制用户
+                              </button>
+                              <button
+                                onClick={() =>
+                                  askProfile(
+                                    user,
+                                    "inviteSource",
+                                    "修改邀请码来源",
+                                    user.inviteSource
+                                  )
+                                }
+                              >
+                                修改邀请码
+                              </button>
+                              <button
+                                onClick={() =>
+                                  askProfile(
+                                    user,
+                                    "displayName",
+                                    "修改用户昵称",
+                                    user.displayName
+                                  )
+                                }
+                              >
+                                修改用户昵称
+                              </button>
+                              <button
+                                onClick={() =>
+                                  askProfile(
+                                    user,
+                                    "loginIpRestriction",
+                                    "限制登录 IP（多个用逗号分隔，留空解除）",
+                                    user.loginIpRestriction
+                                  )
+                                }
+                              >
+                                限制登录IP
+                              </button>
+                              <button
+                                onClick={() =>
+                                  request(
+                                    `/api/admin/users/${user.account}/sessions/revoke`,
+                                    { method: "POST" },
+                                    "用户已强制下线"
+                                  )
+                                }
+                              >
+                                强制下线
+                              </button>
+                              <button
+                                onClick={() =>
+                                  security(user, {
+                                    accountLocked: !user.accountLocked,
+                                  })
+                                }
+                              >
+                                {user.accountLocked
+                                  ? "解除账号锁定"
+                                  : "账号锁定"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  security(user, {
+                                    loginLocked: !user.loginLocked,
+                                  })
+                                }
+                              >
+                                {user.loginLocked ? "解除登录锁定" : "登录锁定"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  security(user, {
+                                    bankCardLocked: !user.bankCardLocked,
+                                  })
+                                }
+                              >
+                                {user.bankCardLocked
+                                  ? "解除银行卡锁定"
+                                  : "银行卡锁定"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  security(user, {
+                                    cancellationEnabled:
+                                      !user.cancellationEnabled,
+                                  })
+                                }
+                              >
+                                {user.cancellationEnabled
+                                  ? "取消注销"
+                                  : "注销开启"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  security(user, {
+                                    redFlagged: !user.redFlagged,
+                                  })
+                                }
+                              >
+                                {user.redFlagged ? "取消红号" : "设置红号"}
+                              </button>
+                              <button onClick={() => resetPassword(user)}>
+                                重置登录密码
+                              </button>
+                              {user.status === "Active" ? (
+                                <>
+                                  <button
+                                    onClick={() => change(user, "Restricted")}
+                                  >
+                                    限制账户
+                                  </button>
+                                  <button
+                                    className="danger"
+                                    onClick={() => change(user, "Disabled")}
+                                  >
+                                    停用账户
+                                  </button>
+                                </>
+                              ) : (
+                                <button onClick={() => change(user, "Active")}>
+                                  恢复正常
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">当前账号</span>
+                      )}
+                    </td>
+                    <td className="px-2" title={user.id}>
+                      {user.id.slice(0, 8)}
+                    </td>
+                    <td className="px-2">{user.riskLevel1}</td>
+                    <td className="px-2">{user.riskLevel2}</td>
+                    <td className="px-2 font-medium">{user.account}</td>
+                    <td className="px-2">{user.displayName}</td>
+                    <td className="px-2">{user.mobilePhone || "—"}</td>
+                    <td className="px-2 tabular-nums">
+                      {Number(user.accountBalance).toFixed(2)}
+                    </td>
+                    <td className="px-2 tabular-nums">
+                      {Number(user.frozenBalance).toFixed(2)}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.online, "在线", "离线")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.accountLocked, "已锁定", "未锁定")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.loginLocked, "已锁定", "未锁定")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.bankCardLocked, "已锁定", "未锁定")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.cancellationEnabled, "已开启", "正常")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.realNameVerified, "已认证", "未认证")}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.enterpriseVerified, "已认证", "未认证")}
+                    </td>
+                    <td className="px-2">
+                      {badge(
+                        new Date(user.lastSeenAtUtc).toDateString() ===
+                          new Date().toDateString(),
+                        "是",
+                        "否"
+                      )}
+                    </td>
+                    <td className="px-2">
+                      {badge(user.redFlagged, "红号", "普通")}
+                    </td>
+                    <td className="px-2">{user.role}</td>
+                    <td className="px-2">
+                      <span
+                        className={
+                          user.registrationSource === "后台开户"
+                            ? "bg-amber-400 px-2 py-0.5 text-white"
+                            : "bg-blue-500 px-2 py-0.5 text-white"
+                        }
+                      >
+                        {user.registrationSource}
+                      </span>
+                    </td>
+                    <td className="px-2">{user.inviteSource || "—"}</td>
+                    <td className="px-2 whitespace-nowrap">
+                      {formatTime(user.createdAtUtc)}
+                    </td>
+                    <td className="px-2 whitespace-nowrap">
+                      {formatTime(user.loginPasswordChangedAtUtc)}
+                    </td>
+                    <td className="px-2 whitespace-nowrap">
+                      {formatTime(user.lastSeenAtUtc)}
+                    </td>
+                    <td className="px-2">{user.lastLoginAddress || "—"}</td>
+                    <td className="px-2">{user.lastOnlineIp || "—"}</td>
+                    <td className="px-2">{user.lastNodeIp || "—"}</td>
+                    <td className="px-2">{user.failedLoginAttempts}</td>
+                    <td className="px-2">{user.activeSessions}</td>
+                    <td
+                      className="max-w-48 truncate px-2"
+                      title={user.loginIpRestriction}
+                    >
+                      {user.loginIpRestriction || "—"}
+                    </td>
+                    <td className="px-2">
+                      <Status value={user.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!data.items.length && <Empty text="没有符合条件的用户" />}
+          </div>
         </Card>
       )}
+      {createMode && (
+        <UserCreateDialog
+          mode={createMode}
+          onClose={() => setCreateMode(undefined)}
+          onCreated={() => {
+            setCreateMode(undefined);
+            reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function UserCreateDialog({
+  mode,
+  onClose,
+  onCreated,
+}: {
+  mode: "single" | "batch";
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [account, setAccount] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [mobilePhone, setMobilePhone] = useState("");
+  const [inviteSource, setInviteSource] = useState("后台开户");
+  const [batch, setBatch] = useState("# 每行：账号,密码,昵称,手机号\n");
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    setBusy(true);
+    try {
+      if (mode === "single")
+        await api("/api/admin/users", {
+          method: "POST",
+          body: JSON.stringify({
+            account,
+            password,
+            displayName,
+            mobilePhone,
+            inviteSource,
+          }),
+        });
+      else {
+        const users = batch
+          .split(/\r?\n/)
+          .filter(line => line.trim() && !line.trim().startsWith("#"))
+          .map(line => {
+            const [valueAccount, valuePassword, valueName, valueMobile = ""] =
+              line.split(",").map(value => value.trim());
+            return {
+              account: valueAccount,
+              password: valuePassword,
+              displayName: valueName,
+              mobilePhone: valueMobile,
+              inviteSource: "批量后台开户",
+            };
+          });
+        const result = await api<{ created: string[]; skipped: string[] }>(
+          "/api/admin/users/batch",
+          { method: "POST", body: JSON.stringify({ users }) }
+        );
+        toast.info(
+          `成功 ${result.created.length} 个，跳过 ${result.skipped.length} 个`
+        );
+      }
+      toast.success("用户已新增");
+      onCreated();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "新增失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div
+      className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/50 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">
+            {mode === "single" ? "新增用户" : "批量新增账号"}
+          </h3>
+          <button onClick={onClose}>
+            <X />
+          </button>
+        </div>
+        {mode === "single" ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <input
+              value={account}
+              onChange={e => setAccount(e.target.value)}
+              placeholder="用户账号"
+              className="admin-input"
+            />
+            <input
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="昵称"
+              className="admin-input"
+            />
+            <input
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              type="password"
+              placeholder="初始密码（至少 8 位）"
+              className="admin-input"
+            />
+            <input
+              value={mobilePhone}
+              onChange={e => setMobilePhone(e.target.value)}
+              placeholder="手机号码（可选）"
+              className="admin-input"
+            />
+            <input
+              value={inviteSource}
+              onChange={e => setInviteSource(e.target.value)}
+              placeholder="开户/邀请码来源"
+              className="admin-input sm:col-span-2"
+            />
+          </div>
+        ) : (
+          <textarea
+            value={batch}
+            onChange={e => setBatch(e.target.value)}
+            rows={12}
+            className="admin-input mt-5 font-mono text-sm"
+          />
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="admin-secondary">
+            取消
+          </button>
+          <button
+            disabled={busy || (mode === "single" && (!account || !password))}
+            onClick={submit}
+            className="admin-primary !w-auto"
+          >
+            {busy ? "处理中…" : "确认新增"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

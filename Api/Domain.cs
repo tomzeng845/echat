@@ -25,9 +25,30 @@ public sealed class UserAccount
     public string AvatarUrl { get; set; } = "";
     public string Signature { get; set; } = "";
     public string Region { get; set; } = "";
+    public string MobilePhone { get; set; } = "";
     public string PublicKeyJwk { get; set; } = "";
     public UserRole Role { get; set; } = UserRole.User;
     public UserStatus Status { get; set; } = UserStatus.Active;
+    public int RiskLevel1 { get; set; }
+    public int RiskLevel2 { get; set; }
+    public decimal AccountBalance { get; set; }
+    public decimal FrozenBalance { get; set; }
+    public bool AccountLocked { get; set; }
+    public bool LoginLocked { get; set; }
+    public bool BankCardLocked { get; set; }
+    public bool CancellationEnabled { get; set; }
+    public bool RealNameVerified { get; set; }
+    public bool EnterpriseVerified { get; set; }
+    public bool RedFlagged { get; set; }
+    public string RegistrationSource { get; set; } = "邀请注册";
+    public string InviteSource { get; set; } = "";
+    public string LoginIpRestriction { get; set; } = "";
+    public DateTime? LoginPasswordChangedAtUtc { get; set; }
+    public DateTime? LastLoginAtUtc { get; set; }
+    public string LastLoginAddress { get; set; } = "";
+    public string LastLoginIp { get; set; } = "";
+    public string LastOnlineIp { get; set; } = "";
+    public string LastNodeIp { get; set; } = "";
     public string AgreementVersion { get; set; } = "2026-09";
     public DateTime AgreementAcceptedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -279,8 +300,75 @@ public sealed record DeviceSessionView(string Id, string DeviceId, string Device
 public sealed record LogoutRequest(string? RefreshToken = null);
 public sealed record MomentReportRequest(string Reason, string Detail = "");
 public sealed record CallRecordView(string Id, string ConversationId, string ConversationName, string CallerId, string Mode, CallRecordStatus Status, DateTime StartedAtUtc, DateTime? AnsweredAtUtc, DateTime? EndedAtUtc, string EndReason);
-public sealed record AdminUserView(string Id, string Account, string DisplayName, UserRole Role, UserStatus Status, DateTime CreatedAtUtc, DateTime LastSeenAtUtc, int ActiveSessions, DateTime? LockoutUntilUtc);
+public sealed class AdminUserView
+{
+    public string Id { get; set; } = "";
+    public string Account { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string MobilePhone { get; set; } = "";
+    public UserRole Role { get; set; }
+    public UserStatus Status { get; set; }
+    public int RiskLevel1 { get; set; }
+    public int RiskLevel2 { get; set; }
+    public decimal AccountBalance { get; set; }
+    public decimal FrozenBalance { get; set; }
+    public int ActiveSessions { get; set; }
+    public bool Online { get; set; }
+    public bool AccountLocked { get; set; }
+    public bool LoginLocked { get; set; }
+    public bool BankCardLocked { get; set; }
+    public bool CancellationEnabled { get; set; }
+    public bool RealNameVerified { get; set; }
+    public bool EnterpriseVerified { get; set; }
+    public bool RedFlagged { get; set; }
+    public string RegistrationSource { get; set; } = "";
+    public string InviteSource { get; set; } = "";
+    public string LoginIpRestriction { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime LastSeenAtUtc { get; set; }
+    public DateTime? LastLoginAtUtc { get; set; }
+    public DateTime? LoginPasswordChangedAtUtc { get; set; }
+    public DateTime? LockoutUntilUtc { get; set; }
+    public int FailedLoginAttempts { get; set; }
+    public string LastLoginAddress { get; set; } = "";
+    public string LastLoginIp { get; set; } = "";
+    public string LastOnlineIp { get; set; } = "";
+    public string LastNodeIp { get; set; } = "";
+}
+public sealed record AdminUserPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
+public sealed class AdminUserQuery
+{
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+    public string? Search { get; set; }
+    public UserStatus? Status { get; set; }
+    public UserRole? Role { get; set; }
+    public bool? Online { get; set; }
+    public bool? HasMobile { get; set; }
+    public bool? RealNameVerified { get; set; }
+    public bool? EnterpriseVerified { get; set; }
+    public bool? TodayOnline { get; set; }
+    public bool? AccountLocked { get; set; }
+    public bool? LoginLocked { get; set; }
+    public bool? CancellationEnabled { get; set; }
+    public bool? RedFlagged { get; set; }
+    public string? RegistrationSource { get; set; }
+    public string? LastLoginIp { get; set; }
+    public string? LastOnlineIp { get; set; }
+    public string? LastNodeIp { get; set; }
+    public DateTime? RegisteredFromUtc { get; set; }
+    public DateTime? RegisteredToUtc { get; set; }
+    public DateTime? LastSeenFromUtc { get; set; }
+    public DateTime? LastSeenToUtc { get; set; }
+    public int? FailedLoginMin { get; set; }
+    public int? FailedLoginMax { get; set; }
+}
 public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
+public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User);
+public sealed record AdminUserBatchCreateRequest(IReadOnlyList<AdminUserCreateRequest> Users);
+public sealed record AdminUserProfileRequest(string? DisplayName = null, string? MobilePhone = null, string? InviteSource = null, string? LoginIpRestriction = null);
+public sealed record AdminUserSecurityRequest(bool? AccountLocked = null, bool? LoginLocked = null, bool? BankCardLocked = null, bool? CancellationEnabled = null, bool? RedFlagged = null, bool? RealNameVerified = null, bool? EnterpriseVerified = null, int? RiskLevel1 = null, int? RiskLevel2 = null, string Reason = "");
+public sealed record AdminUserPasswordRequest(string Password);
 public sealed record AdminInviteRequest(string Code, int MaxUses = 1, DateTime? ExpiresAtUtc = null, bool IsActive = true);
 public sealed record AdminReportDecisionRequest(MomentReportStatus Status, string Note = "");
 public sealed record AdminModuleRecordRequest(string Name, string Status = "Active", Dictionary<string, string>? Data = null);

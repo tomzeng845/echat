@@ -103,8 +103,22 @@ button:active { transition: transform 150ms var(--ease-out); }
 .admin-input:focus { border-color: rgb(20 184 166 / 0.65); background: white; box-shadow: 0 0 0 3px rgb(20 184 166 / 0.1); }
 .admin-primary { display: block; width: 100%; border-radius: 0.75rem; background: rgb(15 23 42); padding: 0.75rem 1rem; color: white; font-size: 0.875rem; font-weight: 600; text-align: center; }
 .admin-primary:disabled { cursor: not-allowed; opacity: 0.45; }
+.admin-secondary, .admin-danger { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; border: 1px solid rgb(203 213 225); border-radius: 0.55rem; background: white; padding: 0.6rem 0.8rem; color: rgb(51 65 85); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.admin-danger { border-color: rgb(254 202 202); background: rgb(254 242 242); color: rgb(190 18 60); }
+.admin-filter-input, .admin-filter-select { min-height: 2.35rem; width: 100%; border: 1px solid rgb(226 232 240); background: white; padding: 0.45rem 0.6rem; color: rgb(51 65 85); font-size: 0.75rem; outline: none; }
+.admin-filter-input:focus, .admin-filter-select:focus { border-color: rgb(20 184 166); box-shadow: 0 0 0 2px rgb(20 184 166 / 0.1); }
+.admin-filter-button { display: inline-grid; min-height: 2.35rem; min-width: 2.35rem; place-items: center; border: 1px solid rgb(226 232 240); background: white; padding: 0 0.55rem; color: rgb(71 85 105); }
+.admin-filter-button:disabled { cursor: not-allowed; color: rgb(203 213 225); }
+.user-action-menu button { display: flex; width: 100%; align-items: center; gap: 0.45rem; padding: 0.55rem 0.75rem; text-align: left; color: rgb(51 65 85); }
+.user-action-menu { position: fixed !important; top: 13.5rem !important; left: 19.5rem !important; max-height: min(68vh, 32rem); overflow-y: auto; }
+.user-action-menu button:hover { background: rgb(241 245 249); }
+.user-action-menu button.danger { color: rgb(190 18 60); }
 .admin-action { border-radius: 0.7rem; padding: 0.55rem 0.85rem; font-size: 0.8rem; font-weight: 600; }
 .admin-mini { border-radius: 0.55rem; padding: 0.45rem 0.65rem; font-size: 0.75rem; font-weight: 600; }
+
+@media (max-width: 1023px) {
+  .user-action-menu { top: 8rem !important; left: 1rem !important; right: 1rem; width: auto !important; }
+}
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: rgb(148 163 184 / 0.35); border-radius: 999px; }

@@ -16,7 +16,7 @@
 | 富媒体     | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应                                 | 已完成基础版本   |
 | 端到端加密 | 浏览器生成 RSA-OAEP 身份密钥；文字及聊天附件使用会话 AES-GCM-256 密钥加密；服务器保存密文和成员密钥信封 | 已完成 MVP       |
 | 响应式界面 | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                  | 已完成           |
-| 管理后台   | HTML5 响应式首页及账户、资金、管理、聊天四大系统，共 30 个功能页与对应 API                              | 已完成 0.5.0     |
+| 管理后台   | HTML5 响应式四大系统；用户管理支持高级筛选、分页、批量开户、CSV 导出和完整账户治理                      | 已完成 0.5.1     |
 | 音视频通话 | 单聊与群聊入口、来电、接听、拒接、结束、静音、摄像头控制、持久化通话记录、动态 ICE 配置、SignalR 信令   | 已完成 P1 应用层 |
 | 朋友圈     | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                            | 已完成 P1        |
 
@@ -28,27 +28,29 @@
 
 额度功能目前是 E聊后台独立台账，不对接外部支付。公告和群发会通过 SignalR 向在线用户发送 `admin.notice`。定时任务支持配置、手工执行和日志；自动按时触发需由生产平台调度器调用，不在可休眠的 Web 容器内运行常驻定时器。短信、安卓厂商推送、机器人资金动作等页面保存可审计配置，实际外发或资金动作仍需配置相应第三方服务并完成安全审批。
 
+用户管理 0.5.1 采用截图同类高密度运营表格，包含用户 ID、双风险值、账号/昵称/手机号、账户/冻结额度、在线与今日上线、三类锁定、注销、实名/企业认证、红号、注册与邀请码来源、注册/密码修改/最后在线时间、最后登录地址、在线/节点 IP、失败次数、设备数和账户状态。筛选支持上述核心状态、日期和 IP；操作支持同 IP 检测、复制用户、修改昵称/邀请码/登录 IP、强制下线、账号/登录/银行卡锁定、注销、红号、密码重置、限制/停用/恢复。所有治理操作进入审计和离线日志。
+
 ## 目录结构
 
-| 路径                                         | 说明                                                                |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `Api/`                                       | ASP.NET Core API、SignalR Hub、领域模型与 MongoDB/内存仓库          |
-| `Api/Controllers/`                           | 账号、用户公钥、联系人、会话、媒体、朋友圈和管理接口                |
-| `Api.Tests/`                                 | xUnit 核心业务测试                                                  |
-| `client/`                                    | React HTML5 响应式客户端                                            |
-| `client/src/pages/Admin.tsx`                 | 独立 HTML5 响应式管理后台，按路由懒加载                             |
-| `client/src/lib/echat-crypto.ts`             | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密                     |
-| `client/src/lib/echat-media.ts`              | 富媒体二进制加密、上传、下载和解密                                  |
-| `client/src/components/chat/CallManager.tsx` | WebRTC 音视频通话和 SignalR 信令控制                                |
-| `client/src/components/qr/`                  | 二维码生成、摄像头/图片识别、登录确认和扫码名片流程                 |
-| `scripts/e2e-smoke.sh`                       | 注册、好友、会话、富媒体和朋友圈冒烟测试                            |
-| `scripts/signalr-call-smoke.mjs`             | 双账号通话邀请、接受、信令与结束事件测试                            |
-| `scripts/p1-qr-smoke.mjs`                    | 二维码登录、扫码加好友和远程退出设备测试                            |
-| `scripts/contact-realtime-smoke.mjs`         | 双账号好友申请、申请人资料和联系人双端实时更新测试                  |
-| `scripts/mobile-friend-chat-smoke.mjs`       | 390×844 手机视口好友接受、进入聊天和发送消息测试                    |
-| `scripts/unread-clear-smoke.mjs`             | 390×844 手机与 1280×720 桌面双栏的未读角标、进入清零和实时已读测试  |
-| `scripts/admin-smoke.mjs`                    | 四大后台系统、12 类可编辑模块、30 个菜单页、角色隔离及桌面/手机测试 |
-| `Dockerfile`                                 | Node 构建前端、.NET 发布后端的多阶段生产镜像                        |
+| 路径                                         | 说明                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `Api/`                                       | ASP.NET Core API、SignalR Hub、领域模型与 MongoDB/内存仓库                       |
+| `Api/Controllers/`                           | 账号、用户公钥、联系人、会话、媒体、朋友圈和管理接口                             |
+| `Api.Tests/`                                 | xUnit 核心业务测试                                                               |
+| `client/`                                    | React HTML5 响应式客户端                                                         |
+| `client/src/pages/Admin.tsx`                 | 独立 HTML5 响应式管理后台，按路由懒加载                                          |
+| `client/src/lib/echat-crypto.ts`             | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密                                  |
+| `client/src/lib/echat-media.ts`              | 富媒体二进制加密、上传、下载和解密                                               |
+| `client/src/components/chat/CallManager.tsx` | WebRTC 音视频通话和 SignalR 信令控制                                             |
+| `client/src/components/qr/`                  | 二维码生成、摄像头/图片识别、登录确认和扫码名片流程                              |
+| `scripts/e2e-smoke.sh`                       | 注册、好友、会话、富媒体和朋友圈冒烟测试                                         |
+| `scripts/signalr-call-smoke.mjs`             | 双账号通话邀请、接受、信令与结束事件测试                                         |
+| `scripts/p1-qr-smoke.mjs`                    | 二维码登录、扫码加好友和远程退出设备测试                                         |
+| `scripts/contact-realtime-smoke.mjs`         | 双账号好友申请、申请人资料和联系人双端实时更新测试                               |
+| `scripts/mobile-friend-chat-smoke.mjs`       | 390×844 手机视口好友接受、进入聊天和发送消息测试                                 |
+| `scripts/unread-clear-smoke.mjs`             | 390×844 手机与 1280×720 桌面双栏的未读角标、进入清零和实时已读测试               |
+| `scripts/admin-smoke.mjs`                    | 四大后台系统、用户分页筛选/开户/导出/锁定、12 类模块、30 个菜单页及桌面/手机测试 |
+| `Dockerfile`                                 | Node 构建前端、.NET 发布后端的多阶段生产镜像                                     |
 
 ## 本地运行
 
@@ -114,59 +116,65 @@ node scripts/admin-smoke.mjs http://127.0.0.1:2099
 
 ## 主要接口
 
-| 方法                | 路径                                                               | 用途                                                                   |
-| ------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| POST                | `/api/auth/register`                                               | 邀请码注册                                                             |
-| POST                | `/api/auth/login`                                                  | 密码登录                                                               |
-| POST                | `/api/auth/totp`                                                   | 管理员 TOTP 验证                                                       |
-| POST                | `/api/auth/refresh`                                                | 刷新令牌轮换                                                           |
-| POST                | `/api/qr/login/start`                                              | 生成一次性登录二维码                                                   |
-| POST                | `/api/qr/login/scan`                                               | 已登录设备扫描登录二维码                                               |
-| POST                | `/api/qr/login/approve`                                            | 确认或拒绝新设备登录                                                   |
-| POST                | `/api/qr/login/status`                                             | 登录页查询扫码状态                                                     |
-| POST                | `/api/qr/login/exchange`                                           | 一次性兑换登录会话                                                     |
-| POST                | `/api/qr/contact/create`                                           | 生成个人名片二维码                                                     |
-| POST                | `/api/qr/contact/preview`                                          | 预览扫码名片                                                           |
-| POST                | `/api/qr/contact/redeem`                                           | 通过名片发起好友申请                                                   |
-| GET/DELETE          | `/api/devices`                                                     | 查看或撤销登录设备                                                     |
-| PUT                 | `/api/users/me/public-key`                                         | 发布当前设备身份公钥                                                   |
-| GET                 | `/api/users/{account}/public-key`                                  | 获取联系人公钥                                                         |
-| GET/POST            | `/api/contacts/requests`                                           | 查询或发起好友申请                                                     |
-| POST                | `/api/contacts/requests/{id}/accept`                               | 接受好友申请                                                           |
-| GET                 | `/api/conversations`                                               | 会话列表                                                               |
-| POST                | `/api/conversations/direct`                                        | 创建单聊                                                               |
-| POST                | `/api/conversations/groups`                                        | 创建群聊                                                               |
-| GET                 | `/api/conversations/{id}/members`                                  | 获取通话成员                                                           |
-| GET/POST            | `/api/conversations/{id}/messages`                                 | 补拉或发送密文消息                                                     |
-| POST                | `/api/conversations/{id}/messages/{messageId}/recall`              | 撤回消息                                                               |
-| POST                | `/api/conversations/{id}/read/{sequence}`                          | 更新已读游标                                                           |
-| POST                | `/api/media`                                                       | 上传聊天密文或朋友圈媒体                                               |
-| GET                 | `/api/media/{id}/content`                                          | 按关系与会话权限获取媒体                                               |
-| GET/POST            | `/api/moments`                                                     | 获取好友动态或发布动态                                                 |
-| POST/DELETE         | `/api/moments/{id}/like`                                           | 点赞或取消点赞                                                         |
-| POST                | `/api/moments/{id}/comments`                                       | 发布评论                                                               |
-| POST                | `/api/moments/{id}/reports`                                        | 举报动态                                                               |
-| GET                 | `/api/calls`                                                       | 通话记录                                                               |
-| GET                 | `/api/rtc/config`                                                  | STUN/TURN 与媒体拓扑配置                                               |
-| GET                 | `/api/p1/capabilities`                                             | P1 能力和外部依赖状态                                                  |
-| GET                 | `/api/admin/overview`                                              | 管理后台运营与安全概览                                                 |
-| GET/POST            | `/api/admin/users`、`/api/admin/users/{account}/status`            | 用户查询与状态治理                                                     |
-| POST                | `/api/admin/users/{account}/sessions/revoke`                       | 强制退出目标用户全部设备                                               |
-| GET/POST            | `/api/admin/invites`                                               | 查询和维护邀请码                                                       |
-| GET/POST            | `/api/admin/reports`、`/api/admin/reports/{id}/decision`           | 举报队列与处置                                                         |
-| GET                 | `/api/admin/audit`                                                 | 管理操作审计日志                                                       |
-| GET/POST/PUT/DELETE | `/api/admin/modules/{module}`                                      | 科目、角色、资源、配置、推送、公告、客服、任务、短信、机器人和群邀请码 |
-| GET                 | `/api/admin/login-logs`、`/api/admin/login-failure-stats`          | 登录日志和失败 IP 聚合                                                 |
-| POST                | `/api/admin/feedback/{id}/decision`                                | 意见反馈处理                                                           |
-| GET/POST            | `/api/admin/wallets`、`/api/admin/wallet/adjust`                   | 额度台账和人工调整                                                     |
-| GET/POST            | `/api/admin/operators`                                             | 管理账号查询与创建                                                     |
-| GET/POST            | `/api/admin/conversations`、`/api/admin/conversations/{id}/action` | 会话查询与群聊治理                                                     |
-| GET                 | `/api/admin/contacts`                                              | 全局通讯录关系查询                                                     |
-| POST                | `/api/admin/bulk-messages`                                         | SignalR 在线群发通知                                                   |
-| POST                | `/api/admin/tasks/{id}/run`                                        | 手工执行后台任务并生成日志                                             |
-| POST                | `/api/admin/images`                                                | 后台运营图片上传                                                       |
-| WebSocket           | `/hubs/chat`                                                       | 消息、回执、朋友圈更新与 WebRTC 信令                                   |
-| GET                 | `/api/health`                                                      | 健康检查                                                               |
+| 方法                | 路径                                                                         | 用途                                                                   |
+| ------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| POST                | `/api/auth/register`                                                         | 邀请码注册                                                             |
+| POST                | `/api/auth/login`                                                            | 密码登录                                                               |
+| POST                | `/api/auth/totp`                                                             | 管理员 TOTP 验证                                                       |
+| POST                | `/api/auth/refresh`                                                          | 刷新令牌轮换                                                           |
+| POST                | `/api/qr/login/start`                                                        | 生成一次性登录二维码                                                   |
+| POST                | `/api/qr/login/scan`                                                         | 已登录设备扫描登录二维码                                               |
+| POST                | `/api/qr/login/approve`                                                      | 确认或拒绝新设备登录                                                   |
+| POST                | `/api/qr/login/status`                                                       | 登录页查询扫码状态                                                     |
+| POST                | `/api/qr/login/exchange`                                                     | 一次性兑换登录会话                                                     |
+| POST                | `/api/qr/contact/create`                                                     | 生成个人名片二维码                                                     |
+| POST                | `/api/qr/contact/preview`                                                    | 预览扫码名片                                                           |
+| POST                | `/api/qr/contact/redeem`                                                     | 通过名片发起好友申请                                                   |
+| GET/DELETE          | `/api/devices`                                                               | 查看或撤销登录设备                                                     |
+| PUT                 | `/api/users/me/public-key`                                                   | 发布当前设备身份公钥                                                   |
+| GET                 | `/api/users/{account}/public-key`                                            | 获取联系人公钥                                                         |
+| GET/POST            | `/api/contacts/requests`                                                     | 查询或发起好友申请                                                     |
+| POST                | `/api/contacts/requests/{id}/accept`                                         | 接受好友申请                                                           |
+| GET                 | `/api/conversations`                                                         | 会话列表                                                               |
+| POST                | `/api/conversations/direct`                                                  | 创建单聊                                                               |
+| POST                | `/api/conversations/groups`                                                  | 创建群聊                                                               |
+| GET                 | `/api/conversations/{id}/members`                                            | 获取通话成员                                                           |
+| GET/POST            | `/api/conversations/{id}/messages`                                           | 补拉或发送密文消息                                                     |
+| POST                | `/api/conversations/{id}/messages/{messageId}/recall`                        | 撤回消息                                                               |
+| POST                | `/api/conversations/{id}/read/{sequence}`                                    | 更新已读游标                                                           |
+| POST                | `/api/media`                                                                 | 上传聊天密文或朋友圈媒体                                               |
+| GET                 | `/api/media/{id}/content`                                                    | 按关系与会话权限获取媒体                                               |
+| GET/POST            | `/api/moments`                                                               | 获取好友动态或发布动态                                                 |
+| POST/DELETE         | `/api/moments/{id}/like`                                                     | 点赞或取消点赞                                                         |
+| POST                | `/api/moments/{id}/comments`                                                 | 发布评论                                                               |
+| POST                | `/api/moments/{id}/reports`                                                  | 举报动态                                                               |
+| GET                 | `/api/calls`                                                                 | 通话记录                                                               |
+| GET                 | `/api/rtc/config`                                                            | STUN/TURN 与媒体拓扑配置                                               |
+| GET                 | `/api/p1/capabilities`                                                       | P1 能力和外部依赖状态                                                  |
+| GET                 | `/api/admin/overview`                                                        | 管理后台运营与安全概览                                                 |
+| GET/POST            | `/api/admin/users`、`/api/admin/users/{account}/status`                      | 用户查询与状态治理                                                     |
+| POST                | `/api/admin/users/batch`                                                     | 单次批量新增 1–200 个用户                                              |
+| GET                 | `/api/admin/users/export`                                                    | 按当前筛选条件导出防公式注入 CSV                                       |
+| PUT                 | `/api/admin/users/{account}/profile`                                         | 修改昵称、手机号、邀请码来源和登录 IP 限制                             |
+| PUT                 | `/api/admin/users/{account}/security`                                        | 账号/登录/银行卡锁定、注销、红号、认证和风险值                         |
+| PUT                 | `/api/admin/users/{account}/password`                                        | 重置密码并撤销原设备会话                                               |
+| POST/GET            | `/api/admin/users/{account}/duplicate`、`/api/admin/users/{account}/same-ip` | 复制用户和同 IP 账号检测                                               |
+| POST                | `/api/admin/users/{account}/sessions/revoke`                                 | 强制退出目标用户全部设备                                               |
+| GET/POST            | `/api/admin/invites`                                                         | 查询和维护邀请码                                                       |
+| GET/POST            | `/api/admin/reports`、`/api/admin/reports/{id}/decision`                     | 举报队列与处置                                                         |
+| GET                 | `/api/admin/audit`                                                           | 管理操作审计日志                                                       |
+| GET/POST/PUT/DELETE | `/api/admin/modules/{module}`                                                | 科目、角色、资源、配置、推送、公告、客服、任务、短信、机器人和群邀请码 |
+| GET                 | `/api/admin/login-logs`、`/api/admin/login-failure-stats`                    | 登录日志和失败 IP 聚合                                                 |
+| POST                | `/api/admin/feedback/{id}/decision`                                          | 意见反馈处理                                                           |
+| GET/POST            | `/api/admin/wallets`、`/api/admin/wallet/adjust`                             | 额度台账和人工调整                                                     |
+| GET/POST            | `/api/admin/operators`                                                       | 管理账号查询与创建                                                     |
+| GET/POST            | `/api/admin/conversations`、`/api/admin/conversations/{id}/action`           | 会话查询与群聊治理                                                     |
+| GET                 | `/api/admin/contacts`                                                        | 全局通讯录关系查询                                                     |
+| POST                | `/api/admin/bulk-messages`                                                   | SignalR 在线群发通知                                                   |
+| POST                | `/api/admin/tasks/{id}/run`                                                  | 手工执行后台任务并生成日志                                             |
+| POST                | `/api/admin/images`                                                          | 后台运营图片上传                                                       |
+| WebSocket           | `/hubs/chat`                                                                 | 消息、回执、朋友圈更新与 WebRTC 信令                                   |
+| GET                 | `/api/health`                                                                | 健康检查                                                               |
 
 ## 仍需外部基础设施的能力
 

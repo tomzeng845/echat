@@ -19,7 +19,14 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(Fail("账号已存在"));
         if (!await repository.TryConsumeInviteAsync(request.InviteCode.Trim().ToUpperInvariant(), ct)) return BadRequest(Fail("邀请码无效、已过期或已用完"));
 
-        var user = new UserAccount { Account = account, DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : request.DisplayName.Trim(), AgreementAcceptedAtUtc = DateTime.UtcNow };
+        var user = new UserAccount
+        {
+            Account = account,
+            DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : request.DisplayName.Trim(),
+            AgreementAcceptedAtUtc = DateTime.UtcNow,
+            RegistrationSource = "邀请注册",
+            InviteSource = request.InviteCode.Trim().ToUpperInvariant()
+        };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         try { await repository.AddUserAsync(user, ct); }
         catch (InvalidOperationException) { return Conflict(Fail("账号已存在")); }
@@ -31,7 +38,10 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     {
         var user = await repository.GetUserByAccountAsync(request.Account.Trim().ToLowerInvariant(), ct);
         if (user is null) { await LogLoginAsync(request.Account, request.DeviceName, "failed", "账号不存在", null, ct); return Unauthorized(Fail("账号或密码错误")); }
-        if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
+        if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion || user.CancellationEnabled) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用或注销", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
+        if (user.AccountLocked || user.LoginLocked) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号或登录已锁定", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号登录已被管理员锁定")); }
+        var currentIp = CurrentIp();
+        if (!IpAllowed(user.LoginIpRestriction, currentIp)) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "来源 IP 不在允许列表", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("当前网络不允许登录此账号")); }
         if (user.LockoutUntilUtc > DateTime.UtcNow) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号锁定", user.Id, ct); return StatusCode(StatusCodes.Status429TooManyRequests, Fail("登录尝试过多，请稍后再试")); }
 
         var verified = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
@@ -45,6 +55,11 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         }
 
         user.FailedLoginAttempts = 0; user.LockoutUntilUtc = null; user.LastSeenAtUtc = DateTime.UtcNow;
+        user.LastLoginAtUtc = DateTime.UtcNow;
+        user.LastLoginIp = currentIp;
+        user.LastOnlineIp = currentIp;
+        user.LastLoginAddress = currentIp;
+        user.LastNodeIp = Environment.GetEnvironmentVariable("HOSTNAME") ?? "api-node";
         if (verified == PasswordVerificationResult.SuccessRehashNeeded) user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.UpdateUserAsync(user, ct);
 
@@ -83,7 +98,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         var session = await repository.GetSessionByHashAsync(TokenService.Hash(request.RefreshToken), ct);
         if (session is null) return Unauthorized(Fail("登录状态已失效"));
         var user = await repository.GetUserByIdAsync(session.UserId, ct);
-        if (user is null || user.Status != UserStatus.Active) return Unauthorized(Fail("账号不可用"));
+        if (user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled) return Unauthorized(Fail("账号不可用"));
         await repository.RevokeSessionAsync(session.Id, ct);
         return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId ?? session.DeviceId, ct));
     }
@@ -114,4 +129,8 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
 
     private static AuthResponse Fail(string error) => new(false, null, null, null, null, Error: error);
     private static UserView View(UserAccount user) => SessionService.View(user);
+    private string CurrentIp() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    private static bool IpAllowed(string restriction, string currentIp) => string.IsNullOrWhiteSpace(restriction)
+        || restriction.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(value => string.Equals(value, currentIp, StringComparison.OrdinalIgnoreCase));
 }

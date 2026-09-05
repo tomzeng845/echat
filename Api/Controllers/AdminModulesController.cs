@@ -124,6 +124,8 @@ public sealed class AdminModulesController(
         if (after < 0) return BadRequest(new { error = "调整后余额不能小于 0" });
         wallet.Data["balance"] = after.ToString("0.00", CultureInfo.InvariantCulture);
         await repository.UpsertAdminRecordAsync(wallet, ct);
+        user.AccountBalance = after;
+        await repository.UpdateUserAsync(user, ct);
         var transaction = await repository.UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = "fund.adjustments", Name = request.Subject.Trim(), Status = "Completed",
@@ -145,7 +147,7 @@ public sealed class AdminModulesController(
         foreach (var user in users)
         {
             var wallet = await repository.GetAdminRecordAsync($"wallet:{user.Id}", ct);
-            result.Add(new { user.Id, user.Account, user.DisplayName, balance = wallet?.Data.GetValueOrDefault("balance", "0.00") ?? "0.00" });
+            result.Add(new { user.Id, user.Account, user.DisplayName, balance = wallet?.Data.GetValueOrDefault("balance", user.AccountBalance.ToString("0.00", CultureInfo.InvariantCulture)) ?? user.AccountBalance.ToString("0.00", CultureInfo.InvariantCulture) });
         }
         return Ok(result);
     }

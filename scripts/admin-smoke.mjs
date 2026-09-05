@@ -55,8 +55,146 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.5.0" || overview.metrics.users < 1)
+if (overview.version !== "0.5.1" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
+
+const managedAccount = `managed${suffix}`;
+const managed = await fetchApi("/api/admin/users", token, {
+  method: "POST",
+  body: JSON.stringify({
+    account: managedAccount,
+    password: userPassword,
+    displayName: "受管测试用户",
+    mobilePhone: "13800138000",
+    inviteSource: "后台测试",
+  }),
+});
+await fetchApi(`/api/admin/users/${managedAccount}/profile`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    displayName: "已更新测试用户",
+    mobilePhone: "13900139000",
+    inviteSource: "API_IMPORT",
+  }),
+});
+await fetchApi(`/api/admin/users/${managedAccount}/security`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    realNameVerified: true,
+    enterpriseVerified: true,
+    redFlagged: true,
+    riskLevel1: 12,
+    riskLevel2: 7,
+    accountLocked: true,
+    loginLocked: true,
+    bankCardLocked: true,
+    reason: "automated security test",
+  }),
+});
+await fetchApi(
+  "/api/auth/login",
+  null,
+  {
+    method: "POST",
+    body: JSON.stringify({ account: managedAccount, password: userPassword }),
+  },
+  403
+);
+await fetchApi(`/api/admin/users/${managedAccount}/security`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    accountLocked: false,
+    loginLocked: false,
+    reason: "unlock",
+  }),
+});
+const managedPage = await fetchApi(
+  `/api/admin/users?page=1&pageSize=20&search=${managedAccount}&realNameVerified=true&redFlagged=true`,
+  token
+);
+if (
+  managedPage.total !== 1 ||
+  managedPage.items[0].mobilePhone !== "13900139000" ||
+  managedPage.items[0].riskLevel1 !== 12
+)
+  throw new Error("advanced user search failed");
+const copyAccount = `copy${suffix}`;
+await fetchApi(`/api/admin/users/${managedAccount}/duplicate`, token, {
+  method: "POST",
+  body: JSON.stringify({
+    account: copyAccount,
+    password: userPassword,
+    displayName: "复制测试用户",
+  }),
+});
+await fetchApi("/api/admin/users/batch", token, {
+  method: "POST",
+  body: JSON.stringify({
+    users: [
+      {
+        account: `batcha${suffix}`,
+        password: userPassword,
+        displayName: "批量A",
+      },
+      {
+        account: `batchb${suffix}`,
+        password: userPassword,
+        displayName: "批量B",
+      },
+    ],
+  }),
+});
+await fetchApi(
+  `/api/admin/users/${managedAccount}/password`,
+  token,
+  {
+    method: "PUT",
+    body: JSON.stringify({ password: `${userPassword}New` }),
+  },
+  204
+);
+await fetchApi(
+  "/api/auth/login",
+  null,
+  {
+    method: "POST",
+    body: JSON.stringify({ account: managedAccount, password: userPassword }),
+  },
+  401
+);
+const managedActive = await fetchApi("/api/auth/login", null, {
+  method: "POST",
+  body: JSON.stringify({
+    account: managedAccount,
+    password: `${userPassword}New`,
+  }),
+});
+await fetchApi(`/api/admin/users/${managedAccount}/security`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    cancellationEnabled: true,
+    reason: "cancellation test",
+  }),
+});
+await fetchApi("/api/auth/me", managedActive.accessToken, {}, 401);
+await fetchApi(`/api/admin/users/${managedAccount}/security`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    cancellationEnabled: false,
+    reason: "restore cancellation",
+  }),
+});
+const exportResponse = await fetch(
+  `${base}/api/admin/users/export?pageSize=20&search=${managedAccount}`,
+  {
+    headers: { Authorization: `Bearer ${token}` },
+  }
+);
+if (
+  !exportResponse.ok ||
+  !(await exportResponse.text()).includes(managedAccount)
+)
+  throw new Error("user export failed");
 
 const normalAccount = `adminuser${suffix}`;
 const invitedAccount = `invite${suffix}`;
@@ -72,7 +210,8 @@ const normal = await fetchApi("/api/auth/register", null, {
 });
 await fetchApi("/api/admin/overview", normal.accessToken, {}, 403);
 let users = await fetchApi(`/api/admin/users?search=${normalAccount}`, token);
-if (users.length !== 1) throw new Error("user search failed");
+if (users.total !== 1 || users.items.length !== 1)
+  throw new Error("user search failed");
 await fetchApi(`/api/admin/users/${normalAccount}/status`, token, {
   method: "POST",
   body: JSON.stringify({ status: "Disabled", reason: "automated test" }),
@@ -94,6 +233,10 @@ const normalActive = await fetchApi("/api/auth/login", null, {
   method: "POST",
   body: JSON.stringify({ account: normalAccount, password: userPassword }),
 });
+if (
+  !(await fetchApi(`/api/admin/users/${normalAccount}/same-ip`, token)).length
+)
+  throw new Error("same IP user detection failed");
 
 const inviteCode = `ADM${suffix}`.toUpperCase();
 await fetchApi("/api/admin/invites", token, {
@@ -284,6 +427,69 @@ try {
     { timeout: 10000 }
   );
 
+  await page.evaluate(() => {
+    const group = [...document.querySelectorAll("button")].find(item =>
+      item.textContent?.trim().startsWith("账户系统")
+    );
+    const users = group?.parentElement
+      ? [...group.parentElement.querySelectorAll("button")].find(
+          item => item.textContent?.trim() === "用户管理"
+        )
+      : null;
+    users?.click();
+  });
+  await page.waitForFunction(
+    () =>
+      document.body.innerText.includes("批量新增账号") &&
+      document.body.innerText.includes("账户余额") &&
+      document.body.innerText.includes("最后节点IP"),
+    { timeout: 10000 }
+  );
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .find(item => item.textContent?.trim() === "新增用户")
+      ?.click()
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"] input[placeholder*="初始密码"]'),
+    { timeout: 5000 }
+  );
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "取消")
+      ?.click()
+  );
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .find(item => item.textContent?.trim() === "批量新增账号")
+      ?.click()
+  );
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"] textarea'),
+    { timeout: 5000 }
+  );
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "取消")
+      ?.click()
+  );
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .find(item => item.textContent?.trim() === "操作")
+      ?.click()
+  );
+  await page.waitForFunction(
+    () =>
+      document.body.innerText.includes("同IP会员检测") &&
+      document.body.innerText.includes("银行卡锁定"),
+    { timeout: 5000 }
+  );
+  await page.screenshot({
+    path: "/home/ubuntu/screenshots/echat-admin-users-0.5.1.png",
+    fullPage: false,
+  });
+
   const menuGroups = {
     账户系统: [
       "用户管理",
@@ -385,6 +591,39 @@ try {
   await page.evaluate(() =>
     document.querySelector("svg.lucide-menu")?.closest("button")?.click()
   );
+  await page.evaluate(() => {
+    const account = [...document.querySelectorAll("button")].find(item =>
+      item.textContent?.trim().startsWith("账户系统")
+    );
+    account?.click();
+    const users = account?.parentElement
+      ? [...account.parentElement.querySelectorAll("button")].find(
+          item => item.textContent?.trim() === "用户管理"
+        )
+      : null;
+    users?.click();
+  });
+  await page.waitForFunction(
+    () => document.body.innerText.includes("账户余额"),
+    {
+      timeout: 5000,
+    }
+  );
+  const mobileLayout = await page.evaluate(() => {
+    const table = document.querySelector("table");
+    const scroller = table?.parentElement;
+    return {
+      pageFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
+      tableScrollable: Boolean(
+        scroller && scroller.scrollWidth > scroller.clientWidth
+      ),
+    };
+  });
+  if (!mobileLayout.pageFits || !mobileLayout.tableScrollable)
+    throw new Error("mobile user table layout invalid");
+  await page.evaluate(() =>
+    document.querySelector("svg.lucide-menu")?.closest("button")?.click()
+  );
   await page.evaluate(() =>
     [...document.querySelectorAll("button")]
       .find(item => item.textContent?.trim().startsWith("聊天系统"))
@@ -400,5 +639,5 @@ try {
 }
 
 console.log(
-  `ADMIN_050_OK modules=${moduleCases.length} pages=30 users=${users.length} audits=${audits.length} role_guard=403 viewports=1440x900,390x844`
+  `ADMIN_051_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 viewports=1440x900,390x844`
 );
