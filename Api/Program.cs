@@ -46,6 +46,15 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 await app.Services.GetRequiredService<IChatRepository>().EnsureSeedDataAsync();
 
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiException").LogError(error, "Unhandled API error for {Method} {Path}", context.Request.Method, context.Request.Path);
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/json; charset=utf-8";
+    await context.Response.WriteAsJsonAsync(new { success = false, error = "服务器暂时无法完成请求", traceId = context.TraceIdentifier });
+}));
+
 app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";

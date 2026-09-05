@@ -54,25 +54,30 @@ public sealed class TokenService(IConfiguration configuration)
 
 public sealed class TotpService(IConfiguration configuration, IHostEnvironment environment)
 {
-    private readonly string _secret = configuration["Admin:TotpSecret"]
+    private readonly string? _secret = configuration["Admin:TotpSecret"]
         ?? Environment.GetEnvironmentVariable("ADMIN_TOTP_SECRET")
-        ?? (environment.IsDevelopment() ? "JBSWY3DPEHPK3PXP" : throw new InvalidOperationException("ADMIN_TOTP_SECRET must be configured in production"));
+        ?? (environment.IsDevelopment() ? "JBSWY3DPEHPK3PXP" : null);
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_secret);
 
     public bool Verify(string code, DateTime? nowUtc = null)
     {
+        if (!IsConfigured) return false;
         if (string.IsNullOrWhiteSpace(code) || code.Length != 6 || !code.All(char.IsDigit)) return false;
         var counter = new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30;
         for (var drift = -1; drift <= 1; drift++) if (Compute(counter + drift) == code) return true;
         return false;
     }
 
-    public string CurrentCode(DateTime? nowUtc = null) => Compute(new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30);
+    public string CurrentCode(DateTime? nowUtc = null) => IsConfigured
+        ? Compute(new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30)
+        : throw new InvalidOperationException("ADMIN_TOTP_SECRET is not configured");
 
     private string Compute(long counter)
     {
         Span<byte> input = stackalloc byte[8];
         for (var i = 7; i >= 0; i--) { input[i] = (byte)(counter & 0xff); counter >>= 8; }
-        using var hmac = new HMACSHA1(Base32Decode(_secret));
+        using var hmac = new HMACSHA1(Base32Decode(_secret!));
         var hash = hmac.ComputeHash(input.ToArray());
         var offset = hash[^1] & 0x0f;
         var binary = ((hash[offset] & 0x7f) << 24) | ((hash[offset + 1] & 0xff) << 16) | ((hash[offset + 2] & 0xff) << 8) | (hash[offset + 3] & 0xff);

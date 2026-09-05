@@ -49,6 +49,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
 
         if (user.Role == UserRole.Admin)
         {
+            if (!totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
             var (pending, expires) = tokens.CreateAccessToken(user, TimeSpan.FromMinutes(5), "admin_pending");
             return Ok(new AuthResponse(true, null, null, expires, View(user), true, pending));
         }
@@ -58,6 +59,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     [HttpPost("totp")]
     public async Task<ActionResult<AuthResponse>> VerifyTotp(TotpVerifyRequest request, CancellationToken ct)
     {
+        if (!totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
         var principal = tokens.ValidateToken(request.PendingToken, "admin_pending");
         if (principal is null || !totp.Verify(request.Code)) return Unauthorized(Fail("动态验证码无效或已过期"));
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)!;

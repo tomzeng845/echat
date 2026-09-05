@@ -49,6 +49,19 @@ public sealed class CoreTests
     }
 
     [Fact]
+    public void Totp_ProductionWithoutSecret_IsUnavailableWithoutBreakingAuthentication()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var environment = new TestHostEnvironment { EnvironmentName = Environments.Production };
+
+        var service = new TotpService(configuration, environment);
+
+        Assert.False(service.IsConfigured);
+        Assert.False(service.Verify("123456"));
+        Assert.Throws<InvalidOperationException>(() => service.CurrentCode());
+    }
+
+    [Fact]
     public async Task Moments_SupportMediaLikesAndComments()
     {
         var repository = new InMemoryChatRepository();
