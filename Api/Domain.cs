@@ -270,7 +270,7 @@ public sealed class AdminModuleRecord
 public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web", string? DeviceId = null);
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web", string? DeviceId = null);
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
-public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web");
+public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web", string? DeviceId = null);
 public sealed record PublicKeyRequest(string PublicKeyJwk);
 public sealed record AuthResponse(bool Success, string? AccessToken, string? RefreshToken, DateTime? ExpiresAtUtc, UserView? User, bool RequiresTotp = false, string? PendingToken = null, string? Error = null, string? SessionId = null, string? DeviceId = null);
 public sealed record UserView(string Id, string Account, string DisplayName, string AvatarUrl, string Signature, string Region, UserRole Role, UserStatus Status);
@@ -377,3 +377,16 @@ public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount
 public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
 public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);
+public sealed record AdminVerificationRequest(string Type, string RealName = "", string IdNumber = "", string EnterpriseName = "", string CreditCode = "", string LegalRepresentative = "", IReadOnlyList<string>? MaterialAssetIds = null, string Note = "");
+public sealed record AdminVerificationDecisionRequest(string Status, string Reason = "");
+public sealed record AdminLoginLogQuery(string? Scope = null, string? Account = null, string? Ip = null, string? Result = null, DateTime? FromUtc = null, DateTime? ToUtc = null, int Page = 1, int PageSize = 20);
+public sealed record AdminIpDecisionRequest(string Status, string Note = "");
+public sealed record AdminFundSubjectRequest(string Code, string Name, string Direction, decimal MinAmount, decimal MaxAmount, bool Enabled = true, string Remark = "");
+public sealed record AdminFundAdjustmentRequest(string Account, string SubjectCode, string Direction, decimal Amount, string Note = "", string? IdempotencyKey = null);
+public sealed record AdminOperatorUpdateRequest(string DisplayName, UserRole Role, UserStatus Status);
+public sealed record AdminTotpConfirmRequest(string Code);
+public sealed record AdminAnnouncementActionRequest(string Action);
+public sealed record AdminContactUpdateRequest(RelationStatus Status, string Remark = "");
+public sealed record AdminAutomationRunRequest(string? ConversationId = null);
+public sealed record AdminGroupInviteRequest(string Code, string ConversationId, int MaxUses = 100, DateTime? ExpiresAtUtc = null, bool Enabled = true);
+public sealed record GroupInviteRedeemRequest(string Code);

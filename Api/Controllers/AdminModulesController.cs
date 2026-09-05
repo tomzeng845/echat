@@ -16,15 +16,14 @@ public sealed class AdminModulesController(
 {
     private static readonly HashSet<string> EditableModules = new(StringComparer.OrdinalIgnoreCase)
     {
-        "fund.subjects", "system.roles", "system.resources", "system.settings", "system.push",
-        "system.announcements", "chat.customer-service", "chat.tasks", "chat.sms", "chat.robots",
-        "chat.red-packet-bot", "chat.group-invites"
+        "system.roles", "system.announcements", "chat.customer-service", "chat.group-monitors",
+        "chat.group-speech", "chat.robots", "chat.red-packet-bot", "chat.group-invites"
     };
 
     [HttpGet("modules/{module}")]
     public async Task<ActionResult> ModuleRecords(string module, [FromQuery] int limit = 200, CancellationToken ct = default)
     {
-        if (!EditableModules.Contains(module) && module is not ("account.login-logs" or "account.offline-logs" or "account.feedback" or "fund.adjustments" or "chat.task-logs" or "system.images" or "system.error-logs" or "chat.bulk-messages"))
+        if (!EditableModules.Contains(module) && module is not ("account.login-logs" or "account.offline-logs" or "account.feedback" or "account.verifications" or "account.login-ip-decisions" or "fund.subjects" or "fund.adjustments" or "chat.automation-logs" or "system.images" or "system.error-logs" or "chat.bulk-messages" or "system.push" or "system.admin-totp"))
             return NotFound(new { error = "管理模块不存在" });
         return Ok(await repository.GetAdminRecordsAsync(module, Math.Clamp(limit, 1, 500), ct));
     }
@@ -41,11 +40,6 @@ public sealed class AdminModulesController(
             Status = NormalizeStatus(request.Status),
             Data = SanitizeData(request.Data)
         }, ct);
-        if (module.Equals("system.announcements", StringComparison.OrdinalIgnoreCase))
-        {
-            var users = await repository.GetUsersAsync(null, UserStatus.Active, 500, ct);
-            await hub.Clients.Users(users.Select(x => x.Id)).SendAsync("admin.notice", new { id = record.Id, content = record.Data.GetValueOrDefault("content", record.Name), sentAtUtc = DateTime.UtcNow }, ct);
-        }
         await AuditAsync("module.upsert", module, record.Id, record.Name, ct);
         return Ok(record);
     }
@@ -218,14 +212,7 @@ public sealed class AdminModulesController(
     }
 
     [HttpPost("tasks/{id}/run")]
-    public async Task<ActionResult> RunTask(string id, CancellationToken ct)
-    {
-        var task = await repository.GetAdminRecordAsync(id, ct);
-        if (task is null || task.Module != "chat.tasks") return NotFound(new { error = "定时任务不存在" });
-        var log = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "chat.task-logs", Name = task.Name, Status = "Succeeded", Data = new Dictionary<string, string> { ["taskId"] = task.Id, ["trigger"] = "manual", ["result"] = "规则已执行" } }, ct);
-        await AuditAsync("task.run", "task", id, task.Name, ct);
-        return Ok(log);
-    }
+    public ActionResult RunTask(string id) => StatusCode(StatusCodes.Status410Gone, new { error = "定时任务模块已按需求下线" });
 
     [HttpPost("images")]
     [RequestSizeLimit(11 * 1024 * 1024)]

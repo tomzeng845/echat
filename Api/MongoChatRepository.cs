@@ -69,10 +69,7 @@ public sealed class MongoChatRepository : IChatRepository
             new AdminModuleRecord { Id = "seed-fund-credit", Module = "fund.subjects", Name = "人工增加", Data = new() { ["code"] = "MANUAL_CREDIT" } },
             new AdminModuleRecord { Id = "seed-fund-debit", Module = "fund.subjects", Name = "人工扣减", Data = new() { ["code"] = "MANUAL_DEBIT" } },
             new AdminModuleRecord { Id = "seed-role-admin", Module = "system.roles", Name = "超级管理员", Data = new() { ["permissions"] = "*" } },
-            new AdminModuleRecord { Id = "seed-resource-users", Module = "system.resources", Name = "用户管理", Data = new() { ["path"] = "admin.users" } },
-            new AdminModuleRecord { Id = "seed-setting-register", Module = "system.settings", Name = "注册模式", Data = new() { ["value"] = "invite-required" } },
             new AdminModuleRecord { Id = "seed-customer-service", Module = "chat.customer-service", Name = "系统客服", Data = new() { ["account"] = "service" } },
-            new AdminModuleRecord { Id = "seed-daily-cleanup", Module = "chat.tasks", Name = "过期二维码清理", Data = new() { ["schedule"] = "0 3 * * *" } },
         };
         foreach (var seed in moduleSeeds)
             await _adminRecords.UpdateOneAsync(x => x.Id == seed.Id, Builders<AdminModuleRecord>.Update.SetOnInsert(x => x.Id, seed.Id).SetOnInsert(x => x.Module, seed.Module).SetOnInsert(x => x.Name, seed.Name).SetOnInsert(x => x.Status, seed.Status).SetOnInsert(x => x.Data, seed.Data).SetOnInsert(x => x.CreatedAtUtc, seed.CreatedAtUtc).SetOnInsert(x => x.UpdatedAtUtc, seed.UpdatedAtUtc), new UpdateOptions { IsUpsert = true }, ct);

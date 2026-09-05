@@ -13,6 +13,7 @@ builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializ
 builder.Services.AddSingleton<PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<TotpService>();
+builder.Services.AddSingleton<AdminSecretProtector>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
@@ -96,7 +97,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.5.3",
+    version = "0.6.0",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     utcNow = DateTime.UtcNow

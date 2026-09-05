@@ -25,7 +25,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.5.3",
+            version = "0.6.0",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -237,7 +237,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> UpsertInvite(AdminInviteRequest request, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9_-]{4,32}$")) return BadRequest(new { error = "邀请码需为 4–32 位字母、数字、下划线或短横线" });
+        if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9]{8}$")) return BadRequest(new { error = "邀请码必须为 8 位大写字母或数字" });
         if (request.MaxUses is < 1 or > 100000) return BadRequest(new { error = "可用次数需为 1–100000" });
         if (request.ExpiresAtUtc.HasValue && request.ExpiresAtUtc <= DateTime.UtcNow) return BadRequest(new { error = "过期时间必须晚于当前时间" });
 

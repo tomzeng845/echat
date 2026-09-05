@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, SessionService sessions, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
@@ -67,10 +67,12 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         {
             if (!RuntimeMode.IsEphemeralPreview(configuration, environment))
             {
-                if (!totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
-                var (pending, expires) = tokens.CreateAccessToken(user, TimeSpan.FromMinutes(5), "admin_pending");
+                var credential = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct);
+                if (credential?.Status != "Active" && !totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
+                var deviceId = SessionService.NormalizeDeviceId(request.DeviceId);
+                var (pending, expires) = tokens.CreateAccessToken(user, TimeSpan.FromMinutes(5), "admin_pending", deviceId: deviceId);
                 await LogLoginAsync(user.Account, request.DeviceName, "pending", "等待动态验证码", user.Id, ct);
-                return Ok(new AuthResponse(true, null, null, expires, View(user), true, pending));
+                return Ok(new AuthResponse(true, null, null, expires, View(user), true, pending, DeviceId: deviceId));
             }
         }
         var response = await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct);
@@ -81,13 +83,17 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     [HttpPost("totp")]
     public async Task<ActionResult<AuthResponse>> VerifyTotp(TotpVerifyRequest request, CancellationToken ct)
     {
-        if (!totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));
         var principal = tokens.ValidateToken(request.PendingToken, "admin_pending");
-        if (principal is null || !totp.Verify(request.Code)) { await LogLoginAsync("admin", request.DeviceName, "failed", "动态验证码错误", null, ct); return Unauthorized(Fail("动态验证码无效或已过期")); }
+        if (principal is null) { await LogLoginAsync("admin", request.DeviceName, "failed", "动态验证码会话无效", null, ct); return Unauthorized(Fail("动态验证码无效或已过期")); }
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var user = await repository.GetUserByIdAsync(userId, ct);
         if (user is null || user.Role != UserRole.Admin) return Unauthorized(Fail("管理员身份无效"));
-        var response = await sessions.IssueAsync(user, request.DeviceName, null, ct);
+        var credential = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct);
+        var valid = credential?.Status == "Active" && credential.Data.TryGetValue("secretCiphertext", out var ciphertext)
+            ? totp.VerifySecret(protector.Unprotect(ciphertext), request.Code)
+            : totp.Verify(request.Code);
+        if (!valid) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "动态验证码错误", user.Id, ct); return Unauthorized(Fail("动态验证码无效或已过期")); }
+        var response = await sessions.IssueAsync(user, request.DeviceName, request.DeviceId ?? principal.DeviceId(), ct);
         await LogLoginAsync(user.Account, request.DeviceName, "success", "TOTP 登录成功", user.Id, ct);
         return Ok(response);
     }

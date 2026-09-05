@@ -30,10 +30,7 @@ public sealed class InMemoryChatRepository : IChatRepository
         Seed("seed-fund-credit", "fund.subjects", "人工增加", "code", "MANUAL_CREDIT");
         Seed("seed-fund-debit", "fund.subjects", "人工扣减", "code", "MANUAL_DEBIT");
         Seed("seed-role-admin", "system.roles", "超级管理员", "permissions", "*");
-        Seed("seed-resource-users", "system.resources", "用户管理", "path", "admin.users");
-        Seed("seed-setting-register", "system.settings", "注册模式", "value", "invite-required");
         Seed("seed-customer-service", "chat.customer-service", "系统客服", "account", "service");
-        Seed("seed-daily-cleanup", "chat.tasks", "过期二维码清理", "schedule", "0 3 * * *");
         return Task.CompletedTask;
     }
 

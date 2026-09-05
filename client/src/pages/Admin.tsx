@@ -52,6 +52,23 @@ import {
   type AuthResponse,
 } from "@/lib/echat-api";
 import AuthenticatedMedia from "@/components/AuthenticatedMedia";
+import {
+  AnnouncementPanel as DocAnnouncementPanel,
+  ContactsPanel as DocContactsPanel,
+  ConversationsPanel as DocConversationsPanel,
+  ErrorLogsPanel as DocErrorLogsPanel,
+  FailureIpPanel as DocFailureIpPanel,
+  FeedbackPanel as DocFeedbackPanel,
+  FundAdjustmentsPanel as DocFundAdjustmentsPanel,
+  FundSubjectsPanel as DocFundSubjectsPanel,
+  GenericManagedPanel as DocGenericManagedPanel,
+  GroupInvitesPanel as DocGroupInvitesPanel,
+  InviteManagementPanel as DocInviteManagementPanel,
+  LogsPanel as DocLogsPanel,
+  OperatorsPanel as DocOperatorsPanel,
+  PushProvidersPanel as DocPushProvidersPanel,
+  VerificationDialog,
+} from "@/components/admin/RequirementPanels";
 
 const LOGO =
   "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/cBQkYfNchSuunZhX.png";
@@ -76,14 +93,12 @@ type PageId =
   | "account-offline"
   | "account-failures"
   | "account-feedback"
+  | "account-invites"
   | "fund-subjects"
   | "fund-adjust"
-  | "fund-transactions"
   | "system-operators"
   | "system-admin-login"
   | "system-roles"
-  | "system-resources"
-  | "system-settings"
   | "system-push"
   | "system-announcements"
   | "system-images"
@@ -91,12 +106,9 @@ type PageId =
   | "system-errors"
   | "chat-conversations"
   | "chat-customer"
-  | "chat-tasks"
-  | "chat-task-logs"
   | "chat-groups"
   | "chat-bulk"
   | "chat-contacts"
-  | "chat-sms"
   | "chat-robots"
   | "chat-redpacket"
   | "chat-group-invites";
@@ -205,6 +217,7 @@ const groups: MenuGroup[] = [
       { id: "account-offline", label: "离线日志" },
       { id: "account-failures", label: "登录失败IP统计" },
       { id: "account-feedback", label: "意见反馈" },
+      { id: "account-invites", label: "邀请码设置" },
     ],
   },
   {
@@ -214,7 +227,6 @@ const groups: MenuGroup[] = [
     children: [
       { id: "fund-subjects", label: "额度增减科目" },
       { id: "fund-adjust", label: "额度增减记录" },
-      { id: "fund-transactions", label: "交易明细" },
     ],
   },
   {
@@ -225,8 +237,6 @@ const groups: MenuGroup[] = [
       { id: "system-operators", label: "管理账号" },
       { id: "system-admin-login", label: "登录日志" },
       { id: "system-roles", label: "角色管理" },
-      { id: "system-resources", label: "资源管理" },
-      { id: "system-settings", label: "系统配置" },
       { id: "system-push", label: "安卓厂商推送设置" },
       { id: "system-announcements", label: "公告管理" },
       { id: "system-images", label: "图片上传" },
@@ -241,12 +251,9 @@ const groups: MenuGroup[] = [
     children: [
       { id: "chat-conversations", label: "会话管理" },
       { id: "chat-customer", label: "客服管理" },
-      { id: "chat-tasks", label: "定时任务" },
-      { id: "chat-task-logs", label: "定时任务日志" },
       { id: "chat-groups", label: "群监控" },
       { id: "chat-bulk", label: "群发言" },
       { id: "chat-contacts", label: "通讯录" },
-      { id: "chat-sms", label: "短信管理" },
       { id: "chat-robots", label: "机器人发信息" },
       { id: "chat-redpacket", label: "抢红包机器人" },
       { id: "chat-group-invites", label: "群邀请码" },
@@ -272,13 +279,6 @@ const genericPages: Partial<
     }
   >
 > = {
-  "fund-subjects": {
-    module: "fund.subjects",
-    field: "code",
-    fieldLabel: "科目编码",
-    placeholder: "例如 MANUAL_RECHARGE",
-    description: "维护可用于人工额度调整的业务科目。",
-  },
   "system-roles": {
     module: "system.roles",
     field: "permissions",
@@ -286,55 +286,12 @@ const genericPages: Partial<
     placeholder: "users:read, reports:write",
     description: "定义后台角色及其资源权限范围。",
   },
-  "system-resources": {
-    module: "system.resources",
-    field: "path",
-    fieldLabel: "资源标识",
-    placeholder: "admin.users",
-    description: "维护后台菜单、API 与操作资源。",
-  },
-  "system-settings": {
-    module: "system.settings",
-    field: "value",
-    fieldLabel: "配置值",
-    placeholder: "请输入配置值",
-    description: "维护非敏感运行参数；密钥仍应通过服务端环境变量配置。",
-  },
-  "system-push": {
-    module: "system.push",
-    field: "provider",
-    fieldLabel: "厂商/应用标识",
-    placeholder: "华为、荣耀、小米、OPPO、vivo",
-    description: "登记安卓厂商推送通道状态；密钥不会显示在浏览器。",
-  },
-  "system-announcements": {
-    module: "system.announcements",
-    field: "content",
-    fieldLabel: "公告内容",
-    placeholder: "输入公告正文",
-    description: "发布和停用客户端公告。",
-  },
   "chat-customer": {
     module: "chat.customer-service",
     field: "account",
     fieldLabel: "客服账号",
     placeholder: "service_001",
     description: "配置在线客服账号与接待状态。",
-  },
-  "chat-tasks": {
-    module: "chat.tasks",
-    field: "schedule",
-    fieldLabel: "执行计划",
-    placeholder: "0 9 * * *",
-    description:
-      "配置规则型任务；当前托管模式支持手动执行与日志，自动触发需接入平台任务调度。",
-  },
-  "chat-sms": {
-    module: "chat.sms",
-    field: "template",
-    fieldLabel: "短信模板",
-    placeholder: "验证码：${code}",
-    description: "维护短信模板和启停状态；发送需配置短信供应商。",
   },
   "chat-robots": {
     module: "chat.robots",
@@ -447,6 +404,8 @@ function AdminLogin({
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [pendingToken, setPendingToken] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [runtime, setRuntime] = useState<{
     version: string;
     previewAdminEnabled?: boolean;
@@ -473,14 +432,39 @@ function AdminLogin({
           deviceId: getDeviceId(),
         }),
       });
-      if (result.requiresTotp)
-        throw new Error("正式环境管理员需在客户端完成动态验证码登录");
+      if (result.requiresTotp && result.pendingToken) {
+        setPendingToken(result.pendingToken);
+        return;
+      }
       if (!result.accessToken || result.user?.role !== "Admin")
         throw new Error("该账号没有管理权限");
       setSession(result);
       onAuthenticated(result);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "登录失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function verifyTotp() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<AuthResponse>("/api/auth/totp", {
+        method: "POST",
+        body: JSON.stringify({
+          pendingToken,
+          code: totpCode,
+          deviceName: `E聊管理后台 · ${navigator.userAgent}`,
+          deviceId: getDeviceId(),
+        }),
+      });
+      if (!result.accessToken || result.user?.role !== "Admin")
+        throw new Error("动态验证码验证失败");
+      setSession(result);
+      onAuthenticated(result);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "验证失败");
     } finally {
       setBusy(false);
     }
@@ -528,33 +512,58 @@ function AdminLogin({
             <form
               onSubmit={e => {
                 e.preventDefault();
-                authenticate();
+                if (pendingToken) verifyTotp();
+                else authenticate();
               }}
               className="mt-7 space-y-4"
             >
+              {pendingToken && (
+                <div className="rounded-xl border border-teal-300/20 bg-teal-300/10 px-4 py-3 text-sm text-teal-100">
+                  密码验证通过，请输入 Google Authenticator 中的 6
+                  位动态验证码。
+                </div>
+              )}
               <input
                 value={account}
                 onChange={e => setAccount(e.target.value)}
                 autoComplete="username"
                 className="auth-input"
                 aria-label="管理账号"
+                disabled={Boolean(pendingToken)}
               />
-              <input
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                type="password"
-                autoComplete="current-password"
-                placeholder="输入管理员密码"
-                className="auth-input"
-                aria-label="密码"
-              />
+              {pendingToken ? (
+                <input
+                  value={totpCode}
+                  onChange={e =>
+                    setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6 位动态验证码"
+                  className="auth-input tracking-[.35em]"
+                  aria-label="动态验证码"
+                />
+              ) : (
+                <input
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="输入管理员密码"
+                  className="auth-input"
+                  aria-label="密码"
+                />
+              )}
               {error && (
                 <div className="rounded-xl bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
                   {error}
                 </div>
               )}
               <button
-                disabled={busy || !account || !password}
+                disabled={
+                  busy ||
+                  (pendingToken ? totpCode.length !== 6 : !account || !password)
+                }
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-400 py-3.5 font-semibold text-[#04201d] disabled:opacity-50"
               >
                 {busy ? (
@@ -562,9 +571,21 @@ function AdminLogin({
                 ) : (
                   <KeyRound size={18} />
                 )}
-                进入管理后台
+                {pendingToken ? "验证并进入" : "进入管理后台"}
               </button>
             </form>
+            {pendingToken && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingToken("");
+                  setTotpCode("");
+                }}
+                className="mt-3 w-full text-sm text-slate-400"
+              >
+                返回密码登录
+              </button>
+            )}
             {runtime?.previewAdminEnabled && (
               <button
                 onClick={() => authenticate("E_Admin", "Heibai@99")}
@@ -629,7 +650,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.5.3
+                ADMIN 0.6.0
               </div>
             </div>
           </a>
@@ -740,84 +761,110 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
   if (page === "home") return <OverviewPanel refresh={refresh} />;
   if (page === "account-users")
     return <UsersPanel refresh={refresh} currentUserId={currentUserId} />;
-  if (page === "account-login")
-    return (
-      <LogsPanel
-        refresh={refresh}
-        title="用户登录日志"
-        path="/api/admin/login-logs"
-      />
-    );
+  if (page === "account-login") return <DocLogsPanel refresh={refresh} />;
   if (page === "account-offline")
-    return (
-      <RecordsTable
-        refresh={refresh}
-        title="离线日志"
-        description="记录用户主动退出和会话离线信息。"
-        path="/api/admin/modules/account.offline-logs"
-      />
-    );
-  if (page === "account-failures") return <FailureStats refresh={refresh} />;
-  if (page === "account-feedback") return <FeedbackPanel refresh={refresh} />;
-  if (page === "fund-adjust") return <WalletPanel refresh={refresh} />;
-  if (page === "fund-transactions")
-    return (
-      <RecordsTable
-        refresh={refresh}
-        title="交易明细"
-        description="展示后台额度变更形成的完整流水。"
-        path="/api/admin/modules/fund.adjustments"
-      />
-    );
-  if (page === "system-operators") return <OperatorsPanel refresh={refresh} />;
+    return <DocLogsPanel refresh={refresh} offline />;
+  if (page === "account-failures")
+    return <DocFailureIpPanel refresh={refresh} />;
+  if (page === "account-feedback")
+    return <DocFeedbackPanel refresh={refresh} />;
+  if (page === "account-invites")
+    return <DocInviteManagementPanel refresh={refresh} />;
+  if (page === "fund-subjects")
+    return <DocFundSubjectsPanel refresh={refresh} />;
+  if (page === "fund-adjust")
+    return <DocFundAdjustmentsPanel refresh={refresh} />;
+  if (page === "system-operators")
+    return <DocOperatorsPanel refresh={refresh} />;
   if (page === "system-admin-login")
+    return <DocLogsPanel refresh={refresh} scope="admin" />;
+  if (page === "system-roles")
     return (
-      <LogsPanel
+      <DocGenericManagedPanel
         refresh={refresh}
-        title="管理账号登录日志"
-        path="/api/admin/login-logs?scope=admin"
+        title="角色"
+        description="新增角色并配置保留菜单/API权限。"
+        module="system.roles"
+        fields={[
+          {
+            key: "permissions",
+            label: "权限范围，使用逗号分隔",
+            multiline: true,
+          },
+        ]}
       />
     );
+  if (page === "system-push")
+    return <DocPushProvidersPanel refresh={refresh} />;
+  if (page === "system-announcements")
+    return <DocAnnouncementPanel refresh={refresh} />;
   if (page === "system-images") return <ImagesPanel refresh={refresh} />;
   if (page === "system-audit") return <AuditPanel refresh={refresh} />;
-  if (page === "system-errors")
+  if (page === "system-errors") return <DocErrorLogsPanel refresh={refresh} />;
+  if (page === "chat-conversations")
+    return <DocConversationsPanel refresh={refresh} />;
+  if (page === "chat-groups")
+    return <DocConversationsPanel refresh={refresh} groupsOnly />;
+  if (page === "chat-customer")
     return (
-      <RecordsTable
+      <DocGenericManagedPanel
         refresh={refresh}
-        title="报错日志"
-        description="捕获 API 未处理异常、路径和 traceId。"
-        path="/api/admin/modules/system.error-logs"
+        title="客服账号"
+        description="维护客服账号、接待状态与备注。"
+        module="chat.customer-service"
+        fields={[
+          { key: "account", label: "关联用户账号" },
+          { key: "remark", label: "客服备注" },
+        ]}
       />
     );
-  if (page === "chat-conversations" || page === "chat-groups")
+  if (page === "chat-bulk")
     return (
-      <ConversationsPanel
+      <DocGenericManagedPanel
         refresh={refresh}
-        groupsOnly={page === "chat-groups"}
+        title="群发言规则"
+        description="使用空格分隔关键词；保存后可人工触发并写入发送日志。"
+        module="chat.group-speech"
+        fields={[
+          { key: "conversationId", label: "目标群聊 ID" },
+          { key: "content", label: "发言内容", multiline: true },
+          { key: "keywords", label: "关键词（空格分隔）" },
+          { key: "replacement", label: "替换内容" },
+        ]}
+        runnable
       />
     );
-  if (page === "chat-task-logs")
+  if (page === "chat-contacts") return <DocContactsPanel refresh={refresh} />;
+  if (page === "chat-robots")
     return (
-      <RecordsTable
+      <DocGenericManagedPanel
         refresh={refresh}
-        title="定时任务日志"
-        description="查看任务手动或平台调度执行结果。"
-        path="/api/admin/modules/chat.task-logs"
+        title="机器人发信息规则"
+        description="配置目标群聊、消息内容和启用状态；人工触发时实时发送。"
+        module="chat.robots"
+        fields={[
+          { key: "conversationId", label: "目标群聊 ID" },
+          { key: "content", label: "机器人消息", multiline: true },
+          { key: "keywords", label: "触发关键词" },
+        ]}
+        runnable
       />
     );
-  if (page === "chat-bulk") return <BulkPanel refresh={refresh} />;
-  if (page === "chat-contacts") return <ContactsPanel refresh={refresh} />;
-  const generic = genericPages[page];
-  return generic ? (
-    <GenericRecordsPanel
-      refresh={refresh}
-      title={pageLabel.get(page) || "管理"}
-      {...generic}
-      runnable={page === "chat-tasks"}
-    />
-  ) : (
-    <Empty text="页面正在初始化" />
-  );
+  if (page === "chat-redpacket")
+    return (
+      <DocGenericManagedPanel
+        refresh={refresh}
+        title="抢红包机器人"
+        description="仅配置可审计规则；真实资金动作仍需安全复核。"
+        module="chat.red-packet-bot"
+        fields={[
+          { key: "rule", label: "关键词、群范围和限额", multiline: true },
+        ]}
+      />
+    );
+  if (page === "chat-group-invites")
+    return <DocGroupInvitesPanel refresh={refresh} />;
+  return <Empty text="页面正在初始化" />;
 }
 
 function useData<T>(path: string, refresh: number, fallback: T) {
@@ -959,6 +1006,10 @@ function UsersPanel({
     kind: UserOperationKind;
   }>();
   const [createMode, setCreateMode] = useState<"single" | "batch">();
+  const [verification, setVerification] = useState<{
+    user: AdminUser;
+    type: "RealName" | "Enterprise";
+  }>();
   const path = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
@@ -1606,10 +1657,24 @@ function UsersPanel({
                       {badge(user.cancellationEnabled, "已开启", "正常")}
                     </td>
                     <td className="px-2">
-                      {badge(user.realNameVerified, "已认证", "未认证")}
+                      <button
+                        onClick={() =>
+                          setVerification({ user, type: "RealName" })
+                        }
+                        title="查看实名认证详情"
+                      >
+                        {badge(user.realNameVerified, "已认证", "未认证")}
+                      </button>
                     </td>
                     <td className="px-2">
-                      {badge(user.enterpriseVerified, "已认证", "未认证")}
+                      <button
+                        onClick={() =>
+                          setVerification({ user, type: "Enterprise" })
+                        }
+                        title="查看企业认证详情"
+                      >
+                        {badge(user.enterpriseVerified, "已认证", "未认证")}
+                      </button>
                     </td>
                     <td className="px-2">
                       {badge(
@@ -1686,6 +1751,14 @@ function UsersPanel({
             setOperation(undefined);
             reload();
           }}
+        />
+      )}
+      {verification && (
+        <VerificationDialog
+          user={verification.user}
+          type={verification.type}
+          onClose={() => setVerification(undefined)}
+          onSaved={reload}
         />
       )}
     </div>

@@ -218,10 +218,11 @@ public sealed class CoreTests
         await repository.EnsureSeedDataAsync();
         Assert.Equal(2, (await repository.GetAdminRecordsAsync("fund.subjects", 20)).Count);
         Assert.Single(await repository.GetAdminRecordsAsync("system.roles", 20));
-        Assert.Single(await repository.GetAdminRecordsAsync("chat.tasks", 20));
+        Assert.Empty(await repository.GetAdminRecordsAsync("chat.tasks", 20));
+        Assert.Empty(await repository.GetAdminRecordsAsync("system.settings", 20));
 
-        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "system.settings", Name = "文件上限", Data = new() { ["value"] = "25MB" } });
-        Assert.Equal("25MB", (await repository.GetAdminRecordAsync(record.Id))!.Data["value"]);
+        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "system.roles", Name = "审核员", Data = new() { ["permissions"] = "verification:review" } });
+        Assert.Equal("verification:review", (await repository.GetAdminRecordAsync(record.Id))!.Data["permissions"]);
         await repository.DeleteAdminRecordAsync(record.Id);
         Assert.Null(await repository.GetAdminRecordAsync(record.Id));
 
@@ -231,6 +232,22 @@ public sealed class CoreTests
         Assert.Single(await repository.GetAllSessionsAsync(20));
         Assert.Single(await repository.GetAllConversationsAsync(20));
         Assert.Single(await repository.GetAllRelationsAsync(20));
+    }
+
+    [Fact]
+    public void AdminSecretProtector_EncryptsAndDecryptsTotpSecret()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Admin:SecretEncryptionKey"] = "test-only-secret-protection-key"
+        }).Build();
+        var protector = new AdminSecretProtector(configuration);
+        var secret = TotpService.GenerateSecret();
+        var encrypted = protector.Protect(secret);
+
+        Assert.Matches("^[A-Z2-7]{32}$", secret);
+        Assert.DoesNotContain(secret, encrypted);
+        Assert.Equal(secret, protector.Unprotect(encrypted));
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

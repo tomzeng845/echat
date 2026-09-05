@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.5.3" || overview.metrics.users < 1)
+if (overview.version !== "0.6.0" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -258,7 +258,7 @@ if (
 )
   throw new Error("same IP user detection failed");
 
-const inviteCode = `ADM${suffix}`.toUpperCase();
+const inviteCode = `A${suffix.slice(-7)}`.toUpperCase();
 await fetchApi("/api/admin/invites", token, {
   method: "POST",
   body: JSON.stringify({ code: inviteCode, maxUses: 2, isActive: true }),
@@ -301,33 +301,23 @@ if ((await fetchApi("/api/admin/contacts", token)).length < 2)
   throw new Error("contacts admin list missing");
 
 const moduleCases = [
-  ["fund.subjects", "自动科目", "code", `AUTO_${suffix}`],
   ["system.roles", "自动角色", "permissions", "users:read"],
-  ["system.resources", "自动资源", "path", "admin.auto"],
-  ["system.settings", "自动配置", "value", "enabled"],
-  ["system.push", "小米推送", "provider", "xiaomi"],
   ["system.announcements", "自动公告", "content", "E聊后台自动化公告"],
   ["chat.customer-service", "自动客服", "account", normalAccount],
-  ["chat.tasks", "自动任务", "schedule", "0 9 * * *"],
-  ["chat.sms", "验证码短信", "template", "验证码 ${code}"],
+  ["chat.group-speech", "群发言规则", "content", "E聊群发言测试"],
   ["chat.robots", "欢迎机器人", "content", "欢迎加入 E聊"],
   ["chat.red-packet-bot", "红包机器人", "rule", "仅提醒，不自动领取"],
   ["chat.group-invites", "自动群邀请码", "code", `GROUP_${suffix}`],
 ];
-let taskId = "";
 for (const [module, name, field, value] of moduleCases) {
   const record = await fetchApi(`/api/admin/modules/${module}`, token, {
     method: "POST",
     body: JSON.stringify({ name, status: "Active", data: { [field]: value } }),
   });
-  if (module === "chat.tasks") taskId = record.id;
   const list = await fetchApi(`/api/admin/modules/${module}`, token);
   if (!list.some(item => item.id === record.id))
     throw new Error(`module ${module} save failed`);
 }
-await fetchApi(`/api/admin/tasks/${taskId}/run`, token, { method: "POST" });
-if (!(await fetchApi("/api/admin/modules/chat.task-logs", token)).length)
-  throw new Error("task log missing");
 
 await fetchApi("/api/admin/wallet/adjust", token, {
   method: "POST",
@@ -590,7 +580,7 @@ try {
   )
     throw new Error(`status menu invalid: ${JSON.stringify(statusMenu)}`);
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.5.3.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.6.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -612,7 +602,7 @@ try {
   );
   await page.waitForSelector('[data-user-operation-dialog="inviteSource"]');
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.5.3.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.6.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -658,14 +648,13 @@ try {
       "离线日志",
       "登录失败IP统计",
       "意见反馈",
+      "邀请码设置",
     ],
-    资金系统: ["额度增减科目", "额度增减记录", "交易明细"],
+    资金系统: ["额度增减科目", "额度增减记录"],
     管理系统: [
       "管理账号",
       "登录日志",
       "角色管理",
-      "资源管理",
-      "系统配置",
       "安卓厂商推送设置",
       "公告管理",
       "图片上传",
@@ -675,12 +664,9 @@ try {
     聊天系统: [
       "会话管理",
       "客服管理",
-      "定时任务",
-      "定时任务日志",
       "群监控",
       "群发言",
       "通讯录",
-      "短信管理",
       "机器人发信息",
       "抢红包机器人",
       "群邀请码",
@@ -734,7 +720,7 @@ try {
       ?.click()
   );
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-0.5-desktop.png",
+    path: "/home/ubuntu/screenshots/echat-admin-0.6-desktop.png",
     fullPage: false,
   });
 
@@ -792,7 +778,7 @@ try {
   );
   await new Promise(resolve => setTimeout(resolve, 300));
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-0.5-mobile.png",
+    path: "/home/ubuntu/screenshots/echat-admin-0.6-mobile.png",
     fullPage: false,
   });
 } finally {
@@ -800,5 +786,5 @@ try {
 }
 
 console.log(
-  `ADMIN_053_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
+  `ADMIN_060_OK modules=${moduleCases.length} pages=25 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );

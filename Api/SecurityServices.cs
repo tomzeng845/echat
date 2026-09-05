@@ -65,21 +65,30 @@ public sealed class TotpService(IConfiguration configuration, IHostEnvironment e
     public bool Verify(string code, DateTime? nowUtc = null)
     {
         if (!IsConfigured) return false;
+        return VerifySecret(_secret!, code, nowUtc);
+    }
+
+    public bool VerifySecret(string secret, string code, DateTime? nowUtc = null)
+    {
         if (string.IsNullOrWhiteSpace(code) || code.Length != 6 || !code.All(char.IsDigit)) return false;
         var counter = new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30;
-        for (var drift = -1; drift <= 1; drift++) if (Compute(counter + drift) == code) return true;
+        for (var drift = -1; drift <= 1; drift++) if (Compute(secret, counter + drift) == code) return true;
         return false;
     }
 
+    public static string GenerateSecret() => Base32Encode(RandomNumberGenerator.GetBytes(20));
+
+    public string ProvisioningUri(string account, string secret) => $"otpauth://totp/E%E8%81%8A:{Uri.EscapeDataString(account)}?secret={secret}&issuer=E%E8%81%8A&digits=6&period=30";
+
     public string CurrentCode(DateTime? nowUtc = null) => IsConfigured
-        ? Compute(new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30)
+        ? Compute(_secret!, new DateTimeOffset(nowUtc ?? DateTime.UtcNow).ToUnixTimeSeconds() / 30)
         : throw new InvalidOperationException("ADMIN_TOTP_SECRET is not configured");
 
-    private string Compute(long counter)
+    private static string Compute(string secret, long counter)
     {
         Span<byte> input = stackalloc byte[8];
         for (var i = 7; i >= 0; i--) { input[i] = (byte)(counter & 0xff); counter >>= 8; }
-        using var hmac = new HMACSHA1(Base32Decode(_secret!));
+        using var hmac = new HMACSHA1(Base32Decode(secret));
         var hash = hmac.ComputeHash(input.ToArray());
         var offset = hash[^1] & 0x0f;
         var binary = ((hash[offset] & 0x7f) << 24) | ((hash[offset + 1] & 0xff) << 16) | ((hash[offset + 2] & 0xff) << 8) | (hash[offset + 3] & 0xff);
@@ -97,6 +106,45 @@ public sealed class TotpService(IConfiguration configuration, IHostEnvironment e
             if (bits >= 8) { bits -= 8; output.Add((byte)(buffer >> bits)); buffer &= (1 << bits) - 1; }
         }
         return output.ToArray();
+    }
+
+    private static string Base32Encode(byte[] value)
+    {
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        var output = new StringBuilder(); var buffer = 0; var bits = 0;
+        foreach (var b in value)
+        {
+            buffer = (buffer << 8) | b; bits += 8;
+            while (bits >= 5) { bits -= 5; output.Append(alphabet[(buffer >> bits) & 31]); buffer &= (1 << bits) - 1; }
+        }
+        if (bits > 0) output.Append(alphabet[(buffer << (5 - bits)) & 31]);
+        return output.ToString();
+    }
+}
+
+public sealed class AdminSecretProtector(IConfiguration configuration)
+{
+    private readonly byte[] _key = SHA256.HashData(Encoding.UTF8.GetBytes(
+        configuration["Admin:SecretEncryptionKey"]
+        ?? Environment.GetEnvironmentVariable("ADMIN_SECRET_KEY")
+        ?? configuration["Jwt:Key"]
+        ?? Environment.GetEnvironmentVariable("JWT_SECRET")
+        ?? "development-only-echat-admin-secret-key"));
+
+    public string Protect(string value)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12); var plaintext = Encoding.UTF8.GetBytes(value);
+        var ciphertext = new byte[plaintext.Length]; var tag = new byte[16];
+        using var aes = new AesGcm(_key, 16); aes.Encrypt(nonce, plaintext, ciphertext, tag);
+        return Convert.ToBase64String([.. nonce, .. tag, .. ciphertext]);
+    }
+
+    public string Unprotect(string value)
+    {
+        var payload = Convert.FromBase64String(value); if (payload.Length < 29) throw new CryptographicException("Invalid secret payload");
+        var plaintext = new byte[payload.Length - 28];
+        using var aes = new AesGcm(_key, 16); aes.Decrypt(payload[..12], payload[28..], payload[12..28], plaintext);
+        return Encoding.UTF8.GetString(plaintext);
     }
 }
 

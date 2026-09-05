@@ -166,3 +166,11 @@ E聊 0.5.0 已完成首页和截图所示账户、资金、管理、聊天四大
 账号操作菜单已移除固定页面坐标，点击时读取对应按钮的 `getBoundingClientRect()`，以 8px 间距显示在按钮右侧；右侧空间不足时自动显示在左侧，接近视口底部时自动上移。状态二级菜单围绕触发项居中展开，六个选项在屏幕范围内完整可见。全局 `pointerdown` 只忽略菜单和按钮自身，点击其他空白区域会立即关闭；滚动、窗口尺寸变化和 Esc 同样关闭。浏览器回归已验证菜单与按钮垂直及水平间距均不超过 12px，并在空白处点击后等待菜单 DOM 消失。
 
 最终 0.5.3 截图确认主菜单以 8px 间距紧贴首行“操作”按钮右侧，状态子菜单完整展开且未超出视口。最终自动化返回 `ADMIN_053_OK modules=12 pages=30 users=1 audits=33 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`；健康接口返回 `version: 0.5.3` 和 `status: healthy`。
+
+## 2026-09-05 后台需求文档 0.6.0 视觉检查
+
+桌面 1440×900 验证显示后台版本为 `ADMIN 0.6.0`，账户系统已增加“邀请码设置”，资金系统仅保留“额度增减科目/记录”，群邀请码页面可选择真实群聊并配置次数和有效期。原资源管理、系统配置、定时任务、定时任务日志和短信管理菜单已删除。手机 390×844 侧栏完整展示会话、客服、群监控、群发言、通讯录、机器人和群邀请码，抽屉未横向溢出，页面主体保持遮罩与安全关闭入口。
+
+### 后台需求文档 0.6.0 最终结果
+
+`pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项与 xUnit 14 项全部通过；生产构建成功。业务回归依次返回 `E2E_OK`、`P1_QR_OK`、`CALL_SIGNAL_OK`、`CONTACT_REALTIME_OK` 和 `UNREAD_CLEAR_OK`。专用后台 API 回归返回 `ADMIN_REQUIREMENTS_060_OK verification=approved fund=12.34 totp=active push=configured announcement=revoke group_speech=sent e2ee=protected retired_modules=4`；后台浏览器回归返回 `ADMIN_060_OK modules=7 pages=25 role_guard=403 viewports=1440x900,390x844`。
