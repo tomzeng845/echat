@@ -156,7 +156,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.3",
+      appVersion: "0.8.4",
     }),
   });
   updatePushState("registered");

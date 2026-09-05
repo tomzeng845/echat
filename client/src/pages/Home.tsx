@@ -495,6 +495,7 @@ function Messenger({
   const conversationsRef = useRef<Conversation[]>([]);
   const readFloorRef = useRef(new Map<string, number>());
   const keySyncRef = useRef(new Map<string, Promise<number>>());
+  const validatedKeyEnvelopesRef = useRef(new Set<string>());
   const chatVisible =
     nav === "chats" &&
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
@@ -509,20 +510,24 @@ function Messenger({
     item => item.status === "Pending"
   ).length;
 
-  const resolveMessageKey = useCallback(
-    async (message: Message) => {
-      const version = message.keyVersion || 1;
-      const stored = await getConversationKey(message.conversationId, version);
-      if (stored) return stored;
+  const resolveConversationKey = useCallback(
+    async (conversationId: string, version: number, forceRefresh = false) => {
+      if (!forceRefresh) {
+        const stored = await getConversationKey(conversationId, version);
+        if (stored) return stored;
+      }
       try {
         const record = await api<ConversationKeyEnvelope>(
-          `/api/conversations/${message.conversationId}/keys/${version}`
+          `/api/conversations/${conversationId}/keys/${version}`
         );
         const imported = await openKeyEnvelope(
           user.account,
           record.keyEnvelope
         );
-        await storeConversationKey(message.conversationId, imported, version);
+        await storeConversationKey(conversationId, imported, version);
+        validatedKeyEnvelopesRef.current.add(
+          `${conversationId}:${version}:${record.keyEnvelope}`
+        );
         return imported;
       } catch {
         return undefined;
@@ -536,21 +541,42 @@ function Messenger({
       if (message.state === "Recalled")
         return { ...message, plaintext: "这条消息已被撤回" };
       try {
-        const key = await resolveMessageKey(message);
+        const version = message.keyVersion || 1;
+        const key = await resolveConversationKey(
+          message.conversationId,
+          version
+        );
         if (!key)
           return {
             ...message,
             plaintext: "该消息发送于本设备加入加密会话之前",
             decryptError: true,
           };
-        return {
-          ...message,
-          plaintext: await decryptMessage(
-            key,
-            message.ciphertext,
-            message.nonce
-          ),
-        };
+        try {
+          return {
+            ...message,
+            plaintext: await decryptMessage(
+              key,
+              message.ciphertext,
+              message.nonce
+            ),
+          };
+        } catch {
+          const refreshed = await resolveConversationKey(
+            message.conversationId,
+            version,
+            true
+          );
+          if (!refreshed) throw new Error("MESSAGE_KEY_UNAVAILABLE");
+          return {
+            ...message,
+            plaintext: await decryptMessage(
+              refreshed,
+              message.ciphertext,
+              message.nonce
+            ),
+          };
+        }
       } catch {
         return {
           ...message,
@@ -559,13 +585,20 @@ function Messenger({
         };
       }
     },
-    [resolveMessageKey]
+    [resolveConversationKey]
   );
 
   const ensureConversationKey = useCallback(
     async (conversation: Conversation) => {
       const version = conversation.keyVersion || 1;
-      if (await getConversationKey(conversation.id, version)) return;
+      const stored = await getConversationKey(conversation.id, version);
+      const validationId = `${conversation.id}:${version}:${conversation.keyEnvelope || ""}`;
+      if (
+        stored &&
+        conversation.keyEnvelope &&
+        validatedKeyEnvelopesRef.current.has(validationId)
+      )
+        return;
       const pending = keySyncRef.current.get(conversation.id);
       if (pending) {
         conversation.keyVersion = await pending;
@@ -579,6 +612,7 @@ function Messenger({
               await openKeyEnvelope(user.account, conversation.keyEnvelope),
               version
             );
+            validatedKeyEnvelopesRef.current.add(validationId);
             return version;
           } catch {
             /* The envelope belongs to an older device identity. */
@@ -619,6 +653,9 @@ function Messenger({
             await openKeyEnvelope(user.account, latest.keyEnvelope),
             latestVersion
           );
+          validatedKeyEnvelopesRef.current.add(
+            `${conversation.id}:${latestVersion}:${latest.keyEnvelope}`
+          );
           conversation.keyVersion = latestVersion;
           conversation.keyEnvelope = latest.keyEnvelope;
           return latestVersion;
@@ -626,6 +663,10 @@ function Messenger({
         await storeConversationKey(conversation.id, key, nextVersion);
         conversation.keyVersion = nextVersion;
         conversation.keyEnvelope = keyEnvelopes[`${user.id}:${getDeviceId()}`];
+        if (conversation.keyEnvelope)
+          validatedKeyEnvelopesRef.current.add(
+            `${conversation.id}:${nextVersion}:${conversation.keyEnvelope}`
+          );
         return nextVersion;
       })();
       keySyncRef.current.set(conversation.id, task);
@@ -1034,7 +1075,7 @@ function Messenger({
     setDraft("");
     try {
       const keyVersion = selected.keyVersion || 1;
-      const key = await getConversationKey(selectedId, keyVersion);
+      const key = await resolveConversationKey(selectedId, keyVersion, true);
       if (!key) throw new Error("本设备缺少会话密钥");
       const encrypted = await encryptMessage(key, text);
       const created = await api<Message>(
@@ -1076,9 +1117,12 @@ function Messenger({
     if (!selectedId || !selected || busy) return;
     setBusy(true);
     try {
+      const keyVersion = selected.keyVersion || 1;
+      if (!(await resolveConversationKey(selectedId, keyVersion, true)))
+        throw new Error("本设备缺少会话密钥");
       const created = await sendEncryptedMedia(
         selectedId,
-        selected.keyVersion || 1,
+        keyVersion,
         file,
         kind,
         {

@@ -242,3 +242,15 @@ Android 原生层已打包 `echat_message.wav` 和 `echat_call.wav`。前台其�
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 18 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量遇错即停回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_083_OK`、`ADMIN_083_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
 
 最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=11`、`versionName=0.8.3`、最低 API 24、目标 API 36，且两个 `res/raw` 提示音均已打包。文件 `EChat-0.8.3-debug.apk` 的 SHA-256 为 `e9be67864cfbe53153892d378d0573871cc4e56dfe0e7dacc8ca1beae4eb6d90`。
+
+## 2026-09-06 Android APP 0.8.4 错误密钥缓存自愈
+
+生产域名 `https://echatapp-favrlscm.manus.space` 已确认运行 0.8.3 密钥信封 API，因此本轮继续复现客户端升级遗留状态。根因是 0.8.3 只在 IndexedDB 完全缺少某个 `keyVersion` 时恢复信封；如果相同版本已经保存了错误 AES 密钥，客户端会直接信任该缓存，解密失败后显示“该消息发送于本设备加入加密会话之前”，主动发送还可能产生其他成员无法解开的同版本密文。
+
+0.8.4 在每次应用生命周期内实际使用当前设备不可导出 RSA 私钥验证服务器当前设备信封，验证后才信任对应本地 AES 密钥；不能解封时按成员最新设备公钥自动轮换。消息第一次解密失败会绕过缓存，重新获取指定版本设备信封、覆盖 IndexedDB 后重试。发送文字和富媒体前也强制以服务器信封校准；当前设备没有服务器信封时会阻止发送，不会继续产生无法解密的消息。
+
+三设备真实 React 页面回归先把版本 3 本地缓存替换为随机错误 AES 密钥，再由好友发送新消息，确认接收端强制恢复并显示明文；随后再次写入错误密钥，由 APP 主动发送，确认发送前自动校准、本机显示正常且好友端成功解密。最终输出 `ANDROID_E2EE_OK ... realtime_recovery=ok send_key_repair=ok message_sound=once`。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 18 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_084_OK`、`ADMIN_084_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
+
+最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=12`、`versionName=0.8.4`、最低 API 24、目标 API 36。文件 `EChat-0.8.4-debug.apk` 的 SHA-256 为 `1ca3a379f12b42bde5df3f9d6847062894707a4af018da22ae4ca396fd95c650`。

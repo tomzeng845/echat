@@ -361,9 +361,15 @@ try {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
+      const staleKey = await crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
       await new Promise((resolve, reject) => {
         const tx = db.transaction("keys", "readwrite");
-        tx.objectStore("keys").delete(
+        tx.objectStore("keys").put(
+          staleKey,
           `conversation:${conversationId}:v${keyVersion}`
         );
         tx.oncomplete = resolve;
@@ -486,10 +492,42 @@ try {
     throw new Error(
       `Realtime key recovery failed: ${JSON.stringify(recovery)}`
     );
+  await page.evaluate(async conversationId => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("echat-secure-vault", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const staleKey = await crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("keys", "readwrite");
+      tx.objectStore("keys").put(staleKey, `conversation:${conversationId}:v3`);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  }, conversation.id);
+  const repairedSendText = "发送前自动校准错误密钥";
+  await page.type('textarea[placeholder="输入消息"]', repairedSendText);
+  await page.click('button[aria-label="发送消息"]');
+  await page.waitForFunction(
+    text => document.body.innerText.includes(text),
+    { timeout: 10000 },
+    repairedSendText
+  );
+  const afterRepair = await request(
+    `/api/conversations/${conversation.id}/messages?after=0&limit=20`,
+    { token: authB.accessToken, deviceId: peerDevice }
+  );
+  if ((await decrypt(peerKeyV3, afterRepair.at(-1))) !== repairedSendText)
+    throw new Error("Sender key repair did not produce a decryptable message");
 } finally {
   await browser.close();
 }
 
 console.log(
-  `ANDROID_E2EE_OK conversation=${conversation.id} versions=1,2,3 devices=3 legacy=decryptable app=decryptable peer=decryptable stale=409 ui=ok realtime_recovery=ok message_sound=once`
+  `ANDROID_E2EE_OK conversation=${conversation.id} versions=1,2,3 devices=3 legacy=decryptable app=decryptable peer=decryptable stale=409 ui=ok realtime_recovery=ok send_key_repair=ok message_sound=once`
 );
