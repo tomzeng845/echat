@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, SessionService sessions) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
@@ -23,7 +23,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         try { await repository.AddUserAsync(user, ct); }
         catch (InvalidOperationException) { return Conflict(Fail("账号已存在")); }
-        return Ok(await IssueTokensAsync(user, request.DeviceName, ct));
+        return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct));
     }
 
     [HttpPost("login")]
@@ -53,7 +53,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
             var (pending, expires) = tokens.CreateAccessToken(user, TimeSpan.FromMinutes(5), "admin_pending");
             return Ok(new AuthResponse(true, null, null, expires, View(user), true, pending));
         }
-        return Ok(await IssueTokensAsync(user, request.DeviceName, ct));
+        return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct));
     }
 
     [HttpPost("totp")]
@@ -65,7 +65,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var user = await repository.GetUserByIdAsync(userId, ct);
         if (user is null || user.Role != UserRole.Admin) return Unauthorized(Fail("管理员身份无效"));
-        return Ok(await IssueTokensAsync(user, request.DeviceName, ct));
+        return Ok(await sessions.IssueAsync(user, request.DeviceName, null, ct));
     }
 
     [HttpPost("refresh")]
@@ -76,7 +76,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         var user = await repository.GetUserByIdAsync(session.UserId, ct);
         if (user is null || user.Status != UserStatus.Active) return Unauthorized(Fail("账号不可用"));
         await repository.RevokeSessionAsync(session.Id, ct);
-        return Ok(await IssueTokensAsync(user, request.DeviceName, ct));
+        return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId ?? session.DeviceId, ct));
     }
 
     [Authorize]
@@ -89,16 +89,13 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
 
     [Authorize]
     [HttpPost("logout")]
-    public IActionResult Logout() => NoContent();
-
-    private async Task<AuthResponse> IssueTokensAsync(UserAccount user, string device, CancellationToken ct)
+    public async Task<IActionResult> Logout(CancellationToken ct)
     {
-        var (access, expires) = tokens.CreateAccessToken(user);
-        var (rawRefresh, hash) = TokenService.CreateRefreshToken();
-        await repository.AddSessionAsync(new RefreshSession { UserId = user.Id, TokenHash = hash, DeviceName = device, ExpiresAtUtc = DateTime.UtcNow.AddDays(30) }, ct);
-        return new AuthResponse(true, access, rawRefresh, expires, View(user));
+        var sessionId = User.SessionId();
+        if (!string.IsNullOrWhiteSpace(sessionId)) await repository.RevokeSessionAsync(sessionId, ct);
+        return NoContent();
     }
 
     private static AuthResponse Fail(string error) => new(false, null, null, null, null, Error: error);
-    private static UserView View(UserAccount user) => new(user.Id, user.Account, user.DisplayName, user.AvatarUrl, user.Signature, user.Region, user.Role, user.Status);
+    private static UserView View(UserAccount user) => SessionService.View(user);
 }

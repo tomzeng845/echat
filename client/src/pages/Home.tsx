@@ -3,10 +3,15 @@ import CallManager, { type CallManagerHandle } from "@/components/chat/CallManag
 import RichMessageContent from "@/components/chat/RichMessageContent";
 import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
 import MomentsPanel from "@/components/MomentsPanel";
+import P1ProfilePanel from "@/components/P1ProfilePanel";
+import MyContactQrDialog from "@/components/qr/MyContactQrDialog";
+import QrLoginPanel from "@/components/qr/QrLoginPanel";
+import QrScanFlow from "@/components/qr/QrScanFlow";
 import {
   api,
   ApiError,
   connectRealtime,
+  getDeviceId,
   getSession,
   setSession,
   type AuthResponse,
@@ -45,6 +50,8 @@ import {
   Phone,
   Plus,
   Search,
+  QrCode,
+  ScanLine,
   SendHorizontal,
   Settings,
   ShieldCheck,
@@ -90,6 +97,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
   const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showQrLogin, setShowQrLogin] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError(""); setBusy(true);
@@ -98,9 +106,9 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
       if (pendingToken) {
         result = await api<AuthResponse>("/api/auth/totp", { method: "POST", body: JSON.stringify({ pendingToken, code: totpCode, deviceName: navigator.userAgent }) });
       } else if (mode === "register") {
-        result = await api<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify({ account, password, inviteCode, displayName, agreementAccepted: agreement, deviceName: navigator.userAgent }) });
+        result = await api<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify({ account, password, inviteCode, displayName, agreementAccepted: agreement, deviceName: navigator.userAgent, deviceId: getDeviceId() }) });
       } else {
-        result = await api<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ account, password, deviceName: navigator.userAgent }) });
+        result = await api<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ account, password, deviceName: navigator.userAgent, deviceId: getDeviceId() }) });
       }
       if (result.requiresTotp && result.pendingToken) { setPendingToken(result.pendingToken); return; }
       if (!result.accessToken || !result.user) throw new Error(result.error || "登录失败");
@@ -173,11 +181,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
                 {busy ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" /> : pendingToken ? "验证并进入后台" : mode === "login" ? "进入 E聊" : "安全注册"}
               </button>
             </form>
+            {mode === "login" && !pendingToken && <button type="button" onClick={() => setShowQrLogin(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.05] py-3 text-sm text-teal-200 transition hover:bg-white/10"><QrCode size={17} />使用二维码登录</button>}
             {mode === "register" && !pendingToken && <p className="mt-5 text-center text-xs text-slate-500">本地预览邀请码：<span className="font-mono text-slate-300">ECHAT2026</span></p>}
           </div>
           <div className="mt-6 flex items-center justify-center gap-4 text-[11px] text-slate-500"><span>ASP.NET Core 8</span><span className="h-1 w-1 rounded-full bg-slate-700" /><span>SignalR</span><span className="h-1 w-1 rounded-full bg-slate-700" /><span>MongoDB Ready</span></div>
         </div>
       </section>
+      {showQrLogin && <QrLoginPanel onAuthenticated={onAuthenticated} onClose={() => setShowQrLogin(false)} />}
     </main>
   );
 }
@@ -197,6 +207,8 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
   const [mobileDetail, setMobileDetail] = useState(false);
   const [adminOverview, setAdminOverview] = useState<Record<string, unknown> | null>(null);
   const [showGroup, setShowGroup] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [showMyQr, setShowMyQr] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const [realtimeConnection, setRealtimeConnection] = useState<HubConnection | null>(null);
@@ -423,13 +435,13 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
             )) : <EmptyState icon={MessageCircleMore} title="还没有会话" text="添加好友后即可发起端到端加密聊天。" />)}
 
             {nav === "contacts" && <div className="space-y-5 px-1">
-              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70"><div className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserPlus size={17} className="text-teal-600" />添加好友</div><div className="flex gap-2"><input id="add-account" value={addAccount} onChange={e => setAddAccount(e.target.value)} onKeyDown={e => e.key === "Enter" && addFriend()} placeholder="输入 E聊账号" className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2.5 text-sm outline-none ring-teal-400/40 focus:ring-2" /><button disabled={busy} onClick={addFriend} className="rounded-xl bg-slate-900 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-50">发送</button></div></div>
+              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70"><div className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserPlus size={17} className="text-teal-600" />添加好友</div><div className="flex gap-2"><input id="add-account" value={addAccount} onChange={e => setAddAccount(e.target.value)} onKeyDown={e => e.key === "Enter" && addFriend()} placeholder="输入 E聊账号" className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2.5 text-sm outline-none ring-teal-400/40 focus:ring-2" /><button disabled={busy} onClick={addFriend} className="rounded-xl bg-slate-900 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-50">发送</button></div><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => setShowScanner(true)} className="flex items-center justify-center gap-2 rounded-xl bg-teal-50 py-2.5 text-xs font-medium text-teal-700"><ScanLine size={15} />扫一扫</button><button onClick={() => setShowMyQr(true)} className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-xs font-medium text-slate-600"><QrCode size={15} />我的二维码</button></div></div>
               {requests.filter(x => x.status === "Pending").length > 0 && <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">新的朋友</p>{requests.filter(x => x.status === "Pending").map(item => <div key={item.id} className="flex items-center gap-3 rounded-2xl bg-white p-3"><Avatar name="新朋友" size="sm" /><div className="min-w-0 flex-1"><p className="text-sm font-medium">好友申请</p><p className="truncate text-xs text-slate-500">{item.note || "请求添加你为好友"}</p></div><button onClick={() => acceptRequest(item.id)} className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700">接受</button></div>)}</div>}
               <div><p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">我的好友 · {contacts.filter(x => x.status === "Friend").length}</p>{contacts.filter(x => x.status === "Friend" && x.user.displayName.toLowerCase().includes(search.toLowerCase())).map(contact => <button key={contact.user.id} onClick={() => startChat(contact)} className="flex w-full items-center gap-3 rounded-2xl p-3 text-left transition hover:bg-white"><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" online /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{contact.remark || contact.user.displayName}</p><p className="truncate text-xs text-slate-500">@{contact.user.account}</p></div><MessageCircleMore size={17} className="text-slate-300" /></button>)}</div>
               {!contacts.some(x => x.status === "Friend") && <EmptyState icon={Users} title="联系人还是空的" text="通过账号发送好友申请，对方接受后即可聊天。" compact />}
             </div>}
 
-            {nav === "profile" && <ProfilePanel user={user} onLogout={onLogout} />}
+            {nav === "profile" && <P1ProfilePanel user={user} onLogout={onLogout} onScan={() => setShowScanner(true)} onMyQr={() => setShowMyQr(true)} />}
             {nav === "admin" && <AdminPanel overview={adminOverview} />}
           </div>
         </section>
@@ -446,6 +458,8 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
       </div>
 
       <CallManager ref={callManagerRef} user={user} connection={realtimeConnection} />
+      {showScanner && <QrScanFlow onClose={() => setShowScanner(false)} onFriendRequested={() => { toast.success("好友申请已发送"); loadData(); }} />}
+      {showMyQr && <MyContactQrDialog user={user} onClose={() => setShowMyQr(false)} />}
 
       {showGroup && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-medium uppercase tracking-[.16em] text-teal-600">New encrypted group</p><h2 className="mt-2 text-xl font-semibold">创建加密群聊</h2></div><button onClick={() => setShowGroup(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-500"><X size={18} /></button></div><label className="mt-6 block text-sm font-medium">群名称<input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="例如：周末计划" className="mt-2 w-full rounded-xl bg-slate-100 px-4 py-3 text-sm outline-none ring-teal-400/40 focus:ring-2" /></label><p className="mb-2 mt-5 text-sm font-medium">选择好友 <span className="text-xs font-normal text-slate-400">至少 2 人</span></p><div className="max-h-64 space-y-1 overflow-y-auto">{contacts.filter(contact => contact.status === "Friend").map(contact => { const checked = groupMembers.includes(contact.user.id); return <button key={contact.user.id} onClick={() => setGroupMembers(current => checked ? current.filter(id => id !== contact.user.id) : [...current, contact.user.id])} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${checked ? "bg-teal-50" : "hover:bg-slate-50"}`}><Avatar name={contact.user.displayName} src={contact.user.avatarUrl} size="sm" /><span className="flex-1 text-sm font-medium">{contact.user.displayName}</span><span className={`grid h-5 w-5 place-items-center rounded-md border ${checked ? "border-teal-500 bg-teal-500 text-white" : "border-slate-300"}`}>{checked && <Check size={13} />}</span></button>; })}{contacts.filter(contact => contact.status === "Friend").length < 2 && <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">至少需要两位好友才能创建群聊。你可以先在联系人页添加更多好友。</p>}</div><button disabled={busy || !groupName.trim() || groupMembers.length < 2} onClick={createGroup} className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white transition active:scale-[.98] disabled:opacity-40">创建并分发群组密钥</button></div></div>}
 

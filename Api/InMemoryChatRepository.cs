@@ -7,6 +7,8 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, UserAccount> _users = new();
     private readonly ConcurrentDictionary<string, InviteCode> _invites = new();
     private readonly ConcurrentDictionary<string, RefreshSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, QrLoginChallenge> _qrLogins = new();
+    private readonly ConcurrentDictionary<string, ContactQrToken> _contactQrs = new();
     private readonly ConcurrentDictionary<string, FriendRequest> _friendRequests = new();
     private readonly ConcurrentDictionary<string, ContactRelation> _relations = new();
     private readonly ConcurrentDictionary<string, Conversation> _conversations = new();
@@ -15,6 +17,8 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, MomentPost> _moments = new();
     private readonly ConcurrentDictionary<string, MomentLike> _momentLikes = new();
     private readonly ConcurrentDictionary<string, MomentComment> _momentComments = new();
+    private readonly ConcurrentDictionary<string, MomentReport> _momentReports = new();
+    private readonly ConcurrentDictionary<string, CallRecord> _calls = new();
     private readonly ConcurrentDictionary<string, string> _messageIdempotency = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _conversationLocks = new();
 
@@ -52,6 +56,34 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) { _sessions[session.Id] = session; return Task.CompletedTask; }
     public Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => Task.FromResult(_sessions.Values.FirstOrDefault(x => x.TokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow));
     public Task RevokeSessionAsync(string id, CancellationToken ct = default) { if (_sessions.TryGetValue(id, out var item)) item.RevokedAtUtc = DateTime.UtcNow; return Task.CompletedTask; }
+    public Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RefreshSession>>(_sessions.Values.Where(x => x.UserId == userId && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow).OrderByDescending(x => x.LastSeenAtUtc).ToList());
+    public Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default)
+    {
+        foreach (var item in _sessions.Values.Where(x => x.UserId == userId && x.Id != exceptSessionId && x.RevokedAtUtc is null)) { item.RevokedAtUtc = DateTime.UtcNow; item.RevokedReason = reason; }
+        return Task.CompletedTask;
+    }
+    public Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default) { _qrLogins[challenge.Id] = challenge; return Task.CompletedTask; }
+    public Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default) => Task.FromResult(_qrLogins.TryGetValue(id, out var item) ? item : null);
+    public Task<bool> TryUpdateQrLoginAsync(string id, QrLoginStatus expected, QrLoginStatus next, string? userId = null, CancellationToken ct = default)
+    {
+        if (!_qrLogins.TryGetValue(id, out var item)) return Task.FromResult(false);
+        lock (item)
+        {
+            if (item.ExpiresAtUtc <= DateTime.UtcNow && item.Status is not (QrLoginStatus.Consumed or QrLoginStatus.Denied)) { item.Status = QrLoginStatus.Expired; return Task.FromResult(false); }
+            if (item.Status != expected) return Task.FromResult(false);
+            item.Status = next;
+            if (userId is not null) item.ScannedByUserId = userId;
+            if (next == QrLoginStatus.Consumed) item.ConsumedAtUtc = DateTime.UtcNow;
+            return Task.FromResult(true);
+        }
+    }
+    public Task AddContactQrAsync(ContactQrToken token, CancellationToken ct = default) { _contactQrs[token.Id] = token; return Task.CompletedTask; }
+    public Task<ContactQrToken?> GetContactQrByHashAsync(string hash, CancellationToken ct = default) => Task.FromResult(_contactQrs.Values.FirstOrDefault(x => x.TokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow && x.UseCount < x.MaxUses));
+    public Task<bool> TryUseContactQrAsync(string id, CancellationToken ct = default)
+    {
+        if (!_contactQrs.TryGetValue(id, out var item)) return Task.FromResult(false);
+        lock (item) { if (item.RevokedAtUtc is not null || item.ExpiresAtUtc <= DateTime.UtcNow || item.UseCount >= item.MaxUses) return Task.FromResult(false); item.UseCount++; return Task.FromResult(true); }
+    }
 
     public Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default)
     {
@@ -137,4 +169,15 @@ public sealed class InMemoryChatRepository : IChatRepository
         var wanted = momentIds.ToHashSet(StringComparer.Ordinal);
         return Task.FromResult<IReadOnlyList<MomentComment>>(_momentComments.Values.Where(x => wanted.Contains(x.MomentId) && x.DeletedAtUtc is null).OrderBy(x => x.CreatedAtUtc).ToList());
     }
+
+    public Task<MomentReport> AddMomentReportAsync(MomentReport report, CancellationToken ct = default)
+    {
+        var existing = _momentReports.Values.FirstOrDefault(x => x.MomentId == report.MomentId && x.ReporterId == report.ReporterId);
+        if (existing is not null) return Task.FromResult(existing);
+        _momentReports[report.Id] = report; return Task.FromResult(report);
+    }
+    public Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<MomentReport>>(_momentReports.Values.Where(x => x.ReporterId == reporterId).OrderByDescending(x => x.CreatedAtUtc).ToList());
+    public Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default) { _calls[call.Id] = call; return Task.FromResult(call); }
+    public Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default) => Task.FromResult(_calls.TryGetValue(id, out var item) ? item : null);
+    public Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CallRecord>>(_calls.Values.Where(x => x.ParticipantIds.Contains(userId)).OrderByDescending(x => x.StartedAtUtc).Take(100).ToList());
 }

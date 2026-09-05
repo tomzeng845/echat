@@ -60,5 +60,10 @@ if ((await signaled).fromUserId !== alice.user.id) throw new Error("call.signal 
 const ended = once(aliceHub, "call.ended");
 await bobHub.invoke("CallEnd", conversation.id, callId);
 if ((await ended).callId !== callId) throw new Error("call.ended mismatch");
+const history = await request("/api/calls", alice.accessToken);
+if (history.find(item => item.id === declinedCallId)?.status !== "Rejected") throw new Error("rejected call history missing");
+if (history.find(item => item.id === callId)?.status !== "Ended") throw new Error("ended call history missing");
+const rtc = await request("/api/rtc/config", alice.accessToken);
+if (!Array.isArray(rtc.iceServers) || !rtc.mode) throw new Error("RTC config missing");
 await Promise.all([aliceHub.stop(), bobHub.stop()]);
-console.log(`CALL_SIGNAL_OK conversation=${conversation.id} call=${callId}`);
+console.log(`CALL_SIGNAL_OK conversation=${conversation.id} call=${callId} history=${history.length} rtc=${rtc.mode}`);

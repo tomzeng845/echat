@@ -71,7 +71,13 @@ public sealed class MediaController(IChatRepository repository, IMediaStorage st
             var conversation = await repository.GetConversationAsync(asset.ConversationId, ct);
             return conversation?.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null) == true;
         }
-        return (await repository.GetRelationAsync(userId, asset.OwnerId, ct))?.Status == RelationStatus.Friend;
+        var relation = await repository.GetRelationAsync(userId, asset.OwnerId, ct);
+        var reverse = await repository.GetRelationAsync(asset.OwnerId, userId, ct);
+        if (relation?.Status != RelationStatus.Friend || reverse?.Status != RelationStatus.Friend) return false;
+        var moments = await repository.GetMomentsAsync([asset.OwnerId], null, 200, ct);
+        var moment = moments.FirstOrDefault(x => x.MediaAssetIds.Contains(asset.Id));
+        if (moment is null || moment.Visibility == MomentVisibility.Private) return false;
+        return moment.Visibility switch { MomentVisibility.Selected => moment.AudienceUserIds.Contains(userId), MomentVisibility.Excluded => !moment.AudienceUserIds.Contains(userId), _ => true };
     }
 
     private static bool IsInline(string contentType) => contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) || contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) || contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);

@@ -7,6 +7,8 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<UserAccount> _users;
     private readonly IMongoCollection<InviteCode> _invites;
     private readonly IMongoCollection<RefreshSession> _sessions;
+    private readonly IMongoCollection<QrLoginChallenge> _qrLogins;
+    private readonly IMongoCollection<ContactQrToken> _contactQrs;
     private readonly IMongoCollection<FriendRequest> _friendRequests;
     private readonly IMongoCollection<ContactRelation> _relations;
     private readonly IMongoCollection<Conversation> _conversations;
@@ -15,6 +17,8 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<MomentPost> _moments;
     private readonly IMongoCollection<MomentLike> _momentLikes;
     private readonly IMongoCollection<MomentComment> _momentComments;
+    private readonly IMongoCollection<MomentReport> _momentReports;
+    private readonly IMongoCollection<CallRecord> _calls;
 
     public MongoChatRepository(IConfiguration configuration)
     {
@@ -24,6 +28,8 @@ public sealed class MongoChatRepository : IChatRepository
         _users = db.GetCollection<UserAccount>("users");
         _invites = db.GetCollection<InviteCode>("inviteCodes");
         _sessions = db.GetCollection<RefreshSession>("refreshSessions");
+        _qrLogins = db.GetCollection<QrLoginChallenge>("qrLogins");
+        _contactQrs = db.GetCollection<ContactQrToken>("contactQrs");
         _friendRequests = db.GetCollection<FriendRequest>("friendRequests");
         _relations = db.GetCollection<ContactRelation>("contactRelations");
         _conversations = db.GetCollection<Conversation>("conversations");
@@ -32,6 +38,8 @@ public sealed class MongoChatRepository : IChatRepository
         _moments = db.GetCollection<MomentPost>("moments");
         _momentLikes = db.GetCollection<MomentLike>("momentLikes");
         _momentComments = db.GetCollection<MomentComment>("momentComments");
+        _momentReports = db.GetCollection<MomentReport>("momentReports");
+        _calls = db.GetCollection<CallRecord>("calls");
     }
 
     public async Task EnsureSeedDataAsync(CancellationToken ct = default)
@@ -42,6 +50,11 @@ public sealed class MongoChatRepository : IChatRepository
         await _moments.Indexes.CreateOneAsync(new CreateIndexModel<MomentPost>(Builders<MomentPost>.IndexKeys.Descending(x => x.CreatedAtUtc)), cancellationToken: ct);
         await _momentLikes.Indexes.CreateOneAsync(new CreateIndexModel<MomentLike>(Builders<MomentLike>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentComments.Indexes.CreateOneAsync(new CreateIndexModel<MomentComment>(Builders<MomentComment>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.CreatedAtUtc)), cancellationToken: ct);
+        await _sessions.Indexes.CreateOneAsync(new CreateIndexModel<RefreshSession>(Builders<RefreshSession>.IndexKeys.Ascending(x => x.TokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _qrLogins.Indexes.CreateOneAsync(new CreateIndexModel<QrLoginChallenge>(Builders<QrLoginChallenge>.IndexKeys.Ascending(x => x.ScanTokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _contactQrs.Indexes.CreateOneAsync(new CreateIndexModel<ContactQrToken>(Builders<ContactQrToken>.IndexKeys.Ascending(x => x.TokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _momentReports.Indexes.CreateOneAsync(new CreateIndexModel<MomentReport>(Builders<MomentReport>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.ReporterId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _calls.Indexes.CreateOneAsync(new CreateIndexModel<CallRecord>(Builders<CallRecord>.IndexKeys.Descending(x => x.StartedAtUtc)), cancellationToken: ct);
         var seedCode = Environment.GetEnvironmentVariable("SEED_INVITE_CODE");
         if (!string.IsNullOrWhiteSpace(seedCode))
             await _invites.ReplaceOneAsync(x => x.Code == seedCode, new InviteCode { Code = seedCode, MaxUses = 1000 }, new ReplaceOptions { IsUpsert = true }, ct);
@@ -61,6 +74,30 @@ public sealed class MongoChatRepository : IChatRepository
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) => _sessions.InsertOneAsync(session, cancellationToken: ct);
     public async Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => await _sessions.Find(x => x.TokenHash == hash && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).FirstOrDefaultAsync(ct);
     public Task RevokeSessionAsync(string id, CancellationToken ct = default) => _sessions.UpdateOneAsync(x => x.Id == id, Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, DateTime.UtcNow), cancellationToken: ct);
+    public async Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default) => await _sessions.Find(x => x.UserId == userId && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).SortByDescending(x => x.LastSeenAtUtc).ToListAsync(ct);
+    public Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default)
+    {
+        var filter = Builders<RefreshSession>.Filter.Eq(x => x.UserId, userId) & Builders<RefreshSession>.Filter.Eq(x => x.RevokedAtUtc, null);
+        if (!string.IsNullOrWhiteSpace(exceptSessionId)) filter &= Builders<RefreshSession>.Filter.Ne(x => x.Id, exceptSessionId);
+        return _sessions.UpdateManyAsync(filter, Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, DateTime.UtcNow).Set(x => x.RevokedReason, reason), cancellationToken: ct);
+    }
+    public Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default) => _qrLogins.InsertOneAsync(challenge, cancellationToken: ct);
+    public async Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default) => await _qrLogins.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+    public async Task<bool> TryUpdateQrLoginAsync(string id, QrLoginStatus expected, QrLoginStatus next, string? userId = null, CancellationToken ct = default)
+    {
+        var filter = Builders<QrLoginChallenge>.Filter.Eq(x => x.Id, id) & Builders<QrLoginChallenge>.Filter.Eq(x => x.Status, expected) & Builders<QrLoginChallenge>.Filter.Gt(x => x.ExpiresAtUtc, DateTime.UtcNow);
+        var update = Builders<QrLoginChallenge>.Update.Set(x => x.Status, next);
+        if (userId is not null) update = update.Set(x => x.ScannedByUserId, userId);
+        if (next == QrLoginStatus.Consumed) update = update.Set(x => x.ConsumedAtUtc, DateTime.UtcNow);
+        return (await _qrLogins.UpdateOneAsync(filter, update, cancellationToken: ct)).ModifiedCount == 1;
+    }
+    public Task AddContactQrAsync(ContactQrToken token, CancellationToken ct = default) => _contactQrs.InsertOneAsync(token, cancellationToken: ct);
+    public async Task<ContactQrToken?> GetContactQrByHashAsync(string hash, CancellationToken ct = default) => await _contactQrs.Find(x => x.TokenHash == hash && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow && x.UseCount < x.MaxUses).FirstOrDefaultAsync(ct);
+    public async Task<bool> TryUseContactQrAsync(string id, CancellationToken ct = default)
+    {
+        var filter = Builders<ContactQrToken>.Filter.Eq(x => x.Id, id) & Builders<ContactQrToken>.Filter.Eq(x => x.RevokedAtUtc, null) & Builders<ContactQrToken>.Filter.Gt(x => x.ExpiresAtUtc, DateTime.UtcNow) & Builders<ContactQrToken>.Filter.Where(x => x.UseCount < x.MaxUses);
+        return (await _contactQrs.UpdateOneAsync(filter, Builders<ContactQrToken>.Update.Inc(x => x.UseCount, 1), cancellationToken: ct)).ModifiedCount == 1;
+    }
     public async Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default)
     {
         var existing = await _friendRequests.Find(x => x.SenderId == request.SenderId && x.RequestId == request.RequestId).FirstOrDefaultAsync(ct);
@@ -112,4 +149,12 @@ public sealed class MongoChatRepository : IChatRepository
     public async Task<MomentComment?> GetMomentCommentAsync(string id, CancellationToken ct = default) => await _momentComments.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public Task UpdateMomentCommentAsync(MomentComment comment, CancellationToken ct = default) => _momentComments.ReplaceOneAsync(x => x.Id == comment.Id, comment, cancellationToken: ct);
     public async Task<IReadOnlyList<MomentComment>> GetMomentCommentsAsync(IEnumerable<string> momentIds, CancellationToken ct = default) => await _momentComments.Find(Builders<MomentComment>.Filter.In(x => x.MomentId, momentIds) & Builders<MomentComment>.Filter.Eq(x => x.DeletedAtUtc, null)).SortBy(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<MomentReport> AddMomentReportAsync(MomentReport report, CancellationToken ct = default)
+    {
+        return await _momentReports.FindOneAndUpdateAsync(x => x.MomentId == report.MomentId && x.ReporterId == report.ReporterId, Builders<MomentReport>.Update.SetOnInsert(x => x.Id, report.Id).SetOnInsert(x => x.Reason, report.Reason).SetOnInsert(x => x.Detail, report.Detail).SetOnInsert(x => x.Status, report.Status).SetOnInsert(x => x.CreatedAtUtc, report.CreatedAtUtc), new FindOneAndUpdateOptions<MomentReport> { IsUpsert = true, ReturnDocument = ReturnDocument.After }, ct);
+    }
+    public async Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default) => await _momentReports.Find(x => x.ReporterId == reporterId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default) { await _calls.ReplaceOneAsync(x => x.Id == call.Id, call, new ReplaceOptions { IsUpsert = true }, ct); return call; }
+    public async Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default) => await _calls.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default) => await _calls.Find(x => x.ParticipantIds.Contains(userId)).SortByDescending(x => x.StartedAtUtc).Limit(100).ToListAsync(ct);
 }

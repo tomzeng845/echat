@@ -13,6 +13,7 @@ builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializ
 builder.Services.AddSingleton<PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<TotpService>();
+builder.Services.AddSingleton<SessionService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
@@ -31,6 +32,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             if (context.HttpContext.Request.Path.StartsWithSegments("/hubs/chat"))
                 context.Token = context.Request.Query["access_token"];
             return Task.CompletedTask;
+        },
+        OnTokenValidated = async context =>
+        {
+            if (context.Principal?.FindFirst("scope")?.Value != "app") return;
+            var sessionId = context.Principal.SessionId();
+            if (string.IsNullOrWhiteSpace(sessionId)) return;
+            var repository = context.HttpContext.RequestServices.GetRequiredService<IChatRepository>();
+            var active = await repository.GetSessionsAsync(context.Principal.UserId(), context.HttpContext.RequestAborted);
+            if (!active.Any(x => x.Id == sessionId)) context.Fail("SESSION_REVOKED");
         }
     };
 });
@@ -71,7 +81,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.2.0", status = "healthy", utcNow = DateTime.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.3.0", status = "healthy", utcNow = DateTime.UtcNow }));
 app.MapFallbackToFile("index.html");
 
 await app.StartAsync();

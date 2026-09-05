@@ -11,6 +11,14 @@ public interface IChatRepository
     Task AddSessionAsync(RefreshSession session, CancellationToken ct = default);
     Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default);
     Task RevokeSessionAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default);
+    Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default);
+    Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default);
+    Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default);
+    Task<bool> TryUpdateQrLoginAsync(string id, QrLoginStatus expected, QrLoginStatus next, string? userId = null, CancellationToken ct = default);
+    Task AddContactQrAsync(ContactQrToken token, CancellationToken ct = default);
+    Task<ContactQrToken?> GetContactQrByHashAsync(string hash, CancellationToken ct = default);
+    Task<bool> TryUseContactQrAsync(string id, CancellationToken ct = default);
     Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default);
     Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default);
@@ -41,4 +49,9 @@ public interface IChatRepository
     Task<MomentComment?> GetMomentCommentAsync(string id, CancellationToken ct = default);
     Task UpdateMomentCommentAsync(MomentComment comment, CancellationToken ct = default);
     Task<IReadOnlyList<MomentComment>> GetMomentCommentsAsync(IEnumerable<string> momentIds, CancellationToken ct = default);
+    Task<MomentReport> AddMomentReportAsync(MomentReport report, CancellationToken ct = default);
+    Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default);
+    Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default);
+    Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default);
 }

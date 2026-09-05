@@ -1,7 +1,7 @@
 import * as signalR from "@microsoft/signalr";
 
 export type User = { id: string; account: string; displayName: string; avatarUrl: string; signature: string; region: string; role: "User" | "Reviewer" | "Operator" | "Admin"; status: string };
-export type AuthResponse = { success: boolean; accessToken?: string; refreshToken?: string; expiresAtUtc?: string; user?: User; requiresTotp?: boolean; pendingToken?: string; error?: string };
+export type AuthResponse = { success: boolean; accessToken?: string; refreshToken?: string; expiresAtUtc?: string; user?: User; requiresTotp?: boolean; pendingToken?: string; error?: string; sessionId?: string; deviceId?: string };
 export type Conversation = { id: string; type: "Direct" | "Group" | "System"; name: string; avatarUrl: string; lastSequence: number; lastMessagePreview: string; lastMessageAtUtc?: string; memberCount: number; readSequence: number; muted: boolean; pinned: boolean; keyEnvelope?: string };
 export type Message = { id: string; clientMessageId: string; conversationId: string; sequence: number; senderId: string; kind: "Text" | "Emoji" | "Image" | "Voice" | "Video" | "File" | "System"; ciphertext: string; nonce: string; algorithm: string; replyToMessageId?: string; metadata: Record<string, string>; state: "Accepted" | "Recalled"; sentAtUtc: string; recalledAtUtc?: string };
 export type Contact = { status: string; remark: string; user: User };
@@ -10,18 +10,29 @@ export type ConversationMember = { userId: string; displayName: string; avatarUr
 export type MediaAsset = { id: string; fileName: string; contentType: string; size: number; purpose: "Chat" | "Moment"; contentUrl: string };
 export type MomentLike = { userId: string; displayName: string; avatarUrl: string; createdAtUtc: string };
 export type MomentComment = { id: string; userId: string; displayName: string; avatarUrl: string; text: string; createdAtUtc: string };
-export type Moment = { id: string; author: User; text: string; media: MediaAsset[]; likes: MomentLike[]; comments: MomentComment[]; likedByMe: boolean; createdAtUtc: string };
+export type MomentVisibility = "Friends" | "Private" | "Selected" | "Excluded";
+export type Moment = { id: string; author: User; text: string; media: MediaAsset[]; likes: MomentLike[]; comments: MomentComment[]; likedByMe: boolean; createdAtUtc: string; visibility: MomentVisibility };
 export type CallInvite = { conversationId: string; callId: string; mode: "audio" | "video"; callerId: string; callerName: string; callerAvatarUrl: string };
 export type CallParticipant = { conversationId: string; callId: string; userId: string; displayName: string; avatarUrl: string };
 export type CallSignal = { conversationId: string; callId: string; fromUserId: string; signalType: "offer" | "answer" | "ice"; payload: string };
 export type CallEnded = { conversationId: string; callId: string; userId: string; reason?: string };
+export type QrLoginStart = { challengeId: string; pollToken: string; qrPayload: string; expiresAtUtc: string };
+export type QrLoginState = { status: "Pending" | "Scanned" | "Approved" | "Denied" | "Consumed" | "Expired"; expiresAtUtc: string; approvedDisplayName?: string };
+export type QrLoginScan = { challengeId: string; requestDeviceName: string; expiresAtUtc: string; verificationCode: string };
+export type ContactQr = { qrPayload: string; expiresAtUtc: string };
+export type ContactQrPreview = { user: User; expiresAtUtc: string };
+export type DeviceSession = { id: string; deviceId: string; deviceName: string; createdAtUtc: string; lastSeenAtUtc: string; current: boolean };
+export type CallRecord = { id: string; conversationId: string; conversationName: string; callerId: string; mode: "audio" | "video"; status: "Ringing" | "Active" | "Rejected" | "Ended" | "Missed" | "Failed"; startedAtUtc: string; answeredAtUtc?: string; endedAtUtc?: string; endReason: string };
+export type RtcConfig = { iceServers: RTCIceServer[]; mode: string; turnConfigured: boolean; sfuConfigured: boolean; maxP2pParticipants: number };
 
 const SESSION_KEY = "echat.session.v1";
+const DEVICE_KEY = "echat.device.v1";
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number) { super(message); this.name = "ApiError"; }
 }
 export const getSession = (): AuthResponse | null => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { return null; } };
 export const setSession = (session: AuthResponse | null) => session ? localStorage.setItem(SESSION_KEY, JSON.stringify(session)) : localStorage.removeItem(SESSION_KEY);
+export const getDeviceId = () => { let value = localStorage.getItem(DEVICE_KEY); if (!value) { value = crypto.randomUUID().replaceAll("-", ""); localStorage.setItem(DEVICE_KEY, value); } return value; };
 
 export async function authorizedFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
   const session = getSession();
@@ -30,7 +41,7 @@ export async function authorizedFetch(path: string, init: RequestInit = {}, retr
   if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
   const response = await fetch(path, { ...init, headers });
   if (response.status === 401 && retry && session?.refreshToken) {
-    const refreshed = await fetch("/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: session.refreshToken, deviceName: navigator.userAgent }) });
+    const refreshed = await fetch("/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: session.refreshToken, deviceName: navigator.userAgent, deviceId: getDeviceId() }) });
     if (refreshed.ok) { setSession(await refreshed.json()); return authorizedFetch(path, init, false); }
     setSession(null);
     window.dispatchEvent(new Event("echat-session-expired"));

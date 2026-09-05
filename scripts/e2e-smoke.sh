@@ -70,4 +70,16 @@ curl -fsS "$base/api/moments/$moment_id/comments" -H "Authorization: Bearer $bob
 moment_social="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" | jq -r --arg id "$moment_id" '.[] | select(.id == $id) | "\(.likes|length):\(.comments|length)"')"
 [[ "$moment_social" == "1:1" ]]
 
-printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s media=%s moment=%s social=%s idempotent_message=%s read=%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$chat_asset" "$moment_id" "$moment_social" "$first_id" "$read_sequence"
+private_id="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d '{"text":"Private","visibility":"Private"}' | jq -r .id)"
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$private_id" '[.[] | select(.id == $id)] | length')" == "0" ]]
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" | jq -r --arg id "$private_id" '[.[] | select(.id == $id)] | length')" == "1" ]]
+selected_id="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"text\":\"Selected\",\"visibility\":\"Selected\",\"audienceUserIds\":[\"$bob_id\"]}" | jq -r .id)"
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$selected_id" '[.[] | select(.id == $id)] | length')" == "1" ]]
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $charlie_token" | jq -r --arg id "$selected_id" '[.[] | select(.id == $id)] | length')" == "0" ]]
+excluded_id="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"text\":\"Excluded\",\"visibility\":\"Excluded\",\"audienceUserIds\":[\"$bob_id\"]}" | jq -r .id)"
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$excluded_id" '[.[] | select(.id == $id)] | length')" == "0" ]]
+[[ "$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $charlie_token" | jq -r --arg id "$excluded_id" '[.[] | select(.id == $id)] | length')" == "1" ]]
+report_status="$(curl -fsS "$base/api/moments/$moment_id/reports" -H "Authorization: Bearer $bob_token" -H 'Content-Type: application/json' -d '{"reason":"垃圾广告","detail":"smoke"}' | jq -r .status)"
+[[ "$report_status" == "Submitted" ]]
+
+printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s media=%s moment=%s social=%s privacy=private:selected:excluded report=%s idempotent_message=%s read=%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$chat_asset" "$moment_id" "$moment_social" "$report_status" "$first_id" "$read_sequence"

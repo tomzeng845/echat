@@ -80,6 +80,48 @@ public sealed class CoreTests
         Assert.Empty(await repository.GetMomentLikesAsync([moment.Id]));
     }
 
+    [Fact]
+    public async Task QrLogin_UsesAtomicOneTimeStateTransitions()
+    {
+        var repository = new InMemoryChatRepository();
+        var challenge = new QrLoginChallenge { ScanTokenHash = "scan", PollTokenHash = "poll", ExpiresAtUtc = DateTime.UtcNow.AddMinutes(2) };
+        await repository.AddQrLoginAsync(challenge);
+
+        var scans = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => repository.TryUpdateQrLoginAsync(challenge.Id, QrLoginStatus.Pending, QrLoginStatus.Scanned, "u1")));
+        Assert.Single(scans, x => x);
+        Assert.True(await repository.TryUpdateQrLoginAsync(challenge.Id, QrLoginStatus.Scanned, QrLoginStatus.Approved, "u1"));
+        var exchanges = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => repository.TryUpdateQrLoginAsync(challenge.Id, QrLoginStatus.Approved, QrLoginStatus.Consumed, "u1")));
+        Assert.Single(exchanges, x => x);
+    }
+
+    [Fact]
+    public async Task DeviceSessions_CanRevokeAllExceptCurrent()
+    {
+        var repository = new InMemoryChatRepository();
+        await repository.AddSessionAsync(new RefreshSession { Id = "current", UserId = "u1", TokenHash = "a", DeviceId = "d1", ExpiresAtUtc = DateTime.UtcNow.AddDays(1) });
+        await repository.AddSessionAsync(new RefreshSession { Id = "other", UserId = "u1", TokenHash = "b", DeviceId = "d2", ExpiresAtUtc = DateTime.UtcNow.AddDays(1) });
+        await repository.RevokeSessionsAsync("u1", "current", "test");
+        var active = await repository.GetSessionsAsync("u1");
+        Assert.Single(active);
+        Assert.Equal("current", active[0].Id);
+    }
+
+    [Fact]
+    public async Task P1ReportsAndCalls_AreIdempotentAndQueryable()
+    {
+        var repository = new InMemoryChatRepository();
+        var first = await repository.AddMomentReportAsync(new MomentReport { MomentId = "m1", ReporterId = "u2", Reason = "垃圾广告" });
+        var second = await repository.AddMomentReportAsync(new MomentReport { MomentId = "m1", ReporterId = "u2", Reason = "其他" });
+        Assert.Equal(first.Id, second.Id);
+        Assert.Single(await repository.GetMomentReportsAsync("u2"));
+
+        await repository.UpsertCallAsync(new CallRecord { Id = "call1", ConversationId = "c1", CallerId = "u1", ParticipantIds = ["u1", "u2"] });
+        var call = await repository.GetCallAsync("call1");
+        call!.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow;
+        await repository.UpsertCallAsync(call);
+        Assert.Equal(CallRecordStatus.Ended, (await repository.GetCallsAsync("u2")).Single().Status);
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

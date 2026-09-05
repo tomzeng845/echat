@@ -2,12 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type { HubConnection } from "@microsoft/signalr";
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type CallEnded, type CallInvite, type CallParticipant, type CallSignal, type Conversation, type ConversationMember, type User } from "@/lib/echat-api";
+import { api, type CallEnded, type CallInvite, type CallParticipant, type CallSignal, type Conversation, type ConversationMember, type RtcConfig, type User } from "@/lib/echat-api";
 
 export type CallManagerHandle = { start: (conversation: Conversation, mode: "audio" | "video") => Promise<void> };
 type ActiveCall = { callId: string; conversationId: string; conversationName: string; mode: "audio" | "video"; status: "incoming" | "calling" | "connected"; callerId?: string; callerName?: string };
-
-const rtcConfig: RTCConfiguration = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }] };
 
 function StreamView({ stream, muted = false, className = "" }: { stream: MediaStream; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -24,9 +22,12 @@ const CallManager = forwardRef<CallManagerHandle, { user: User; connection: HubC
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
+  const rtcConfigRef = useRef<RTCConfiguration>({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   callRef.current = call;
+
+  useEffect(() => { api<RtcConfig>("/api/rtc/config").then(value => { rtcConfigRef.current = { iceServers: value.iceServers }; }).catch(() => undefined); }, []);
 
   async function acquire(mode: "audio" | "video") {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -43,7 +44,7 @@ const CallManager = forwardRef<CallManagerHandle, { user: User; connection: HubC
     if (!active || !stream || !connection || targetUserId === user.id) return;
     let peer = peers.current.get(targetUserId);
     if (!peer) {
-      peer = new RTCPeerConnection(rtcConfig);
+      peer = new RTCPeerConnection(rtcConfigRef.current);
       peers.current.set(targetUserId, peer);
       stream.getTracks().forEach(track => peer!.addTrack(track, stream));
       peer.onicecandidate = event => { if (event.candidate) connection.invoke("CallSignal", active.conversationId, active.callId, targetUserId, "ice", JSON.stringify(event.candidate.toJSON())).catch(() => undefined); };

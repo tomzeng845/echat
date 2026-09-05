@@ -15,7 +15,9 @@ public sealed class MomentsController(IChatRepository repository, IHubContext<Ch
         var relations = await repository.GetRelationsAsync(userId, ct);
         var authors = relations.Where(x => x.Status == RelationStatus.Friend).Select(x => x.PeerUserId).Append(userId).Distinct().ToList();
         var moments = await repository.GetMomentsAsync(authors, before, Math.Clamp(limit, 1, 50), ct);
-        return Ok(await BuildViewsAsync(moments, userId, ct));
+        var visible = new List<MomentPost>();
+        foreach (var moment in moments) if (await IsVisibleAsync(moment, userId, ct)) visible.Add(moment);
+        return Ok(await BuildViewsAsync(visible, userId, ct));
     }
 
     [HttpPost]
@@ -26,8 +28,12 @@ public sealed class MomentsController(IChatRepository repository, IHubContext<Ch
         if (text.Length > 2000 || (text.Length == 0 && mediaIds.Count == 0) || mediaIds.Count > 9) return BadRequest(new { error = "动态内容为空、过长或图片超过 9 张" });
         var media = await repository.GetMediaAssetsAsync(mediaIds, ct);
         if (media.Count != mediaIds.Count || media.Any(x => x.OwnerId != User.UserId() || x.Purpose != MediaPurpose.Moment)) return BadRequest(new { error = "动态媒体无效" });
-        var moment = await repository.AddMomentAsync(new MomentPost { AuthorId = User.UserId(), Text = text, MediaAssetIds = mediaIds }, ct);
-        var audience = (await repository.GetRelationsAsync(User.UserId(), ct)).Where(x => x.Status == RelationStatus.Friend).Select(x => x.PeerUserId).Append(User.UserId());
+        var relations = await repository.GetRelationsAsync(User.UserId(), ct);
+        var friends = relations.Where(x => x.Status == RelationStatus.Friend).Select(x => x.PeerUserId).ToHashSet();
+        var requestedAudience = request.AudienceUserIds?.Distinct().Take(200).ToList() ?? [];
+        if (requestedAudience.Any(x => !friends.Contains(x))) return BadRequest(new { error = "可见范围只能选择好友" });
+        var moment = await repository.AddMomentAsync(new MomentPost { AuthorId = User.UserId(), Text = text, MediaAssetIds = mediaIds, Visibility = request.Visibility, AudienceUserIds = requestedAudience }, ct);
+        var audience = friends.Where(id => request.Visibility != MomentVisibility.Private && (request.Visibility != MomentVisibility.Selected || requestedAudience.Contains(id)) && (request.Visibility != MomentVisibility.Excluded || !requestedAudience.Contains(id))).Append(User.UserId());
         await hub.Clients.Users(audience).SendAsync("moment.updated", new { momentId = moment.Id, action = "created" }, ct);
         return Ok((await BuildViewsAsync([moment], User.UserId(), ct))[0]);
     }
@@ -85,18 +91,43 @@ public sealed class MomentsController(IChatRepository repository, IHubContext<Ch
         return NoContent();
     }
 
+    [HttpPost("{id}/reports")]
+    public async Task<ActionResult<MomentReport>> Report(string id, MomentReportRequest request, CancellationToken ct)
+    {
+        var moment = await VisibleMomentAsync(id, ct); if (moment is null) return NotFound();
+        if (moment.AuthorId == User.UserId()) return BadRequest(new { error = "不能举报自己的动态" });
+        var reason = request.Reason?.Trim() ?? "";
+        var detail = request.Detail?.Trim() ?? "";
+        if (reason.Length is < 2 or > 40 || detail.Length > 500) return BadRequest(new { error = "请选择举报原因，补充说明最多 500 字" });
+        return Ok(await repository.AddMomentReportAsync(new MomentReport { MomentId = id, ReporterId = User.UserId(), Reason = reason, Detail = detail }, ct));
+    }
+
+    [HttpGet("reports/mine")]
+    public async Task<ActionResult<IReadOnlyList<MomentReport>>> MyReports(CancellationToken ct) => Ok(await repository.GetMomentReportsAsync(User.UserId(), ct));
+
     private async Task<MomentPost?> VisibleMomentAsync(string id, CancellationToken ct)
     {
         var moment = await repository.GetMomentAsync(id, ct);
         if (moment is null || moment.DeletedAtUtc is not null) return null;
-        if (moment.AuthorId == User.UserId()) return moment;
-        return (await repository.GetRelationAsync(User.UserId(), moment.AuthorId, ct))?.Status == RelationStatus.Friend ? moment : null;
+        return await IsVisibleAsync(moment, User.UserId(), ct) ? moment : null;
     }
 
     private async Task NotifyAudienceAsync(MomentPost moment, string action, CancellationToken ct)
     {
-        var audience = (await repository.GetRelationsAsync(moment.AuthorId, ct)).Where(x => x.Status == RelationStatus.Friend).Select(x => x.PeerUserId).Append(moment.AuthorId);
+        var friends = (await repository.GetRelationsAsync(moment.AuthorId, ct)).Where(x => x.Status == RelationStatus.Friend).Select(x => x.PeerUserId);
+        var audience = friends.Where(id => moment.Visibility != MomentVisibility.Private && (moment.Visibility != MomentVisibility.Selected || moment.AudienceUserIds.Contains(id)) && (moment.Visibility != MomentVisibility.Excluded || !moment.AudienceUserIds.Contains(id))).Append(moment.AuthorId);
         await hub.Clients.Users(audience).SendAsync("moment.updated", new { momentId = moment.Id, action }, ct);
+    }
+
+    private async Task<bool> IsVisibleAsync(MomentPost moment, string viewerId, CancellationToken ct)
+    {
+        if (moment.DeletedAtUtc is not null) return false;
+        if (moment.AuthorId == viewerId) return true;
+        if (moment.Visibility == MomentVisibility.Private) return false;
+        var relation = await repository.GetRelationAsync(viewerId, moment.AuthorId, ct);
+        var reverse = await repository.GetRelationAsync(moment.AuthorId, viewerId, ct);
+        if (relation?.Status != RelationStatus.Friend || reverse?.Status != RelationStatus.Friend) return false;
+        return moment.Visibility switch { MomentVisibility.Selected => moment.AudienceUserIds.Contains(viewerId), MomentVisibility.Excluded => !moment.AudienceUserIds.Contains(viewerId), _ => true };
     }
 
     private async Task<List<MomentView>> BuildViewsAsync(IReadOnlyList<MomentPost> moments, string viewerId, CancellationToken ct)
@@ -118,7 +149,7 @@ public sealed class MomentsController(IChatRepository repository, IHubContext<Ch
             var momentLikes = likes.Where(x => x.MomentId == moment.Id && users.ContainsKey(x.UserId)).Select(x => new MomentLikeView(x.UserId, users[x.UserId].DisplayName, users[x.UserId].AvatarUrl, x.CreatedAtUtc)).ToList();
             var momentComments = comments.Where(x => x.MomentId == moment.Id && users.ContainsKey(x.UserId)).Select(x => new MomentCommentView(x.Id, x.UserId, users[x.UserId].DisplayName, users[x.UserId].AvatarUrl, x.Text, x.CreatedAtUtc)).ToList();
             var momentMedia = moment.MediaAssetIds.Select(id => media.FirstOrDefault(x => x.Id == id)).Where(x => x is not null).Select(x => new MediaAssetView(x!.Id, x.FileName, x.ContentType, x.Size, x.Purpose, $"/api/media/{x.Id}/content")).ToList();
-            return new MomentView(moment.Id, new UserView(author.Id, author.Account, author.DisplayName, author.AvatarUrl, author.Signature, author.Region, author.Role, author.Status), moment.Text, momentMedia, momentLikes, momentComments, momentLikes.Any(x => x.UserId == viewerId), moment.CreatedAtUtc);
+            return new MomentView(moment.Id, new UserView(author.Id, author.Account, author.DisplayName, author.AvatarUrl, author.Signature, author.Region, author.Role, author.Status), moment.Text, momentMedia, momentLikes, momentComments, momentLikes.Any(x => x.UserId == viewerId), moment.CreatedAtUtc, moment.Visibility);
         }).ToList();
     }
 }
