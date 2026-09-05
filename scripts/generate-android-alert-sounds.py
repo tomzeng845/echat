@@ -54,6 +54,15 @@ render(
         (1.56, 0.62, (440.0, 659.25), 0.42),
     ],
 )
+render(
+    OUTPUT / "echat_ringback.wav",
+    4.00,
+    [
+        (0.00, 0.42, (440.0, 480.0), 0.30),
+        (0.58, 0.42, (440.0, 480.0), 0.30),
+    ],
+)
 
 print(OUTPUT / "echat_message.wav")
 print(OUTPUT / "echat_call.wav")
+print(OUTPUT / "echat_ringback.wav")

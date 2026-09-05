@@ -2,6 +2,7 @@ package com.echat.app;
 
 import android.Manifest;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -12,6 +13,8 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -23,6 +26,7 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @CapacitorPlugin(
     name = "MediaPermissions",
@@ -43,7 +47,8 @@ public class MediaPermissionsPlugin extends Plugin {
         callListenerReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (CallListenerService.ACTION_INCOMING.equals(intent.getAction())) emitPendingCall(true);
+                if (CallListenerService.ACTION_INCOMING.equals(intent.getAction()))
+                    notifyListeners("callListenerIncoming", toCallJson(fromIntent(intent)), true);
                 else if (CallListenerService.ACTION_CLEARED.equals(intent.getAction())) {
                     JSObject data = new JSObject();
                     data.put("callId", intent.getStringExtra(CallListenerService.EXTRA_CALL_ID));
@@ -110,14 +115,27 @@ public class MediaPermissionsPlugin extends Plugin {
         return result;
     }
 
+    private static CallListenerService.IncomingCallPayload fromIntent(Intent intent) {
+        CallListenerService.IncomingCallPayload result = new CallListenerService.IncomingCallPayload();
+        result.conversationId = intent.getStringExtra(CallListenerService.EXTRA_CONVERSATION_ID);
+        result.callId = intent.getStringExtra(CallListenerService.EXTRA_CALL_ID);
+        result.mode = intent.getStringExtra(CallListenerService.EXTRA_MODE);
+        result.callerId = intent.getStringExtra(CallListenerService.EXTRA_CALLER_ID);
+        result.callerName = intent.getStringExtra(CallListenerService.EXTRA_CALLER_NAME);
+        result.callerAvatarUrl = intent.getStringExtra(CallListenerService.EXTRA_CALLER_AVATAR_URL);
+        return result;
+    }
+
     @PluginMethod
     public void playAlertSound(PluginCall call) {
         String kind = call.getString("kind", "message");
         boolean incomingCall = "voice-call".equals(kind) || "video-call".equals(kind);
-        MediaPlayer existing = incomingCall ? callPlayer : messagePlayer;
+        boolean outgoingCall = "outgoing-call".equals(kind);
+        boolean callSound = incomingCall || outgoingCall;
+        MediaPlayer existing = callSound ? callPlayer : messagePlayer;
         releasePlayer(existing);
         int resourceId = getContext().getResources().getIdentifier(
-            incomingCall ? "echat_call" : "echat_message",
+            outgoingCall ? "echat_ringback" : incomingCall ? "echat_call" : "echat_message",
             "raw",
             getContext().getPackageName()
         );
@@ -129,18 +147,20 @@ public class MediaPermissionsPlugin extends Plugin {
             Uri uri = Uri.parse("android.resource://" + getContext().getPackageName() + "/" + resourceId);
             MediaPlayer player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(incomingCall ? AudioAttributes.USAGE_NOTIFICATION_RINGTONE : AudioAttributes.USAGE_NOTIFICATION)
+                .setUsage(outgoingCall
+                    ? AudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING
+                    : incomingCall ? AudioAttributes.USAGE_NOTIFICATION_RINGTONE : AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build());
             player.setDataSource(getContext(), uri);
-            player.setLooping(incomingCall);
+            player.setLooping(callSound);
             player.setOnCompletionListener(completed -> {
                 releasePlayer(completed);
                 if (completed == messagePlayer) messagePlayer = null;
             });
             player.prepare();
             player.start();
-            if (incomingCall) callPlayer = player;
+            if (callSound) callPlayer = player;
             else messagePlayer = player;
             JSObject result = new JSObject();
             result.put("playing", true);
@@ -173,6 +193,101 @@ public class MediaPermissionsPlugin extends Plugin {
         }
         player.reset();
         player.release();
+    }
+
+    @PluginMethod
+    public void getBackgroundCallSupport(PluginCall call) {
+        call.resolve(backgroundCallSupport());
+    }
+
+    @PluginMethod
+    public void requestBackgroundCallExemption(PluginCall call) {
+        boolean force = Boolean.TRUE.equals(call.getBoolean("force", false));
+        PowerManager powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        boolean ignored = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+            || powerManager.isIgnoringBatteryOptimizations(getContext().getPackageName());
+        android.content.SharedPreferences preferences = getContext().getSharedPreferences("echat_background_calls", Context.MODE_PRIVATE);
+        boolean requested = preferences.getBoolean("battery_exemption_requested", false);
+        if (!ignored && (force || !requested) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            preferences.edit().putBoolean("battery_exemption_requested", true).apply();
+            try {
+                Intent intent = new Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getContext().getPackageName())
+                );
+                getActivity().startActivity(intent);
+            } catch (Exception ignoredError) {
+                try {
+                    getActivity().startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                } catch (Exception ignoredAgain) {
+                    // Personal center still exposes application/vendor settings.
+                }
+            }
+        }
+        call.resolve(backgroundCallSupport());
+    }
+
+    @PluginMethod
+    public void openBackgroundCallSettings(PluginCall call) {
+        boolean opened = false;
+        String manufacturer = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(Locale.ROOT);
+        List<ComponentName> candidates = new ArrayList<>();
+        if (manufacturer.contains("huawei")) {
+            candidates.add(new ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+            ));
+            candidates.add(new ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.optimize.process.ProtectActivity"
+            ));
+        }
+        if (manufacturer.contains("honor")) {
+            candidates.add(new ComponentName(
+                "com.hihonor.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+            ));
+        }
+        for (ComponentName component : candidates) {
+            try {
+                getActivity().startActivity(new Intent().setComponent(component));
+                opened = true;
+                break;
+            } catch (Exception ignored) {
+                // Try the next vendor-specific screen.
+            }
+        }
+        if (!opened) {
+            try {
+                getActivity().startActivity(new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getContext().getPackageName())
+                ));
+                opened = true;
+            } catch (Exception ignored) {
+                // No compatible settings screen exists.
+            }
+        }
+        JSObject result = new JSObject();
+        result.put("opened", opened);
+        call.resolve(result);
+    }
+
+    private JSObject backgroundCallSupport() {
+        String manufacturer = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER;
+        String display = Build.DISPLAY == null ? "" : Build.DISPLAY;
+        String fingerprint = Build.FINGERPRINT == null ? "" : Build.FINGERPRINT;
+        String platform = (manufacturer + " " + display + " " + fingerprint).toLowerCase(Locale.ROOT);
+        PowerManager powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        JSObject result = new JSObject();
+        result.put("manufacturer", manufacturer);
+        result.put("harmonyCompatible", platform.contains("huawei") || platform.contains("honor") || platform.contains("harmony"));
+        result.put(
+            "batteryOptimizationIgnored",
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                || powerManager.isIgnoringBatteryOptimizations(getContext().getPackageName())
+        );
+        return result;
     }
 
     @PluginMethod

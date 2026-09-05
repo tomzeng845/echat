@@ -182,6 +182,17 @@ try {
     );
   });
   await pageA.evaluate(() => {
+    window.__echatOutgoingAlerts = [];
+    window.__echatOutgoingStops = 0;
+    window.addEventListener("echat-alert-sound", event =>
+      window.__echatOutgoingAlerts.push(event.detail)
+    );
+    window.addEventListener(
+      "echat-alert-sound-stopped",
+      () => (window.__echatOutgoingStops += 1)
+    );
+  });
+  await pageA.evaluate(() => {
     const button = Array.from(document.querySelectorAll("button")).find(item =>
       item.textContent?.includes("接听方")
     );
@@ -193,6 +204,11 @@ try {
   });
   await new Promise(resolve => setTimeout(resolve, 2000));
   await pageA.click('button[aria-label="语音通话"]');
+  await pageA.waitForFunction(
+    () =>
+      window.__echatOutgoingAlerts?.some(item => item.kind === "outgoing-call"),
+    { timeout: 4000 }
+  );
   await pageB.waitForSelector('button[aria-label="接听通话"]', {
     visible: true,
     timeout: 10000,
@@ -202,6 +218,9 @@ try {
     { timeout: 4000 }
   );
   await pageB.click('button[aria-label="接听通话"]');
+  await pageA.waitForFunction(() => window.__echatOutgoingStops >= 1, {
+    timeout: 4000,
+  });
   await Promise.all([
     pageA.waitForSelector("audio", { timeout: 15000 }),
     pageB.waitForSelector("audio", { timeout: 15000 }),
@@ -234,6 +253,26 @@ try {
     throw new Error(
       `Remote audio is invalid: ${JSON.stringify({ audioA, audioB })}`
     );
+  const voiceCall = (
+    await request("/api/calls", {
+      token: authB.accessToken,
+      deviceId: deviceB,
+    })
+  ).find(item => item.conversationId === conversation.id);
+  if (!voiceCall?.id) throw new Error("Active voice call record not found");
+  await pageB.evaluate(callId => {
+    window.dispatchEvent(
+      new CustomEvent("echat-native-call-cleared", { detail: { callId } })
+    );
+  }, voiceCall.id);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  if (
+    !(await pageB.$('button[aria-label="结束通话"]')) ||
+    !(await pageB.$("audio"))
+  )
+    throw new Error(
+      "Native notification clear incorrectly ended accepted call"
+    );
   await pageA.click('button[aria-label="打开扬声器"]');
   await pageA.waitForSelector('button[aria-label="关闭扬声器"]', {
     visible: true,
@@ -246,6 +285,13 @@ try {
   });
   await new Promise(resolve => setTimeout(resolve, 500));
   await pageA.click('button[aria-label="视频通话"]');
+  await pageA.waitForFunction(
+    () =>
+      window.__echatOutgoingAlerts?.filter(
+        item => item.kind === "outgoing-call"
+      ).length >= 2,
+    { timeout: 4000 }
+  );
   await pageB.waitForSelector('button[aria-label="接听通话"]', {
     visible: true,
     timeout: 10000,
@@ -255,6 +301,9 @@ try {
     { timeout: 4000 }
   );
   await pageB.click('button[aria-label="接听通话"]');
+  await pageA.waitForFunction(() => window.__echatOutgoingStops >= 2, {
+    timeout: 4000,
+  });
   await Promise.all([
     pageA.waitForSelector("video:not([muted])", { timeout: 15000 }),
     pageB.waitForSelector("video:not([muted])", { timeout: 15000 }),
@@ -294,7 +343,7 @@ try {
     timeout: 8000,
   });
   console.log(
-    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.join(",")} autoplay=true speaker=toggle video_speaker=default_on alerts=voice,video stopped=accept`
+    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.join(",")} autoplay=true speaker=toggle video_speaker=default_on alerts=voice,video ringback=voice,video stopped=accept`
   );
 } finally {
   await contextA.close();

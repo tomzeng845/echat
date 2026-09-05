@@ -35,7 +35,16 @@ export type NativeNotificationTarget = {
   requestId?: string;
   callId?: string;
 };
-export type AlertSoundKind = "message" | "voice-call" | "video-call";
+export type AlertSoundKind =
+  | "message"
+  | "voice-call"
+  | "video-call"
+  | "outgoing-call";
+export type NativeBackgroundCallSupport = {
+  manufacturer: string;
+  harmonyCompatible: boolean;
+  batteryOptimizationIgnored: boolean;
+};
 export type NativeCallInvite = {
   conversationId: string;
   callId: string;
@@ -47,6 +56,11 @@ export type NativeCallInvite = {
 
 type MediaPermissionsPlugin = {
   getCapabilities(): Promise<{ firebaseConfigured: boolean }>;
+  getBackgroundCallSupport(): Promise<NativeBackgroundCallSupport>;
+  requestBackgroundCallExemption(options?: {
+    force?: boolean;
+  }): Promise<NativeBackgroundCallSupport>;
+  openBackgroundCallSettings(): Promise<{ opened: boolean }>;
   playAlertSound(options: {
     kind: AlertSoundKind;
   }): Promise<{ playing: boolean }>;
@@ -161,17 +175,30 @@ export function consumePendingNativeCall(): NativeCallInvite | null {
   }
 }
 
+function clearPendingNativeCall(callId: string) {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(PENDING_NATIVE_CALL_KEY) || "null"
+    ) as NativeCallInvite | null;
+    if (!value || value.callId === callId)
+      localStorage.removeItem(PENDING_NATIVE_CALL_KEY);
+  } catch {
+    localStorage.removeItem(PENDING_NATIVE_CALL_KEY);
+  }
+}
+
 async function ensureCallListenerEvents() {
   if (callListenerHandles.length) return;
   callListenerHandles = [
     await MediaPermissions.addListener("callListenerIncoming", invite =>
       dispatchNativeCall(invite)
     ),
-    await MediaPermissions.addListener("callListenerCleared", event =>
+    await MediaPermissions.addListener("callListenerCleared", event => {
+      clearPendingNativeCall(event.callId);
       window.dispatchEvent(
         new CustomEvent("echat-native-call-cleared", { detail: event })
-      )
-    ),
+      );
+    }),
   ];
 }
 
@@ -367,6 +394,11 @@ export async function playIncomingAlert(
   return playIncomingAlertNow(kind, eventId);
 }
 
+export async function playOutgoingCallAlert(eventId: string) {
+  if (!reserveIncomingEvent("outgoing-call", eventId)) return false;
+  return playIncomingAlertNow("outgoing-call", eventId);
+}
+
 export async function stopIncomingCallAlert() {
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("echat-alert-sound-stopped"));
@@ -378,9 +410,29 @@ export async function stopIncomingCallAlert() {
 
 export async function clearNativeCallListenerAlert(callId: string) {
   if (!isNativeAndroid() || !callId) return;
+  clearPendingNativeCall(callId);
   await MediaPermissions.clearCallListenerAlert({ callId }).catch(
     () => undefined
   );
+}
+
+export async function getNativeBackgroundCallSupport() {
+  if (!isNativeAndroid()) return null;
+  return MediaPermissions.getBackgroundCallSupport().catch(() => null);
+}
+
+export async function requestNativeBackgroundCallExemption(force = false) {
+  if (!isNativeAndroid()) return null;
+  return MediaPermissions.requestBackgroundCallExemption({ force }).catch(
+    () => null
+  );
+}
+
+export async function openNativeBackgroundCallSettings() {
+  if (!isNativeAndroid()) return false;
+  return MediaPermissions.openBackgroundCallSettings()
+    .then(result => result.opened)
+    .catch(() => false);
 }
 
 export function consumePendingNotification(): NativeNotificationTarget | null {
@@ -403,7 +455,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.6",
+      appVersion: "0.8.7",
     }),
   });
   updatePushState("registered");
@@ -412,6 +464,7 @@ async function savePushToken(token: Token) {
 export async function registerNativePush() {
   if (!isNativeAndroid()) return "web" as const;
   await startNativeCallListener().catch(() => undefined);
+  await requestNativeBackgroundCallExemption().catch(() => undefined);
   const localNotificationsAvailable =
     await registerLocalNotificationFallback().catch(() => false);
   const serverStatus = await api<{ enabled: boolean }>(

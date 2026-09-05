@@ -15,6 +15,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
@@ -56,6 +57,7 @@ public class CallListenerService extends Service {
     private boolean appActive = true;
     private boolean stopping;
     private IncomingCallPayload activeCall;
+    private PowerManager.WakeLock wakeLock;
 
     public static void start(Context context, String hubUrl, String token, String userId) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -106,6 +108,10 @@ public class CallListenerService extends Service {
     public void onCreate() {
         super.onCreate();
         appActive = preferences().getBoolean(EXTRA_ACTIVE, true);
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "EChat:CallListener");
+        wakeLock.setReferenceCounted(false);
+        wakeLock.acquire();
         createChannels();
         startForeground(LISTENER_NOTIFICATION_ID, listenerNotification("正在连接来电服务…"));
     }
@@ -167,6 +173,8 @@ public class CallListenerService extends Service {
         hubConnection = HubConnectionBuilder.create(hubUrl)
             .withAccessTokenProvider(Single.defer(() -> Single.just(preferences().getString(EXTRA_TOKEN, ""))))
             .build();
+        hubConnection.setKeepAliveInterval(15_000L);
+        hubConnection.setServerTimeout(45_000L);
         hubConnection.on("call.invited", this::handleInvite, IncomingCallPayload.class);
         hubConnection.on("call.accepted", payload -> clearCall(payload.callId), CallStatePayload.class);
         hubConnection.on("call.rejected", payload -> clearCall(payload.callId), CallStatePayload.class);
@@ -411,6 +419,7 @@ public class CallListenerService extends Service {
         clearPendingCall();
         preferences().edit().clear().apply();
         disconnect();
+        releaseWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -421,7 +430,13 @@ public class CallListenerService extends Service {
         reconnectHandler.removeCallbacksAndMessages(null);
         stopBackgroundAlert();
         disconnect();
+        releaseWakeLock();
         super.onDestroy();
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        wakeLock = null;
     }
 
     @Nullable

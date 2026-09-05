@@ -143,7 +143,23 @@ const cleared = once(listenerHub, "call.listener.cleared");
 await callerHub.invoke("CallEnd", conversation.id, callId);
 if ((await cleared).callId !== callId) throw new Error("call.ended mismatch");
 
-await Promise.all([callerHub.stop(), listenerHub.stop()]);
+await listenerHub.stop();
+const replayedCallId = crypto.randomUUID();
+await callerHub.invoke("CallInvite", conversation.id, replayedCallId, "audio");
+const resumedListener = connection(listenerToken.token);
+const replayedInvite = once(resumedListener, "call.invited");
+await resumedListener.start();
+const replayed = await replayedInvite;
+if (
+  replayed.callId !== replayedCallId ||
+  replayed.conversationId !== conversation.id ||
+  replayed.mode !== "audio" ||
+  replayed.replayed !== true
+)
+  throw new Error(`replayed invite mismatch: ${JSON.stringify(replayed)}`);
+await callerHub.invoke("CallEnd", conversation.id, replayedCallId);
+
+await Promise.all([callerHub.stop(), resumedListener.stop()]);
 console.log(
-  `ANDROID_CALL_LISTENER_OK conversation=${conversation.id} call=${callId} mode=video scope=readonly api=403 late_conversation=received events=invited,cleared`
+  `ANDROID_CALL_LISTENER_OK conversation=${conversation.id} call=${callId} mode=video scope=readonly api=403 late_conversation=received reconnect_replay=received events=invited,cleared`
 );

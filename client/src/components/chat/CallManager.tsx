@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { HubConnection } from "@microsoft/signalr";
+import { HubConnectionState, type HubConnection } from "@microsoft/signalr";
 import {
   Mic,
   MicOff,
@@ -19,6 +19,8 @@ import {
 import { toast } from "sonner";
 import {
   defaultSpeakerForCallMode,
+  shouldCloseCallFromNativeClear,
+  shouldPlayOutgoingRingback,
   toggledSpeakerState,
 } from "@/lib/call-audio";
 import {
@@ -38,6 +40,7 @@ import {
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
   notifyIncomingEvent,
+  playOutgoingCallAlert,
   setNativeCallAudioRoute,
   stopIncomingCallAlert,
 } from "@/lib/mobile-native";
@@ -50,7 +53,7 @@ type ActiveCall = {
   conversationId: string;
   conversationName: string;
   mode: "audio" | "video";
-  status: "incoming" | "calling" | "connected";
+  status: "incoming" | "answering" | "calling" | "connected";
   callerId?: string;
   callerName?: string;
 };
@@ -101,6 +104,20 @@ function AudioStream({ stream }: { stream: MediaStream }) {
     }
   }, [stream]);
   return <audio ref={ref} autoPlay playsInline />;
+}
+
+async function waitForRealtimeConnection(
+  connection: HubConnection,
+  timeoutMs = 8000
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (connection.state !== HubConnectionState.Connected) {
+    if (connection.state === HubConnectionState.Disconnected)
+      await connection.start().catch(() => undefined);
+    if (Date.now() >= deadline) return false;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return true;
 }
 
 const CallManager = forwardRef<
@@ -262,6 +279,8 @@ const CallManager = forwardRef<
         );
         setCall(next);
         callRef.current = next;
+        if (shouldPlayOutgoingRingback(next.status))
+          await playOutgoingCallAlert(next.callId);
         await connection.invoke(
           "CallInvite",
           conversation.id,
@@ -322,10 +341,12 @@ const CallManager = forwardRef<
       }).catch(() => undefined);
     };
     const accepted = async (participant: CallParticipant) => {
-      if (callRef.current?.callId !== participant.callId) return;
-      setCall(current =>
-        current ? { ...current, status: "connected" } : current
-      );
+      const active = callRef.current;
+      if (!active || active.callId !== participant.callId) return;
+      await stopIncomingCallAlert();
+      const connected: ActiveCall = { ...active, status: "connected" };
+      callRef.current = connected;
+      setCall(connected);
       await createPeer(participant.userId, true);
     };
     const signaled = async (signal: CallSignal) => {
@@ -391,11 +412,18 @@ const CallManager = forwardRef<
     connection.on("call.signal", signaled);
     connection.on("call.rejected", rejected);
     connection.on("call.ended", ended);
-    const nativeInvited = (event: Event) =>
+    const nativeInvited = (event: Event) => {
+      consumePendingNativeCall();
       invited((event as CustomEvent<CallInvite>).detail);
+    };
     const nativeCleared = (event: Event) => {
       const callId = (event as CustomEvent<{ callId: string }>).detail.callId;
-      if (callRef.current?.callId === callId) finish(false);
+      const active = callRef.current;
+      if (
+        active?.callId === callId &&
+        shouldCloseCallFromNativeClear(active.status)
+      )
+        finish(false);
     };
     window.addEventListener("echat-native-call", nativeInvited);
     window.addEventListener("echat-native-call-cleared", nativeCleared);
@@ -415,7 +443,15 @@ const CallManager = forwardRef<
   async function accept() {
     const active = callRef.current;
     if (!active || !connection) return;
+    if (!(await waitForRealtimeConnection(connection))) {
+      toast.error("实时连接正在恢复，请稍后再次接听");
+      return;
+    }
     try {
+      const answering: ActiveCall = { ...active, status: "answering" };
+      callRef.current = answering;
+      setCall(answering);
+      await clearNativeCallListenerAlert(active.callId);
       await stopIncomingCallAlert();
       await acquire(active.mode);
       setMembers(
@@ -423,7 +459,9 @@ const CallManager = forwardRef<
           `/api/conversations/${active.conversationId}/members`
         )
       );
-      setCall({ ...active, status: "connected" });
+      const connected: ActiveCall = { ...active, status: "connected" };
+      callRef.current = connected;
+      setCall(connected);
       await connection.invoke(
         "CallAccept",
         active.conversationId,
@@ -470,9 +508,11 @@ const CallManager = forwardRef<
   const statusText =
     call.status === "incoming"
       ? `${call.callerName} 邀请你${call.mode === "video" ? "视频" : "语音"}通话`
-      : call.status === "calling"
-        ? "正在等待对方接听…"
-        : `通话中 · ${remoteEntries.length + 1} 人`;
+      : call.status === "answering"
+        ? "正在接听…"
+        : call.status === "calling"
+          ? "正在等待对方接听…"
+          : `通话中 · ${remoteEntries.length + 1} 人`;
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#06111d] text-white">
       <header className="flex h-20 items-center justify-between px-5 md:px-8">

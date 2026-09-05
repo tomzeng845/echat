@@ -1,5 +1,26 @@
 # E聊开发跟踪
 
+## Android APP 0.8.7 鸿蒙后台来电与通话状态修复
+
+- [x] 定位接听后 `callListenerCleared` 被误当成通话结束的状态机错误
+- [x] 增加 `answering` 状态，原生清理事件只关闭尚未接听的来电
+- [x] 按 `callId` 消费和清除原生/浏览器待处理来电，避免重复弹出来电
+- [x] 接听前等待后台恢复后的 SignalR 连接重新就绪
+- [x] 原生来电服务移入 `:calls` 独立进程并持有局部唤醒锁
+- [x] SignalR 原生连接配置 15 秒 keepalive、45 秒服务器超时和阶梯重连
+- [x] 原生监听重连后补发 90 秒内仍在振铃的来电
+- [x] 跨进程广播直接携带来电 payload，避免 SharedPreferences 缓存不一致
+- [x] 首次登录请求电池优化豁免，个人中心显示授权状态并打开华为/荣耀启动管理
+- [x] 语音和视频呼出等待期间循环播放 `echat_ringback.wav`
+- [x] 接听、拒绝、结束和失败时立即停止呼出等待铃声
+- [x] Vitest 覆盖接听清理状态规则、呼出铃声状态和原生桥调用
+- [x] `ANDROID_CALL_LISTENER_OK` 验证断线期间来电在重连后补发
+- [x] `ANDROID_CALL_AUDIO_OK` 验证接听清理不挂断、双向音轨与两次呼出铃声
+- [x] `pnpm check`、Vitest 11 项、xUnit 19 项和生产构建通过
+- [x] 14 组聊天、后台、移动、加密、推送与通话全量回归通过
+- [x] Android 单测、lint、独立进程 Manifest、三类提示音和 v2 签名通过
+- [x] 生成 `versionCode=15`、`versionName=0.8.7` 可覆盖安装 APK
+
 ## Android APP 0.8.6 常驻后台来电
 
 - [x] 确认根因是 Android 暂停 WebView 后 JavaScript SignalR 无法接收 `call.invited`

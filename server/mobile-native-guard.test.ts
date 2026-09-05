@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const fakes = vi.hoisted(() => ({
   api: vi.fn(),
   getCapabilities: vi.fn(),
+  getBackgroundCallSupport: vi.fn(),
+  requestBackgroundCallExemption: vi.fn(),
+  openBackgroundCallSettings: vi.fn(),
   addListener: vi.fn(),
   checkPermissions: vi.fn(),
   requestPermissions: vi.fn(),
@@ -32,6 +35,9 @@ vi.mock("@capacitor/core", () => ({
   },
   registerPlugin: () => ({
     getCapabilities: fakes.getCapabilities,
+    getBackgroundCallSupport: fakes.getBackgroundCallSupport,
+    requestBackgroundCallExemption: fakes.requestBackgroundCallExemption,
+    openBackgroundCallSettings: fakes.openBackgroundCallSettings,
     requestPermissions: vi.fn(),
     playAlertSound: fakes.playAlertSound,
     stopAlertSound: fakes.stopAlertSound,
@@ -79,6 +85,7 @@ import {
   getNativeCallListenerState,
   notifyIncomingEvent,
   playIncomingAlert,
+  playOutgoingCallAlert,
   registerNativePush,
   stopIncomingCallAlert,
 } from "../client/src/lib/mobile-native";
@@ -113,6 +120,11 @@ describe("Android push login guard", () => {
     fakes.nativeAddListener.mockResolvedValue({ remove: vi.fn() });
     fakes.startCallListener.mockResolvedValue({ running: true });
     fakes.getPendingCall.mockResolvedValue({ available: false });
+    fakes.requestBackgroundCallExemption.mockResolvedValue({
+      manufacturer: "HUAWEI",
+      harmonyCompatible: true,
+      batteryOptimizationIgnored: false,
+    });
   });
 
   it("uses a local notification fallback when the server has no FCM credentials", async () => {
@@ -123,6 +135,9 @@ describe("Android push login guard", () => {
       userId: "receiver-user",
     });
     expect(getNativeCallListenerState()).toBe(true);
+    expect(fakes.requestBackgroundCallExemption).toHaveBeenCalledWith({
+      force: false,
+    });
     expect(fakes.api).toHaveBeenCalledWith("/api/push/status");
     expect(fakes.localCheckPermissions).toHaveBeenCalledOnce();
     expect(fakes.localCreateChannel).toHaveBeenCalledTimes(2);
@@ -185,14 +200,18 @@ describe("Android push login guard", () => {
     await expect(playIncomingAlert("video-call", "call-one")).resolves.toBe(
       true
     );
+    await expect(playOutgoingCallAlert("outgoing-one")).resolves.toBe(true);
     await stopIncomingCallAlert();
 
-    expect(fakes.playAlertSound).toHaveBeenCalledTimes(2);
+    expect(fakes.playAlertSound).toHaveBeenCalledTimes(3);
     expect(fakes.playAlertSound).toHaveBeenNthCalledWith(1, {
       kind: "message",
     });
     expect(fakes.playAlertSound).toHaveBeenNthCalledWith(2, {
       kind: "video-call",
+    });
+    expect(fakes.playAlertSound).toHaveBeenNthCalledWith(3, {
+      kind: "outgoing-call",
     });
     expect(fakes.stopAlertSound).toHaveBeenCalledWith({ kind: "call" });
   });

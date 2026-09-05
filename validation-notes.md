@@ -282,3 +282,15 @@ APK 后台收到邀请时使用 `CATEGORY_CALL` 高优先级通知和循环 `ech
 最终 APK 的合并 Manifest 包含 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_REMOTE_MESSAGING` 和 `foregroundServiceType=remoteMessaging`；DEX 同时包含 `com.echat.app.CallListenerService` 与 `com.microsoft.signalr`。16 KB zipalign 和 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=14`、`versionName=0.8.6`、最低 API 24、目标 API 36。文件 `EChat-0.8.6-debug.apk` 的 SHA-256 为 `d29037fa3d2d4f2095c044a6326aa3a9db4968a127fce6ec9c6a08739eaf134e`。
 
 系统边界：Android 用户执行“强制停止”后，系统会禁止 APP 的后台组件继续运行，必须重新打开 APP；部分厂商的极限省电策略也可能终止前台服务，需要允许 E聊后台运行。常驻服务解决音视频后台来电，不替代 APP 被完全终止后的普通消息 FCM 推送。
+
+## 2026-09-06 Android APP 0.8.7 鸿蒙后台来电与通话状态修复
+
+接听后重复出现来电且没有声音的根因是状态含义混淆：服务端在 `CallAccept` 后发送 `call.listener.cleared`，原生服务需要用它清除通知和铃声，但 React 端此前无条件执行 `finish(false)`，导致刚建立的 WebRTC、媒体轨道和通话音频模式立即被关闭；原生待处理来电缓存又可能在 effect 重新挂载时恢复同一邀请。0.8.7 增加 `answering` 状态，清理事件只关闭仍处于 `incoming` 的来电，并在接听、原生清理和通知恢复时按 `callId` 消费缓存。接听前最多等待 8 秒让后台恢复后的 SignalR 重新连接，接通后继续保留远端音轨和通信音频模式。
+
+语音和视频呼出进入 `calling` 后播放独立循环资源 `echat_ringback.wav`，对方接听、拒绝、结束、呼叫失败或本机挂断时停止。`android-call-audio-smoke.mjs` 建立双端语音与视频通话，确认双方远端音轨均为 1、自动播放开启、语音扬声器可切换、视频默认扬声器；它还在接通后模拟原生清理事件，确认通话未结束，并验证两次呼出等待铃声均启动且接听时停止。最终输出 `ANDROID_CALL_AUDIO_OK ... ringback=voice,video stopped=accept`。
+
+针对支持 Android APK 的华为/荣耀鸿蒙设备，来电服务改为 `:calls` 独立进程并持有受控 `PARTIAL_WAKE_LOCK`；原生 SignalR 使用 15 秒 keepalive、45 秒服务器超时与阶梯重连。连接重建后，ChatHub 会补发最近 90 秒仍处于 Ringing 的来电；跨进程广播直接携带完整 payload，避免 SharedPreferences 多进程缓存不一致。首次登录请求电池优化豁免，个人中心显示制造商、授权状态，并可打开华为/荣耀应用启动管理。系统仍要求用户手动允许自启动、关联启动和后台运行；强制停止无法由应用绕过。纯原生 HarmonyOS NEXT 不支持 Android APK，需独立 ArkTS/HAP 客户端。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 11 项、xUnit 19 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_087_OK`、`ADMIN_087_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`；监听回归额外确认 `reconnect_replay=received`。
+
+最终 APK 的合并 Manifest 包含 `android:process=":calls"`、`foregroundServiceType=remoteMessaging`、`WAKE_LOCK` 与电池优化请求权限；包内包含 `echat_message.wav`、`echat_call.wav` 和 `echat_ringback.wav`。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=15`、`versionName=0.8.7`、最低 API 24、目标 API 36。文件 `EChat-0.8.7-debug.apk` 的 SHA-256 为 `ed1cd7e0fbb18b44145bea2f217b984245aec9223cc75ce77c7842336ae24d34`。

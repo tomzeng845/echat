@@ -25,7 +25,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.8.6",
+            version = "0.8.7",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,

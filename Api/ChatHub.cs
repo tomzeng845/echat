@@ -16,6 +16,26 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
             foreach (var conversation in conversations) await Groups.AddToGroupAsync(Context.ConnectionId, $"conversation:{conversation.Id}");
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{userId}");
+        if (principal.FindFirst("scope")?.Value == "call_listener")
+        {
+            var recentRingingCalls = (await repository.GetCallsAsync(userId))
+                .Where(x => x.Status == CallRecordStatus.Ringing && x.CallerId != userId && x.StartedAtUtc >= DateTime.UtcNow.AddSeconds(-90));
+            foreach (var call in recentRingingCalls)
+            {
+                var caller = await repository.GetUserByIdAsync(call.CallerId);
+                if (caller is null) continue;
+                await Clients.Caller.SendAsync("call.invited", new
+                {
+                    conversationId = call.ConversationId,
+                    callId = call.Id,
+                    mode = call.Mode,
+                    callerId = caller.Id,
+                    callerName = caller.DisplayName,
+                    callerAvatarUrl = caller.AvatarUrl,
+                    replayed = true
+                });
+            }
+        }
         await base.OnConnectedAsync();
     }
 

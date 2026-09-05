@@ -21,10 +21,14 @@ import {
   type User,
 } from "@/lib/echat-api";
 import {
+  getNativeBackgroundCallSupport,
   getNativeCallListenerState,
   getNativePushState,
   isNativeAndroid,
+  openNativeBackgroundCallSettings,
   registerNativePush,
+  requestNativeBackgroundCallExemption,
+  type NativeBackgroundCallSupport,
   unregisterNativePush,
   type NativePushState,
 } from "@/lib/mobile-native";
@@ -50,6 +54,8 @@ export default function P1ProfilePanel({
   const [callListenerRunning, setCallListenerRunning] = useState(() =>
     getNativeCallListenerState()
   );
+  const [backgroundSupport, setBackgroundSupport] =
+    useState<NativeBackgroundCallSupport | null>(null);
   const [section, setSection] = useState<"home" | "devices" | "calls">("home");
 
   async function load() {
@@ -77,6 +83,13 @@ export default function P1ProfilePanel({
     window.addEventListener("echat-call-listener-status", update);
     return () =>
       window.removeEventListener("echat-call-listener-status", update);
+  }, []);
+  useEffect(() => {
+    const refresh = () =>
+      getNativeBackgroundCallSupport().then(setBackgroundSupport);
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
   }, []);
 
   async function revoke(id: string) {
@@ -118,6 +131,29 @@ export default function P1ProfilePanel({
       else toast.success("Android 后台通知与来电服务已开启");
     } catch {
       toast.error("暂时无法启用 Android 消息推送");
+    }
+  }
+
+  async function configureBackgroundCalls() {
+    if (!isNativeAndroid())
+      return toast.info("请在 E聊 Android / 鸿蒙兼容版 APP 中使用后台来电");
+    try {
+      await registerNativePush();
+      const support = await getNativeBackgroundCallSupport();
+      setBackgroundSupport(support);
+      if (!support?.batteryOptimizationIgnored) {
+        await requestNativeBackgroundCallExemption(true);
+        toast.info("请允许 E聊忽略电池优化，以持续接收后台来电");
+        return;
+      }
+      if (support.harmonyCompatible) {
+        await openNativeBackgroundCallSettings();
+        toast.info("请将 E聊设为手动管理，并允许自启动和后台运行");
+        return;
+      }
+      toast.success("后台来电常驻服务已运行");
+    } catch {
+      toast.error("暂时无法配置后台来电");
     }
   }
 
@@ -247,12 +283,14 @@ export default function P1ProfilePanel({
         title="后台来电"
         value={
           isNativeAndroid()
-            ? callListenerRunning
-              ? "常驻服务运行中"
-              : "点击重新连接"
+            ? !backgroundSupport?.batteryOptimizationIgnored
+              ? "待允许后台运行"
+              : callListenerRunning
+                ? "常驻服务运行中"
+                : "点击重新连接"
             : "仅 Android APP"
         }
-        onClick={enablePush}
+        onClick={configureBackgroundCalls}
       />
       <Action
         icon={Phone}

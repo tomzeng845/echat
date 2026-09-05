@@ -1,4 +1,12 @@
-# E聊 Android 0.8.6 集成说明
+# E聊 Android 0.8.7 集成说明
+
+## 0.8.7 鸿蒙后台来电、接听去重与呼出铃声
+
+Android 接听后重复弹出且没有声音的根因不是 WebRTC 音轨本身，而是原生常驻服务在 `CallAccept` 后广播 `callListenerCleared`，React 端把这个“只清通知与铃声”的事件无条件执行成 `finish(false)`，刚开始的媒体会话被关闭；同时客户端待处理来电缓存未按 `callId` 清除，后续 effect 重新挂载时会再次恢复同一邀请。0.8.7 在接听前切换为 `answering`，只允许清理事件关闭仍处于 `incoming` 的来电；接听、服务端清理和通知点击都会消费同一 `callId` 缓存。接听前最多等待 8 秒让从后台恢复的 SignalR 连接重新进入 Connected，避免界面可见但接听信令尚未可用。
+
+呼叫方在 `calling` 状态播放独立循环资源 `echat_ringback.wav`，使用 `USAGE_VOICE_COMMUNICATION_SIGNALLING`。`call.accepted`、拒绝、结束、失败和本机挂断均复用通话提示音停止路径，接通后只保留 `MODE_IN_COMMUNICATION` 的远端语音。双端浏览器回归还会在接通后人工触发原生清理事件，确认结束按钮和远端音频元素仍存在。
+
+华为/荣耀鸿蒙兼容环境的后台限制比标准 Android 更严格。0.8.7 将 `CallListenerService` 放到 `:calls` 独立进程，使用 `PARTIAL_WAKE_LOCK`、15 秒 keepalive、45 秒服务器超时和已有阶梯重连。服务端在 `call_listener` 重新连接时补发最近 90 秒仍为 Ringing 的来电，避免服务短暂被回收期间漏接。独立进程来电广播直接携带完整 payload，避免跨进程 SharedPreferences 缓存不一致。首次登录请求电池优化豁免；个人中心可再次打开华为/荣耀应用启动设置，用户需开启自启动、关联启动和后台运行。华为官方还建议锁定后台任务、关闭省电模式并开启休眠时保持网络连接。Android 的“强制停止”仍会禁用所有后台组件，应用不能绕过。
 
 ## 0.8.6 原生常驻来电服务
 
@@ -51,6 +59,8 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 | 后台本地通知     | `@capacitor/local-notifications` 在进程存活且 APP 位于后台时发布通知栏消息；点击通过 `extra` 跳转会话                           | [Capacitor Local Notifications](https://capacitorjs.com/docs/apis/local-notifications)                       |
 | 原生来电连接     | Microsoft SignalR 8 Java 客户端使用 WSS 和受限 Bearer 令牌维护独立连接                                                          | [SignalR Java client](https://learn.microsoft.com/en-us/aspnet/core/signalr/java-client)                     |
 | 来电前台服务     | Android `remoteMessaging` 前台服务；声明类型及对应权限，并在 Google Play 申报用途                                               | [Foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types) |
+| Doze 与电池优化  | 无 FCM 的 VoIP 技术依赖可请求电池优化豁免；服务仍需前台通知、重连和用户授权                                                     | [Doze and App Standby](https://developer.android.com/training/monitoring-device-state/doze-standby)          |
+| 华为/鸿蒙后台    | 应用启动改为手动管理，并允许自启动和后台运行；必要时锁定后台任务并保持休眠网络                                                  | [HUAWEI 后台应用支持](https://consumer.huawei.com/en/support/content/en-us00428704/)                         |
 | 来电通知         | 高优先级 `CATEGORY_CALL` 通知、铃声和点击恢复；交互式接听/拒绝可进一步采用 CallStyle                                            | [CallStyle notifications](https://developer.android.com/develop/ui/views/notifications/call-style)           |
 | 服务端推送       | FCM HTTP v1；服务账号使用 OAuth 2.0 短期访问令牌；请求发送至 `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` | [Firebase FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api)                         |
 | 刘海屏和系统栏   | Android 15 / target SDK 35+ 强制边到边；可点击内容需避开 system bars 与 display cutout insets                                   | [Android edge-to-edge](https://developer.android.com/develop/ui/views/layout/edge-to-edge)                   |
