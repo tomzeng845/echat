@@ -1,5 +1,25 @@
 # E聊开发跟踪
 
+## Android APP 0.8.2 消息与通话修复
+
+- [x] 将账号单一 RSA 公钥升级为按 `deviceId` 保存的设备级公钥
+- [x] 会话与消息增加 `keyVersion`，旧 MongoDB 数据自动按版本 1 兼容
+- [x] APP 无法打开旧信封时，为所有成员当前设备生成下一版本 AES 密钥信封
+- [x] 原浏览器保留旧版本密钥解密历史消息，APP 和好友设备共同解密新消息
+- [x] 服务端拒绝使用过期密钥版本发送，避免设备间密钥分叉
+- [x] 发送者自身 SignalR 回显由本地成功解密结果替换，不再误留“消息解密失败”占位
+- [x] 语音通话显式挂载远端 `audio`，视频与音频在媒体就绪后主动播放
+- [x] Android 使用通信音频模式、语音 AudioAttributes 和临时音频焦点
+- [x] Android 12+ 使用通信设备 API 切换听筒/扬声器，旧版兼容 speakerphone
+- [x] 控制栏增加“打开/关闭扬声器”，语音默认听筒、视频默认扬声器
+- [x] 三设备三版本真实页面回归输出 `ANDROID_E2EE_OK`
+- [x] 双端语音/视频回归确认双方远端音轨并输出 `ANDROID_CALL_AUDIO_OK`
+- [x] 手机 390×844 回归确认语音通话扬声器按钮可切换
+- [x] `pnpm check`、Vitest 8 项、xUnit 17 项和生产构建全部通过
+- [x] Android 单测、lint、debug APK 构建、16 KB 对齐和 v2 签名验证通过
+- [x] 全量遇错即停回归的 13 个成功标识全部通过
+- [x] 生成 `versionCode=10`、`versionName=0.8.2` 可覆盖安装的修复 APK
+
 ## Android APP 0.8.1 登录防闪退
 
 - [x] 定位为未配置 `google-services.json` 时，登录后自动调用 `FirebaseMessaging.getInstance()` 的异常路径

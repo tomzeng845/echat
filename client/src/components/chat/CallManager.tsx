@@ -13,9 +13,14 @@ import {
   PhoneOff,
   Video,
   VideoOff,
+  Volume1,
   Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  defaultSpeakerForCallMode,
+  toggledSpeakerState,
+} from "@/lib/call-audio";
 import {
   api,
   type CallEnded,
@@ -27,7 +32,11 @@ import {
   type RtcConfig,
   type User,
 } from "@/lib/echat-api";
-import { ensureNativeMediaPermissions } from "@/lib/mobile-native";
+import {
+  endNativeCallAudioSession,
+  ensureNativeMediaPermissions,
+  setNativeCallAudioRoute,
+} from "@/lib/mobile-native";
 
 export type CallManagerHandle = {
   start: (conversation: Conversation, mode: "audio" | "video") => Promise<void>;
@@ -53,11 +62,41 @@ function StreamView({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
+    if (ref.current) {
+      const element = ref.current;
+      const play = () => element.play().catch(() => undefined);
+      element.srcObject = stream;
+      element.onloadedmetadata = play;
+      element.oncanplay = play;
+      play();
+      return () => {
+        element.onloadedmetadata = null;
+        element.oncanplay = null;
+      };
+    }
   }, [stream]);
   return (
     <video ref={ref} autoPlay playsInline muted={muted} className={className} />
   );
+}
+
+function AudioStream({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      const element = ref.current;
+      const play = () => element.play().catch(() => undefined);
+      element.srcObject = stream;
+      element.onloadedmetadata = play;
+      element.oncanplay = play;
+      play();
+      return () => {
+        element.onloadedmetadata = null;
+        element.oncanplay = null;
+      };
+    }
+  }, [stream]);
+  return <audio ref={ref} autoPlay playsInline />;
 }
 
 const CallManager = forwardRef<
@@ -79,6 +118,7 @@ const CallManager = forwardRef<
   });
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [speakerOn, setSpeakerOn] = useState(false);
   callRef.current = call;
 
   useEffect(() => {
@@ -113,6 +153,9 @@ const CallManager = forwardRef<
     setLocalStream(stream);
     setMicOn(true);
     setCameraOn(mode === "video");
+    const useSpeaker = defaultSpeakerForCallMode(mode);
+    await setNativeCallAudioRoute(useSpeaker).catch(() => useSpeaker);
+    setSpeakerOn(useSpeaker);
     return stream;
   }
 
@@ -179,9 +222,11 @@ const CallManager = forwardRef<
     pendingIce.current.clear();
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
+    await endNativeCallAudioSession().catch(() => undefined);
     setLocalStream(null);
     setRemoteStreams({});
     setMembers([]);
+    setSpeakerOn(false);
     setCall(null);
   }
 
@@ -379,6 +424,14 @@ const CallManager = forwardRef<
       .forEach(track => (track.enabled = !track.enabled));
     setCameraOn(value => !value);
   }
+  async function toggleSpeaker() {
+    const next = toggledSpeakerState(speakerOn);
+    try {
+      setSpeakerOn(await setNativeCallAudioRoute(next));
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "无法切换扬声器");
+    }
+  }
 
   if (!call) return null;
   const remoteEntries = Object.entries(remoteStreams);
@@ -404,6 +457,10 @@ const CallManager = forwardRef<
         </p>
       </header>
       <div className="relative flex flex-1 items-center justify-center overflow-hidden p-4 md:p-8">
+        {call.mode === "audio" &&
+          remoteEntries.map(([id, stream]) => (
+            <AudioStream key={`audio-${id}`} stream={stream} />
+          ))}
         {call.mode === "video" ? (
           <div
             className={`grid h-full w-full max-w-6xl gap-3 ${remoteEntries.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}
@@ -459,6 +516,7 @@ const CallManager = forwardRef<
         {call.status === "incoming" ? (
           <>
             <button
+              aria-label="拒绝通话"
               onClick={() => {
                 connection?.invoke(
                   "CallReject",
@@ -475,6 +533,7 @@ const CallManager = forwardRef<
             </button>
             <button
               onClick={accept}
+              aria-label="接听通话"
               className="grid h-14 w-14 place-items-center rounded-full bg-emerald-500 shadow-lg"
             >
               <Phone />
@@ -484,6 +543,7 @@ const CallManager = forwardRef<
           <>
             <button
               onClick={toggleMic}
+              aria-label={micOn ? "关闭麦克风" : "打开麦克风"}
               className={`grid h-12 w-12 place-items-center rounded-full ${micOn ? "bg-white/10" : "bg-white text-slate-900"}`}
             >
               {micOn ? <Mic /> : <MicOff />}
@@ -491,13 +551,23 @@ const CallManager = forwardRef<
             {call.mode === "video" && (
               <button
                 onClick={toggleCamera}
+                aria-label={cameraOn ? "关闭摄像头" : "打开摄像头"}
                 className={`grid h-12 w-12 place-items-center rounded-full ${cameraOn ? "bg-white/10" : "bg-white text-slate-900"}`}
               >
                 {cameraOn ? <Video /> : <VideoOff />}
               </button>
             )}
             <button
+              onClick={toggleSpeaker}
+              className={`grid h-12 w-12 place-items-center rounded-full ${speakerOn ? "bg-teal-400 text-slate-950" : "bg-white/10"}`}
+              aria-label={speakerOn ? "关闭扬声器" : "打开扬声器"}
+              title={speakerOn ? "扬声器已打开" : "打开扬声器"}
+            >
+              {speakerOn ? <Volume2 /> : <Volume1 />}
+            </button>
+            <button
               onClick={() => finish()}
+              aria-label="结束通话"
               className="grid h-14 w-14 place-items-center rounded-full bg-rose-500 shadow-lg"
             >
               <PhoneOff />

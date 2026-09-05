@@ -19,8 +19,10 @@ import {
   type AuthResponse,
   type Contact,
   type Conversation,
+  type ConversationMember,
   type FriendRequest,
   type Message,
+  type PublicKeyBundle,
   type User,
 } from "@/lib/echat-api";
 import { sendEncryptedMedia, type ChatMediaKind } from "@/lib/echat-media";
@@ -77,10 +79,25 @@ const ICON =
   "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ZvaASvnoRtznilUT.png";
 
 type NavKey = "chats" | "contacts" | "discover" | "profile" | "admin";
-type DecryptedMessage = Message & { plaintext: string };
+type DecryptedMessage = Message & { plaintext: string; decryptError?: boolean };
 
 function initials(name: string) {
   return Array.from(name.trim()).slice(-2).join("").toUpperCase() || "E";
+}
+
+async function sealKeyForDevices(
+  key: CryptoKey,
+  userId: string,
+  devices: Array<{ deviceId: string; publicKeyJwk: string }>,
+  envelopes: Record<string, string>
+) {
+  const unique = new Map(devices.map(device => [device.deviceId, device]));
+  for (const device of Array.from(unique.values())) {
+    const envelopeKey = device.deviceId.startsWith("legacy")
+      ? userId
+      : `${userId}:${device.deviceId}`;
+    envelopes[envelopeKey] = await sealKeyFor(key, device.publicKeyJwk);
+  }
 }
 
 function Avatar({
@@ -474,6 +491,7 @@ function Messenger({
   const selectedRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const readFloorRef = useRef(new Map<string, number>());
+  const keySyncRef = useRef(new Map<string, Promise<number>>());
   const chatVisible =
     nav === "chats" &&
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
@@ -493,8 +511,16 @@ function Messenger({
       if (message.state === "Recalled")
         return { ...message, plaintext: "这条消息已被撤回" };
       try {
-        const key = await getConversationKey(message.conversationId);
-        if (!key) return { ...message, plaintext: "此设备暂时无法解密该消息" };
+        const key = await getConversationKey(
+          message.conversationId,
+          message.keyVersion || 1
+        );
+        if (!key)
+          return {
+            ...message,
+            plaintext: "该消息发送于本设备加入加密会话之前",
+            decryptError: true,
+          };
         return {
           ...message,
           plaintext: await decryptMessage(
@@ -504,10 +530,90 @@ function Messenger({
           ),
         };
       } catch {
-        return { ...message, plaintext: "消息解密失败" };
+        return {
+          ...message,
+          plaintext: "该消息发送于本设备加入加密会话之前",
+          decryptError: true,
+        };
       }
     },
     []
+  );
+
+  const ensureConversationKey = useCallback(
+    async (conversation: Conversation) => {
+      const version = conversation.keyVersion || 1;
+      if (await getConversationKey(conversation.id, version)) return;
+      const pending = keySyncRef.current.get(conversation.id);
+      if (pending) {
+        conversation.keyVersion = await pending;
+        return;
+      }
+      const task = (async () => {
+        if (conversation.keyEnvelope) {
+          try {
+            await storeConversationKey(
+              conversation.id,
+              await openKeyEnvelope(user.account, conversation.keyEnvelope),
+              version
+            );
+            return version;
+          } catch {
+            /* The envelope belongs to an older device identity. */
+          }
+        }
+        const members = await api<ConversationMember[]>(
+          `/api/conversations/${conversation.id}/members`
+        );
+        if (
+          !members.length ||
+          members.some(member => !member.encryptionDevices?.length)
+        )
+          return version;
+        const key = await createConversationKey();
+        const keyEnvelopes: Record<string, string> = {};
+        for (const member of members)
+          await sealKeyForDevices(
+            key,
+            member.userId,
+            member.encryptionDevices,
+            keyEnvelopes
+          );
+        const nextVersion = version + 1;
+        try {
+          await api<void>(`/api/conversations/${conversation.id}/key`, {
+            method: "PUT",
+            body: JSON.stringify({ keyVersion: nextVersion, keyEnvelopes }),
+          });
+        } catch (cause) {
+          if (!(cause instanceof ApiError) || cause.status !== 409) throw cause;
+          const latest = (await api<Conversation[]>("/api/conversations")).find(
+            item => item.id === conversation.id
+          );
+          if (!latest?.keyEnvelope) throw cause;
+          const latestVersion = latest.keyVersion || nextVersion;
+          await storeConversationKey(
+            conversation.id,
+            await openKeyEnvelope(user.account, latest.keyEnvelope),
+            latestVersion
+          );
+          conversation.keyVersion = latestVersion;
+          conversation.keyEnvelope = latest.keyEnvelope;
+          return latestVersion;
+        }
+        await storeConversationKey(conversation.id, key, nextVersion);
+        conversation.keyVersion = nextVersion;
+        conversation.keyEnvelope = keyEnvelopes[`${user.id}:${getDeviceId()}`];
+        return nextVersion;
+      })();
+      keySyncRef.current.set(conversation.id, task);
+      try {
+        await task;
+      } finally {
+        keySyncRef.current.delete(conversation.id);
+      }
+    },
+    [user.account, user.id]
   );
 
   const loadData = useCallback(async () => {
@@ -516,21 +622,8 @@ function Messenger({
       api<Contact[]>("/api/contacts"),
       api<FriendRequest[]>("/api/contacts/requests"),
     ]);
-    for (const conversation of nextConversations) {
-      if (
-        !(await getConversationKey(conversation.id)) &&
-        conversation.keyEnvelope
-      ) {
-        try {
-          await storeConversationKey(
-            conversation.id,
-            await openKeyEnvelope(user.account, conversation.keyEnvelope)
-          );
-        } catch {
-          /* Key belongs to a different device identity. */
-        }
-      }
-    }
+    for (const conversation of nextConversations)
+      await ensureConversationKey(conversation);
     setConversations(
       nextConversations.map(next => {
         const pendingRead = readFloorRef.current.get(next.id) ?? 0;
@@ -548,7 +641,7 @@ function Messenger({
         ? current
         : (nextConversations[0]?.id ?? null)
     );
-  }, [user.account]);
+  }, [ensureConversationKey]);
 
   const markConversationRead = useCallback(
     async (conversationId: string, sequence: number) => {
@@ -606,7 +699,10 @@ function Messenger({
         const identity = await ensureIdentity(user.account);
         await api<void>("/api/users/me/public-key", {
           method: "PUT",
-          body: JSON.stringify({ publicKeyJwk: identity.publicJwk }),
+          body: JSON.stringify({
+            publicKeyJwk: identity.publicJwk,
+            deviceId: getDeviceId(),
+          }),
         });
         await loadData();
       } catch (cause) {
@@ -807,17 +903,24 @@ function Messenger({
         setMobileDetail(true);
         return;
       }
-      const peer = await api<{
-        id: string;
-        account: string;
-        displayName: string;
-        publicKeyJwk: string;
-      }>(`/api/users/${contact.user.account}/public-key`);
-      const identity = await ensureIdentity(user.account);
+      const [self, peer] = await Promise.all([
+        api<PublicKeyBundle>(`/api/users/${user.account}/public-key`),
+        api<PublicKeyBundle>(`/api/users/${contact.user.account}/public-key`),
+      ]);
       const key = await createConversationKey();
       const keyEnvelopes: Record<string, string> = {};
-      keyEnvelopes[user.id] = await sealKeyFor(key, identity.publicJwk);
-      keyEnvelopes[peer.id] = await sealKeyFor(key, peer.publicKeyJwk);
+      await sealKeyForDevices(
+        key,
+        self.id,
+        self.encryptionDevices,
+        keyEnvelopes
+      );
+      await sealKeyForDevices(
+        key,
+        peer.id,
+        peer.encryptionDevices,
+        keyEnvelopes
+      );
       const conversation = await api<Conversation>(
         "/api/conversations/direct",
         {
@@ -825,7 +928,11 @@ function Messenger({
           body: JSON.stringify({ peerAccount: peer.account, keyEnvelopes }),
         }
       );
-      await storeConversationKey(conversation.id, key);
+      await storeConversationKey(
+        conversation.id,
+        key,
+        conversation.keyVersion || 1
+      );
       await loadData();
       setSelectedId(conversation.id);
       setNav("chats");
@@ -845,17 +952,21 @@ function Messenger({
       const selectedContacts = contacts.filter(contact =>
         groupMembers.includes(contact.user.id)
       );
-      const identity = await ensureIdentity(user.account);
       const key = await createConversationKey();
-      const keyEnvelopes: Record<string, string> = {
-        [user.id]: await sealKeyFor(key, identity.publicJwk),
-      };
-      for (const contact of selectedContacts) {
-        const peer = await api<{ id: string; publicKeyJwk: string }>(
-          `/api/users/${contact.user.account}/public-key`
+      const keyEnvelopes: Record<string, string> = {};
+      const bundles = await Promise.all([
+        api<PublicKeyBundle>(`/api/users/${user.account}/public-key`),
+        ...selectedContacts.map(contact =>
+          api<PublicKeyBundle>(`/api/users/${contact.user.account}/public-key`)
+        ),
+      ]);
+      for (const bundle of bundles)
+        await sealKeyForDevices(
+          key,
+          bundle.id,
+          bundle.encryptionDevices,
+          keyEnvelopes
         );
-        keyEnvelopes[peer.id] = await sealKeyFor(key, peer.publicKeyJwk);
-      }
       const conversation = await api<Conversation>(
         "/api/conversations/groups",
         {
@@ -869,7 +980,11 @@ function Messenger({
           }),
         }
       );
-      await storeConversationKey(conversation.id, key);
+      await storeConversationKey(
+        conversation.id,
+        key,
+        conversation.keyVersion || 1
+      );
       setShowGroup(false);
       setGroupName("");
       setGroupMembers([]);
@@ -887,11 +1002,12 @@ function Messenger({
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || !selectedId || busy) return;
+    if (!text || !selectedId || !selected || busy) return;
     setBusy(true);
     setDraft("");
     try {
-      const key = await getConversationKey(selectedId);
+      const keyVersion = selected.keyVersion || 1;
+      const key = await getConversationKey(selectedId, keyVersion);
       if (!key) throw new Error("本设备缺少会话密钥");
       const encrypted = await encryptMessage(key, text);
       const created = await api<Message>(
@@ -901,13 +1017,16 @@ function Messenger({
           body: JSON.stringify({
             clientMessageId: crypto.randomUUID(),
             kind: "Text",
+            keyVersion,
             ...encrypted,
           }),
         }
       );
       const value = { ...created, plaintext: text };
       setMessages(current =>
-        current.some(x => x.id === value.id) ? current : [...current, value]
+        current.some(x => x.id === value.id)
+          ? current.map(item => (item.id === value.id ? value : item))
+          : [...current, value]
       );
       await api<void>(
         `/api/conversations/${selectedId}/read/${created.sequence}`,
@@ -927,20 +1046,28 @@ function Messenger({
     kind: ChatMediaKind,
     duration?: number
   ) {
-    if (!selectedId || busy) return;
+    if (!selectedId || !selected || busy) return;
     setBusy(true);
     try {
-      const created = await sendEncryptedMedia(selectedId, file, kind, {
-        fileName:
-          file instanceof File
-            ? file.name
-            : `语音-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}.webm`,
-        mimeType: file.type,
-        duration,
-      });
+      const created = await sendEncryptedMedia(
+        selectedId,
+        selected.keyVersion || 1,
+        file,
+        kind,
+        {
+          fileName:
+            file instanceof File
+              ? file.name
+              : `语音-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}.webm`,
+          mimeType: file.type,
+          duration,
+        }
+      );
       const value = await decrypt(created);
       setMessages(current =>
-        current.some(x => x.id === value.id) ? current : [...current, value]
+        current.some(x => x.id === value.id)
+          ? current.map(item => (item.id === value.id ? value : item))
+          : [...current, value]
       );
       await api<void>(
         `/api/conversations/${selectedId}/read/${created.sequence}`,
@@ -1610,6 +1737,7 @@ function HeaderAction({
     <button
       onClick={onClick}
       title={label}
+      aria-label={label}
       className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95"
     >
       <Icon size={18} />

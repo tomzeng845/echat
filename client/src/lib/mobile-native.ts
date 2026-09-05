@@ -30,6 +30,10 @@ export type NativeNotificationTarget = {
 
 type MediaPermissionsPlugin = {
   getCapabilities(): Promise<{ firebaseConfigured: boolean }>;
+  setCallAudioRoute(options: {
+    speaker: boolean;
+  }): Promise<{ speaker: boolean; applied: boolean }>;
+  endCallAudioSession(): Promise<void>;
   requestPermissions(options: {
     camera: boolean;
     microphone: boolean;
@@ -98,7 +102,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.1",
+      appVersion: "0.8.2",
     }),
   });
   updatePushState("registered");
@@ -212,4 +216,16 @@ export async function ensureNativeMediaPermissions(options: {
     throw new DOMException("Camera permission denied", "NotAllowedError");
   if (options.microphone && !result.microphone)
     throw new DOMException("Microphone permission denied", "NotAllowedError");
+}
+
+export async function setNativeCallAudioRoute(speaker: boolean) {
+  if (!isNativeAndroid()) return speaker;
+  const result = await MediaPermissions.setCallAudioRoute({ speaker });
+  if (!result.applied) throw new Error("当前设备无法切换音频输出");
+  return result.speaker;
+}
+
+export async function endNativeCallAudioSession() {
+  if (!isNativeAndroid()) return;
+  await MediaPermissions.endCallAudioSession();
 }

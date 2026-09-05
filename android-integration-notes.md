@@ -1,4 +1,10 @@
-# E聊 Android 0.8.1 集成说明
+# E聊 Android 0.8.2 集成说明
+
+## 0.8.2 消息解密与通话音频
+
+旧实现只在账号上保存一个 RSA 公钥，新 Android WebView 生成身份密钥后会覆盖浏览器公钥，而已有会话信封仍由旧公钥封装，因此 APP 无法解开旧信封。0.8.2 改为按 `deviceId` 保存公钥；会话和消息携带 `keyVersion`。新设备无法打开当前信封时，会读取会话成员的设备公钥，为所有当前设备生成下一版本 AES 会话密钥信封。原设备保留旧版本本地密钥，因此历史消息仍可解密；APP 与其他成员设备使用新版本收发后续消息。服务端拒绝用旧版本继续发送，避免同一会话出现不可判定的密钥分叉。
+
+语音通话原先没有渲染远端 `MediaStream` 的 `audio` 元素，导致信令和音轨建立后仍无声音；视频元素也只依赖一次 `autoPlay`。0.8.2 为语音通话显式挂载远端音频元素，并在 `loadedmetadata` / `canplay` 后主动播放；视频也采用相同重试。Android 原生层进入 `MODE_IN_COMMUNICATION`，以 `USAGE_VOICE_COMMUNICATION` / `CONTENT_TYPE_SPEECH` 请求临时音频焦点，并提供听筒/扬声器切换。语音默认听筒，视频默认扬声器，挂断后清除通信设备并恢复普通音频模式。
 
 ## 0.8.1 登录防闪退
 
@@ -21,6 +27,8 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 | WebView 安全区   | Capacitor 8 System Bars 默认向 WebView 注入 `--safe-area-inset-*`，用于修复部分旧 WebView 的 CSS `env()` 安全区值               | [Capacitor System Bars](https://capacitorjs.com/docs/apis/system-bars)                     |
 | 摄像头权限       | Android 原生权限与 WebView 媒体授权结合；相册选择可使用系统 Photo Picker                                                        | [Capacitor Camera](https://capacitorjs.com/docs/apis/camera)                               |
 | 自定义权限桥     | `@CapacitorPlugin` 定义 CAMERA/RECORD_AUDIO 别名，使用 `requestPermissionForAliases` 和 `@PermissionCallback`                   | [Capacitor Android Plugin Guide](https://capacitorjs.com/docs/plugins/android)             |
+| 通话音频路由     | VoIP 使用 `MODE_IN_COMMUNICATION`；Android 12+ 通过 `setCommunicationDevice` 选择听筒或扬声器并在挂断时清除                     | [Android AudioManager](https://developer.android.com/reference/android/media/AudioManager) |
+| 音频焦点         | 播放通话语音前申请临时焦点，使用语音通信 AudioAttributes，结束后释放                                                            | [Manage audio focus](https://developer.android.com/media/optimize/audio-focus)             |
 | Android 构建工具 | 官方 Linux command line tools 包 `commandlinetools-linux-15859902_latest.zip`                                                   | [Android Studio downloads](https://developer.android.com/studio)                           |
 
 ## 安全与运行边界

@@ -4,24 +4,24 @@
 
 ## 当前实现范围
 
-| 模块        | 已实现能力                                                                                              | 状态             |
-| ----------- | ------------------------------------------------------------------------------------------------------- | ---------------- |
-| 账号        | 邀请码注册、密码登录、渐进式登录限制、JWT、刷新令牌轮换、服务端会话撤销                                 | 已完成 P1        |
-| 二维码      | 两分钟一次性扫码登录、已登录设备确认、七天个人名片、摄像头/图片/粘贴扫码                                | 已完成 P1        |
-| 设备管理    | 登录设备列表、设备标识、单设备退出、退出其他设备                                                        | 已完成 P1        |
-| 管理登录    | 独立 `/admin` 登录、Admin 角色保护；开发预览密码登录，生产强制 Google Authenticator TOTP                | 已完成           |
-| 联系人      | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单                        | 已完成 P1        |
-| 会话        | 单聊、群聊、会话列表、会话成员权限                                                                      | 已完成 MVP       |
-| 消息        | SignalR 实时事件、增量补拉、幂等、进入会话立即清零、实时已读回执、旧响应竞态保护、2 分钟撤回            | 已完成 P1        |
-| 富媒体      | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应                                 | 已完成基础版本   |
-| 端到端加密  | 浏览器生成 RSA-OAEP 身份密钥；文字及聊天附件使用会话 AES-GCM-256 密钥加密；服务器保存密文和成员密钥信封 | 已完成 MVP       |
-| 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                  | 已完成           |
-| 管理后台    | HTML5 响应式四大系统；按 V2 文档实现普通用户隔离、邀请码、日志、交易、Admin、公告、图片和聊天治理 API   | 已完成 0.7.1     |
-| 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区       | 已完成 0.7.1     |
-| Android APP | Capacitor 8、本地 Web 资源、系统通知、通知深链、相机/麦克风权限、刘海屏和系统导航栏安全区               | 已完成 0.8.1     |
-| 消息推送    | Android FCM 令牌注册/停用、消息/好友申请/来电高优先级通知、失效令牌停用；通知不含聊天明文               | 应用层已完成     |
-| 音视频通话  | 单聊与群聊入口、来电、接听、拒接、结束、静音、摄像头控制、持久化通话记录、动态 ICE 配置、SignalR 信令   | 已完成 P1 应用层 |
-| 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                            | 已完成 P1        |
+| 模块        | 已实现能力                                                                                            | 状态             |
+| ----------- | ----------------------------------------------------------------------------------------------------- | ---------------- |
+| 账号        | 邀请码注册、密码登录、渐进式登录限制、JWT、刷新令牌轮换、服务端会话撤销                               | 已完成 P1        |
+| 二维码      | 两分钟一次性扫码登录、已登录设备确认、七天个人名片、摄像头/图片/粘贴扫码                              | 已完成 P1        |
+| 设备管理    | 登录设备列表、设备标识、单设备退出、退出其他设备                                                      | 已完成 P1        |
+| 管理登录    | 独立 `/admin` 登录、Admin 角色保护；开发预览密码登录，生产强制 Google Authenticator TOTP              | 已完成           |
+| 联系人      | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单                      | 已完成 P1        |
+| 会话        | 单聊、群聊、会话列表、会话成员权限                                                                    | 已完成 MVP       |
+| 消息        | SignalR 实时事件、增量补拉、幂等、进入会话立即清零、实时已读回执、旧响应竞态保护、2 分钟撤回          | 已完成 P1        |
+| 富媒体      | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应                               | 已完成基础版本   |
+| 端到端加密  | 每设备 RSA-OAEP 身份密钥；文字及附件使用版本化 AES-GCM-256 会话密钥；新设备自动轮换成员设备信封       | 已完成 P1        |
+| 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                | 已完成           |
+| 管理后台    | HTML5 响应式四大系统；按 V2 文档实现普通用户隔离、邀请码、日志、交易、Admin、公告、图片和聊天治理 API | 已完成 0.7.1     |
+| 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区     | 已完成 0.7.1     |
+| Android APP | Capacitor 8、本地 Web 资源、系统通知、通知深链、相机/麦克风权限、刘海屏和系统导航栏安全区             | 已完成 0.8.2     |
+| 消息推送    | Android FCM 令牌注册/停用、消息/好友申请/来电高优先级通知、失效令牌停用；通知不含聊天明文             | 应用层已完成     |
+| 音视频通话  | 双向远端音频、Android 通信音频模式、听筒/扬声器切换、静音、摄像头控制、通话记录、ICE 与 SignalR 信令  | 已完成 P1 应用层 |
+| 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                          | 已完成 P1        |
 
 > 当前版本已开放可在应用代码内完成的 P1 能力，但不是已经达到 10 万用户容量目标的生产成品。FCM 应用层已接通，但正式推送仍需项目方提供 Firebase 客户端配置和服务账号；TURN、SFU、转码和病毒扫描也属于生产环境外部基础设施。
 
@@ -49,7 +49,7 @@
 | `client/src/lib/echat-media.ts`                     | 富媒体二进制加密、上传、下载和解密                                 |
 | `client/src/components/chat/CallManager.tsx`        | WebRTC 音视频通话和 SignalR 信令控制                               |
 | `client/src/components/qr/`                         | 二维码生成、摄像头/图片识别、登录确认和扫码名片流程                |
-| `client/src/lib/mobile-native.ts`                   | Android 推送注册、通知深链和摄像头/麦克风原生权限桥                |
+| `client/src/lib/mobile-native.ts`                   | Android 推送、通知深链、媒体权限与通话音频路由原生桥               |
 | `android/`                                          | Capacitor 8 Android Studio/Gradle 原生工程                         |
 | `capacitor.config.ts`                               | Android 应用、System Bars 安全区与前台通知配置                     |
 | `scripts/e2e-smoke.sh`                              | 注册、好友、会话、富媒体和朋友圈冒烟测试                           |
@@ -63,6 +63,8 @@
 | `scripts/geoip-smoke.mjs`                           | 真实公网 IP 地区、用户地址、登录日志和缓存端到端测试               |
 | `scripts/android-push-smoke.mjs`                    | Android 推送设备注册、状态、停用和 health API 测试                 |
 | `scripts/android-safe-area-smoke.mjs`               | 刘海屏与底部系统导航栏 inset 布局测试                              |
+| `scripts/android-e2ee-smoke.mjs`                    | 新设备密钥轮换、版本化消息与真实界面解密测试                       |
+| `scripts/android-call-audio-smoke.mjs`              | 双端语音/视频远端音轨、自动播放与扬声器切换测试                    |
 | `Dockerfile`                                        | Node 构建前端、.NET 发布后端的多阶段生产镜像                       |
 
 ## 本地运行
@@ -121,6 +123,10 @@ debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。正式
 
 只有服务端 FCM 凭据与 APK 的 Firebase 客户端配置同时存在时，Android 13 及以上才会在登录后请求系统通知权限。0.8.1 修复了缺少 `google-services.json` 时登录后自动调用 Firebase、导致部分手机闪退的问题：未配置时完全跳过 FCM 初始化并显示“待配置 FCM”。扫码只请求摄像头，语音录制只请求麦克风，视频通话请求摄像头和麦克风。Capacitor System Bars 把正确的 display cutout、状态栏和底部手势/三键导航栏 inset 注入 CSS；根布局、聊天发送栏和移动底部菜单均在安全区内显示，不会与刘海或系统菜单重叠。
 
+0.8.2 将账号单一公钥升级为设备级公钥与版本化会话密钥。APP 首次打开旧会话而无法解开原信封时，会为所有成员当前登记设备生成下一版本信封；旧消息继续由持有旧密钥的原设备解密，新消息由 APP、原设备和好友设备共同解密。旧历史消息不会把通用“消息解密失败”误报为发送失败，而会明确提示该消息早于本设备加入会话。发送者自身的 SignalR 回显也会被本地成功解密结果替换。
+
+Android 通话进入 `MODE_IN_COMMUNICATION` 并申请临时音频焦点；Android 12 及以上使用通信设备 API 在听筒与扬声器间切换，旧版本使用 speakerphone 路由。语音通话显式挂载远端 `audio`，视频通话在远端 `video` 就绪后主动播放；控制栏新增“打开/关闭扬声器”按钮。语音默认听筒，视频默认扬声器，结束通话后恢复系统普通音频模式。
+
 FCM 正式启用需要在 [Firebase 控制台](https://console.firebase.google.com/) 创建与包名 `com.echat.app` 对应的 Android 应用，把客户端 `google-services.json` 放到 `android/app/google-services.json`，再执行 `pnpm android:sync` 和 APK/AAB 构建。该文件和签名密钥已被 Git 忽略。服务端通过秘密变量配置，不要把服务账号 JSON 写入仓库：
 
 ```bash
@@ -145,7 +151,7 @@ export FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
 二维码登录采用两组独立随机令牌：二维码中只包含扫描令牌，桌面只保存轮询令牌；扫码设备必须显示目标设备并主动确认，授权结果只能兑换一次且两分钟后过期。个人名片码不含密码，可在七天内用于预览公开资料并发起好友申请。
 
-当前加密模型适合 MVP/P1 基线，但生产版仍需补充设备级独立密钥、密钥验证、换机恢复、群成员变更后的密钥更新和安全审计。不要把当前实现宣传为已经过第三方密码学审计的安全通信协议。
+当前加密模型适合 MVP/P1 基线，已提供设备级独立密钥和会话密钥版本轮换；生产版仍需补充二维码设备验证、丢失设备后的密钥恢复、群成员变更自动轮换和第三方安全审计。不要把当前实现宣传为已经过第三方密码学审计的安全通信协议。
 
 ## 构建与测试
 
@@ -164,10 +170,12 @@ node scripts/admin-requirements-smoke.mjs http://127.0.0.1:2099
 node scripts/geoip-smoke.mjs http://127.0.0.1:2099
 node scripts/android-push-smoke.mjs http://127.0.0.1:2099
 node scripts/android-safe-area-smoke.mjs http://127.0.0.1:2099
+node scripts/android-e2ee-smoke.mjs http://127.0.0.1:2099
+node scripts/android-call-audio-smoke.mjs http://127.0.0.1:2099
 pnpm android:apk
 ```
 
-`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒绝、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证普通用户/Admin 隔离、用户治理、交易明细、图片元数据、每账号菜单、角色权限白名单和全部 24 个 V2 页面。文档专用脚本进一步验证认证审核、八位邀请码选择、增强日志、失败 IP、幂等资金调整、管理员独立 TOTP、公告、后台加密建群、群发言、群邀请码、密文审计边界和五类下线模块。GeoIP 脚本使用公开测试 IP 验证第三方真实地区、用户资料、登录日志和进程缓存一致性；Android 推送脚本验证设备令牌的注册、用户隔离、状态查询与停用。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
+`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒绝、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证普通用户/Admin 隔离、用户治理、交易明细、图片元数据、每账号菜单、角色权限白名单和全部 24 个 V2 页面。文档专用脚本进一步验证认证审核、八位邀请码选择、增强日志、失败 IP、幂等资金调整、管理员独立 TOTP、公告、后台加密建群、群发言、群邀请码、密文审计边界和五类下线模块。GeoIP 脚本使用公开测试 IP 验证第三方真实地区、用户资料、登录日志和进程缓存一致性；Android 推送脚本验证设备令牌注册与停用；Android E2EE 脚本验证三设备三版本密钥轮换和真实页面消息解密；Android 通话音频脚本建立双端语音及视频通话，确认双方远端音轨、自动播放和扬声器切换。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
 
 ## 生产部署
 
@@ -193,13 +201,14 @@ pnpm android:apk
 | POST                | `/api/qr/contact/redeem`                                                               | 通过名片发起好友申请                            |
 | GET/DELETE          | `/api/devices`                                                                         | 查看或撤销登录设备                              |
 | PUT                 | `/api/users/me/public-key`                                                             | 发布当前设备身份公钥                            |
-| GET                 | `/api/users/{account}/public-key`                                                      | 获取联系人公钥                                  |
+| GET                 | `/api/users/{account}/public-key`                                                      | 获取联系人全部设备公钥                          |
 | GET/POST            | `/api/contacts/requests`                                                               | 查询或发起好友申请                              |
 | POST                | `/api/contacts/requests/{id}/accept`                                                   | 接受好友申请                                    |
 | GET                 | `/api/conversations`                                                                   | 会话列表                                        |
 | POST                | `/api/conversations/direct`                                                            | 创建单聊                                        |
 | POST                | `/api/conversations/groups`                                                            | 创建群聊                                        |
 | GET                 | `/api/conversations/{id}/members`                                                      | 获取通话成员                                    |
+| PUT                 | `/api/conversations/{id}/key`                                                          | 为成员设备轮换版本化会话密钥信封                |
 | GET/POST            | `/api/conversations/{id}/messages`                                                     | 补拉或发送密文消息                              |
 | POST                | `/api/conversations/{id}/messages/{messageId}/recall`                                  | 撤回消息                                        |
 | POST                | `/api/conversations/{id}/read/{sequence}`                                              | 更新已读游标                                    |

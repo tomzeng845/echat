@@ -216,3 +216,17 @@ Capacitor System Bars 以 CSS 变量注入系统 inset。`android-safe-area-smok
 新增直接回归通过：`mobile-native-guard.test.ts` 模拟 Android 登录后服务端 FCM 关闭，确认 `getCapabilities`、`addListener`、`checkPermissions`、`requestPermissions`、`createChannel` 和 `register` 均为零调用；四种客户端/服务端组合门控与个人中心状态映射也通过。最终为 Vitest 6 项、xUnit 17 项。
 
 无 `google_app_id` 条件下，Android `testDebugUnitTest`、`lintDebug`、`assembleDebug` 全部成功。新包经 16 KB zipalign 与 APK Signature Scheme v2 验证，`aapt` 确认包名 `com.echat.app`、`versionCode=9`、`versionName=0.8.1`；SHA-256 为 `921fef26902f6552d042c88fa2f47f0661acdf45962e37dd095ee085ece0ebee`。全量回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_081_OK`、`ADMIN_081_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。
+
+## 2026-09-06 Android APP 0.8.2 消息解密与通话音频修复
+
+消息问题由两类路径共同导致：旧协议只在账号保存一个 RSA 公钥，新 Android WebView 身份可能无法打开已有会话信封；同时发送者自身的 SignalR 回显可能先以失败占位进入列表，而 POST 成功响应只去重、不替换。0.8.2 改为按 `deviceId` 保存公钥，会话和消息带 `keyVersion`，新设备无法打开当前信封时会为所有成员设备生成下一版本密钥信封；服务端以 409 拒绝过期版本继续发送。发送文字和富媒体后的本地成功结果现在会替换同编号回显。历史消息没有对应旧密钥时明确显示“该消息发送于本设备加入加密会话之前”，不再把它误报为新消息发送失败。
+
+`ANDROID_E2EE_OK conversation=20d2cda8c8bc47388949dea0ac21870d versions=1,2,3 devices=3 legacy=decryptable app=decryptable peer=decryptable stale=409 ui=ok` 使用三个独立 RSA 身份完成旧浏览器、Android 新设备和好友设备的三版本轮换；真实 React 页面自行更新设备公钥、自动轮换到版本 3、发送消息，并由好友私钥成功解密。另行验证部分旧成员尚未登记设备公钥时不会阻塞会话列表和未读回执，`UNREAD_CLEAR_OK mobile=3>0 live=4>0 desktop=1>0 live=2>0` 通过。
+
+通话无声的直接原因是纯语音通话没有把远端 `MediaStream` 绑定到任何音频元素。0.8.2 为每个远端流挂载自动播放的 `audio`，视频元素在 `loadedmetadata` 和 `canplay` 后也主动调用 `play()`。Android 原生桥进入 `MODE_IN_COMMUNICATION`，使用 `USAGE_VOICE_COMMUNICATION`、`CONTENT_TYPE_SPEECH` 与临时音频焦点；Android 12+ 通过 `setCommunicationDevice` 切换听筒/扬声器，旧系统使用 speakerphone，挂断时清除路由并释放焦点。通话控制栏新增可见“打开/关闭扬声器”按钮，语音默认听筒，视频默认扬声器。
+
+双端真实 WebRTC 回归返回 `ANDROID_CALL_AUDIO_OK conversation=a7b199632fd64eb793148700a8b93283 peers=2 voice_tracks=1,1 video_audio_tracks=1,1 autoplay=true speaker=toggle video_speaker=default_on`：语音和视频两种模式下双方均收到一条启用的远端音轨，自动播放已启用，扬声器按钮可切换；390×844 手机界面另返回 `MOBILE_CHAT_OK ... speaker=toggle`。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 8 项、xUnit 17 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量遇错即停回归同时返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_082_OK`、`ADMIN_082_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
+
+最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=10`、`versionName=0.8.2`、最低 API 24、目标 API 36。文件 `EChat-0.8.2-debug.apk` 的 SHA-256 为 `894cc5727c217eb40920a950bd2f2777b5dc4b2e425f9ae065ed8d7ce4058f73`。

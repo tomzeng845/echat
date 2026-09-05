@@ -35,6 +35,7 @@ export type Conversation = {
   readSequence: number;
   muted: boolean;
   pinned: boolean;
+  keyVersion: number;
   keyEnvelope?: string;
 };
 export type Message = {
@@ -47,6 +48,7 @@ export type Message = {
   ciphertext: string;
   nonce: string;
   algorithm: string;
+  keyVersion: number;
   replyToMessageId?: string;
   metadata: Record<string, string>;
   state: "Accepted" | "Recalled";
@@ -81,6 +83,14 @@ export type ConversationMember = {
   displayName: string;
   avatarUrl: string;
   role: "Owner" | "Admin" | "Member";
+  encryptionDevices: Array<{ deviceId: string; publicKeyJwk: string }>;
+};
+export type PublicKeyBundle = {
+  id: string;
+  account: string;
+  displayName: string;
+  publicKeyJwk: string;
+  encryptionDevices: Array<{ deviceId: string; publicKeyJwk: string }>;
 };
 export type MediaAsset = {
   id: string;
@@ -243,11 +253,15 @@ export async function authorizedFetch(
     headers.set("Content-Type", "application/json");
   if (session?.accessToken)
     headers.set("Authorization", `Bearer ${session.accessToken}`);
+  headers.set("X-EChat-Device-Id", getDeviceId());
   const response = await fetch(apiUrl(path), { ...init, headers });
   if (response.status === 401 && retry && session?.refreshToken) {
     const refreshed = await fetch(apiUrl("/api/auth/refresh"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-EChat-Device-Id": getDeviceId(),
+      },
       body: JSON.stringify({
         refreshToken: session.refreshToken,
         deviceName: navigator.userAgent,

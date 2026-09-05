@@ -27,6 +27,7 @@ public sealed class UserAccount
     public string Region { get; set; } = "";
     public string MobilePhone { get; set; } = "";
     public string PublicKeyJwk { get; set; } = "";
+    public Dictionary<string, string> DevicePublicKeys { get; set; } = [];
     public UserRole Role { get; set; } = UserRole.User;
     public UserStatus Status { get; set; } = UserStatus.Active;
     public int RiskLevel1 { get; set; }
@@ -163,6 +164,7 @@ public sealed class Conversation
     public string CreatedBy { get; set; } = "";
     public List<ConversationMember> Members { get; set; } = [];
     public Dictionary<string, string> KeyEnvelopes { get; set; } = [];
+    public int KeyVersion { get; set; } = 1;
     public long LastSequence { get; set; }
     public string LastMessagePreview { get; set; } = "暂无消息";
     public DateTime? LastMessageAtUtc { get; set; }
@@ -181,6 +183,7 @@ public sealed class ChatMessage
     public string Ciphertext { get; set; } = "";
     public string Nonce { get; set; } = "";
     public string Algorithm { get; set; } = "AES-GCM-256";
+    public int KeyVersion { get; set; } = 1;
     public string? ReplyToMessageId { get; set; }
     public Dictionary<string, string> Metadata { get; set; } = [];
     public MessageState State { get; set; } = MessageState.Accepted;
@@ -286,22 +289,24 @@ public sealed record RegisterRequest(string Account, string Password, string Inv
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web", string? DeviceId = null);
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
 public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web", string? DeviceId = null);
-public sealed record PublicKeyRequest(string PublicKeyJwk);
+public sealed record PublicKeyRequest(string PublicKeyJwk, string? DeviceId = null);
 public sealed record AuthResponse(bool Success, string? AccessToken, string? RefreshToken, DateTime? ExpiresAtUtc, UserView? User, bool RequiresTotp = false, string? PendingToken = null, string? Error = null, string? SessionId = null, string? DeviceId = null);
 public sealed record UserView(string Id, string Account, string DisplayName, string AvatarUrl, string Signature, string Region, UserRole Role, UserStatus Status);
 public sealed record FriendRequestInput(string RequestId, string PeerAccount, string Note = "", string Source = "account");
 public sealed record ConversationCreateRequest(string PeerAccount, Dictionary<string, string>? KeyEnvelopes = null);
 public sealed record GroupCreateRequest(string Name, IReadOnlyList<string> MemberAccounts, Dictionary<string, string>? KeyEnvelopes = null);
-public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null);
-public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, string? KeyEnvelope);
-public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc);
+public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", int KeyVersion = 1, string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null);
+public sealed record RotateConversationKeyRequest(int KeyVersion, Dictionary<string, string> KeyEnvelopes);
+public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, int KeyVersion, string? KeyEnvelope);
+public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, int KeyVersion, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc);
 public sealed record MediaAssetView(string Id, string FileName, string ContentType, long Size, MediaPurpose Purpose, string ContentUrl);
 public sealed record CreateMomentRequest(string Text, IReadOnlyList<string>? MediaAssetIds = null, MomentVisibility Visibility = MomentVisibility.Friends, IReadOnlyList<string>? AudienceUserIds = null);
 public sealed record AddMomentCommentRequest(string Text);
 public sealed record MomentLikeView(string UserId, string DisplayName, string AvatarUrl, DateTime CreatedAtUtc);
 public sealed record MomentCommentView(string Id, string UserId, string DisplayName, string AvatarUrl, string Text, DateTime CreatedAtUtc);
 public sealed record MomentView(string Id, UserView Author, string Text, IReadOnlyList<MediaAssetView> Media, IReadOnlyList<MomentLikeView> Likes, IReadOnlyList<MomentCommentView> Comments, bool LikedByMe, DateTime CreatedAtUtc, MomentVisibility Visibility);
-public sealed record ConversationMemberView(string UserId, string DisplayName, string AvatarUrl, MemberRole Role);
+public sealed record EncryptionDeviceView(string DeviceId, string PublicKeyJwk);
+public sealed record ConversationMemberView(string UserId, string DisplayName, string AvatarUrl, MemberRole Role, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
 public sealed record QrLoginStartRequest(string DeviceName = "Web", string? DeviceId = null);
 public sealed record QrLoginStartResponse(string ChallengeId, string PollToken, string QrPayload, DateTime ExpiresAtUtc);
 public sealed record QrLoginTokenRequest(string ChallengeId, string Token);

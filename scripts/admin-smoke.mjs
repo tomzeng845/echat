@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.8.1" || overview.metrics.users < 1)
+if (overview.version !== "0.8.2" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -841,5 +841,5 @@ try {
 }
 
 console.log(
-  `ADMIN_081_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
+  `ADMIN_082_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );

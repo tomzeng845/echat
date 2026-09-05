@@ -12,10 +12,12 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult<IReadOnlyList<ConversationView>>> List(CancellationToken ct)
     {
         var userId = User.UserId();
+        var deviceId = CurrentDeviceId();
         var conversations = await repository.GetConversationsAsync(userId, ct);
         var result = new List<ConversationView>();
         foreach (var item in conversations)
         {
+            if (item.KeyVersion < 1) item.KeyVersion = 1;
             var member = item.Members.First(x => x.UserId == userId);
             var name = item.Name;
             var avatar = item.AvatarUrl;
@@ -25,8 +27,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 var peer = await repository.GetUserByIdAsync(peerId, ct);
                 name = peer?.DisplayName ?? "未知用户"; avatar = peer?.AvatarUrl ?? "";
             }
-            item.KeyEnvelopes.TryGetValue(userId, out var keyEnvelope);
-            result.Add(new ConversationView(item.Id, item.Type, name, avatar, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, item.Members.Count(x => x.LeftAtSequence is null), member.ReadSequence, member.Muted, member.Pinned, keyEnvelope));
+            var keyEnvelope = EnvelopeFor(item, userId, deviceId);
+            result.Add(new ConversationView(item.Id, item.Type, name, avatar, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, item.Members.Count(x => x.LeftAtSequence is null), member.ReadSequence, member.Muted, member.Pinned, item.KeyVersion, keyEnvelope));
         }
         return Ok(result);
     }
@@ -41,8 +43,9 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         if (relation?.Status != RelationStatus.Friend) return StatusCode(403, new { error = "只有好友可以创建会话" });
         var existing = await repository.FindDirectConversationAsync(userId, peer.Id, ct);
         var item = existing ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = userId, Members = [new() { UserId = userId }, new() { UserId = peer.Id }], KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
-        item.KeyEnvelopes.TryGetValue(userId, out var keyEnvelope);
-        return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, keyEnvelope));
+        if (item.KeyVersion < 1) item.KeyVersion = 1;
+        var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
+        return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, item.KeyVersion, keyEnvelope));
     }
 
     [HttpPost("groups")]
@@ -60,8 +63,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         if (members.Count < 3) return BadRequest(new { error = "至少选择两位好友" });
         var item = await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Name = request.Name.Trim(), CreatedBy = userId, Members = members, KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
         await hub.Clients.Users(members.Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct);
-        item.KeyEnvelopes.TryGetValue(userId, out var keyEnvelope);
-        return Ok(new ConversationView(item.Id, item.Type, item.Name, item.AvatarUrl, 0, item.LastMessagePreview, null, members.Count, 0, false, false, keyEnvelope));
+        var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
+        return Ok(new ConversationView(item.Id, item.Type, item.Name, item.AvatarUrl, 0, item.LastMessagePreview, null, members.Count, 0, false, false, item.KeyVersion, keyEnvelope));
     }
 
     [HttpGet("{id}/messages")]
@@ -82,9 +85,35 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         foreach (var member in conversation.Members.Where(x => x.LeftAtSequence is null))
         {
             var account = await repository.GetUserByIdAsync(member.UserId, ct);
-            if (account is not null) result.Add(new ConversationMemberView(account.Id, account.DisplayName, account.AvatarUrl, member.Role));
+            if (account is null) continue;
+            account.DevicePublicKeys ??= [];
+            var devices = account.DevicePublicKeys
+                .Where(item => !string.IsNullOrWhiteSpace(item.Value))
+                .Select(item => new EncryptionDeviceView(item.Key, item.Value))
+                .ToList();
+            if (!string.IsNullOrWhiteSpace(account.PublicKeyJwk) && devices.All(item => item.PublicKeyJwk != account.PublicKeyJwk))
+                devices.Add(new EncryptionDeviceView("legacy-primary", account.PublicKeyJwk));
+            result.Add(new ConversationMemberView(account.Id, account.DisplayName, account.AvatarUrl, member.Role, devices));
         }
         return Ok(result);
+    }
+
+    [HttpPut("{id}/key")]
+    public async Task<ActionResult> RotateKey(string id, RotateConversationKeyRequest request, CancellationToken ct)
+    {
+        var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
+        if (request.KeyVersion != conversation.KeyVersion + 1 || request.KeyEnvelopes.Count is 0 or > 2000)
+            return Conflict(new { error = "会话密钥版本已变化，请刷新后重试" });
+        var activeMemberIds = conversation.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId).ToHashSet();
+        if (request.KeyEnvelopes.Any(item => item.Value.Length is < 32 or > 8192 || !activeMemberIds.Any(userId => item.Key == userId || item.Key.StartsWith(userId + ":", StringComparison.Ordinal))))
+            return BadRequest(new { error = "会话密钥信封无效" });
+        if (activeMemberIds.Any(userId => !request.KeyEnvelopes.Keys.Any(key => key == userId || key.StartsWith(userId + ":", StringComparison.Ordinal))))
+            return BadRequest(new { error = "会话成员密钥信封不完整" });
+        conversation.KeyVersion = request.KeyVersion;
+        conversation.KeyEnvelopes = new Dictionary<string, string>(request.KeyEnvelopes);
+        await repository.UpdateConversationAsync(conversation, ct);
+        await hub.Clients.Users(activeMemberIds).SendAsync("conversation.updated", new { conversationId = id, action = "key-rotated", keyVersion = conversation.KeyVersion }, ct);
+        return NoContent();
     }
 
     [HttpPost("{id}/messages")]
@@ -93,13 +122,15 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
         if (string.IsNullOrWhiteSpace(request.ClientMessageId) || string.IsNullOrWhiteSpace(request.Ciphertext) || request.Ciphertext.Length > 50_000) return BadRequest(new { error = "消息格式无效或内容过大" });
+        var keyVersion = Math.Max(1, request.KeyVersion);
+        if (keyVersion != conversation.KeyVersion) return Conflict(new { error = "会话密钥已更新，请刷新后重试" });
         if (request.Kind is MessageKind.Image or MessageKind.Voice or MessageKind.Video or MessageKind.File)
         {
             if (request.Metadata is null || !request.Metadata.TryGetValue("assetId", out var assetId)) return BadRequest(new { error = "富媒体消息缺少媒体资产" });
             var asset = await repository.GetMediaAssetAsync(assetId, ct);
             if (asset is null || asset.OwnerId != User.UserId() || asset.Purpose != MediaPurpose.Chat || asset.ConversationId != id) return BadRequest(new { error = "媒体资产无效" });
         }
-        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Ciphertext = request.Ciphertext, Nonce = request.Nonce, Algorithm = request.Algorithm, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Ciphertext = request.Ciphertext, Nonce = request.Nonce, Algorithm = request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
@@ -134,8 +165,17 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     private async Task<Conversation?> RequireMemberAsync(string id, CancellationToken ct)
     {
         var item = await repository.GetConversationAsync(id, ct);
+        if (item is not null && item.KeyVersion < 1) item.KeyVersion = 1;
         return item is not null && !item.IsDissolved && item.Members.Any(x => x.UserId == User.UserId() && x.LeftAtSequence is null) ? item : null;
     }
 
-    private static MessageView View(ChatMessage m) => new(m.Id, m.ClientMessageId, m.ConversationId, m.Sequence, m.SenderId, m.Kind, m.Ciphertext, m.Nonce, m.Algorithm, m.ReplyToMessageId, m.Metadata, m.State, m.SentAtUtc, m.RecalledAtUtc);
+    private string? CurrentDeviceId() => Request.Headers["X-EChat-Device-Id"].FirstOrDefault();
+
+    private static string? EnvelopeFor(Conversation conversation, string userId, string? deviceId)
+    {
+        if (!string.IsNullOrWhiteSpace(deviceId) && conversation.KeyEnvelopes.TryGetValue($"{userId}:{deviceId}", out var deviceEnvelope)) return deviceEnvelope;
+        return conversation.KeyEnvelopes.TryGetValue(userId, out var legacyEnvelope) ? legacyEnvelope : null;
+    }
+
+    private static MessageView View(ChatMessage m) => new(m.Id, m.ClientMessageId, m.ConversationId, m.Sequence, m.SenderId, m.Kind, m.Ciphertext, m.Nonce, m.Algorithm, Math.Max(1, m.KeyVersion), m.ReplyToMessageId, m.Metadata, m.State, m.SentAtUtc, m.RecalledAtUtc);
 }
