@@ -96,7 +96,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.5.1",
+    version = "0.5.2",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     utcNow = DateTime.UtcNow

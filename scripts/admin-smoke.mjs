@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.5.1" || overview.metrics.users < 1)
+if (overview.version !== "0.5.2" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -183,6 +183,26 @@ await fetchApi(`/api/admin/users/${managedAccount}/security`, token, {
     cancellationEnabled: false,
     reason: "restore cancellation",
   }),
+});
+await fetchApi(`/api/admin/users/${managedAccount}/profile`, token, {
+  method: "PUT",
+  body: JSON.stringify({ loginIpRestriction: "203.0.113.25" }),
+});
+await fetchApi(
+  "/api/auth/login",
+  null,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      account: managedAccount,
+      password: `${userPassword}New`,
+    }),
+  },
+  403
+);
+await fetchApi(`/api/admin/users/${managedAccount}/profile`, token, {
+  method: "PUT",
+  body: JSON.stringify({ loginIpRestriction: "" }),
 });
 const exportResponse = await fetch(
   `${base}/api/admin/users/export?pageSize=20&search=${managedAccount}`,
@@ -474,21 +494,126 @@ try {
       .find(item => item.textContent?.trim() === "取消")
       ?.click()
   );
+  const menuCoverage = await page.evaluate(() => ({
+    rows: document.querySelectorAll("tbody tr").length,
+    operationButtons: [...document.querySelectorAll("tbody button")].filter(
+      item => item.textContent?.trim() === "操作"
+    ).length,
+  }));
+  if (!menuCoverage.rows || menuCoverage.rows !== menuCoverage.operationButtons)
+    throw new Error("not every account has an operation menu");
+  const openFirstOperation = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("tbody button")]
+        .find(item => item.textContent?.trim() === "操作")
+        ?.click()
+    );
+  await openFirstOperation();
+  await page.waitForFunction(
+    () =>
+      document.body.innerText.includes("同IP会员检测") &&
+      document.body.innerText.includes("修改邀请码") &&
+      document.body.innerText.includes("状态变更") &&
+      document.body.innerText.includes("登录密码"),
+    { timeout: 5000 }
+  );
   await page.evaluate(() =>
-    [...document.querySelectorAll("button")]
-      .find(item => item.textContent?.trim() === "操作")
+    [...document.querySelectorAll(".user-action-menu button")]
+      .find(item => item.textContent?.trim() === "状态变更")
       ?.click()
   );
   await page.waitForFunction(
     () =>
-      document.body.innerText.includes("同IP会员检测") &&
-      document.body.innerText.includes("银行卡锁定"),
+      document.body.innerText.includes("强制下线") &&
+      document.body.innerText.includes("账户锁定") &&
+      document.body.innerText.includes("登录锁定") &&
+      document.body.innerText.includes("银行卡锁定") &&
+      document.body.innerText.includes("注销开启") &&
+      document.body.innerText.includes("设置红号") &&
+      (() => {
+        const menu = document.querySelector(".user-status-submenu");
+        if (!menu) return false;
+        const rect = menu.getBoundingClientRect();
+        const style = getComputedStyle(menu);
+        const exposed = [...menu.querySelectorAll("button")].every(button => {
+          const buttonRect = button.getBoundingClientRect();
+          const top = document.elementFromPoint(
+            buttonRect.left + buttonRect.width / 2,
+            buttonRect.top + buttonRect.height / 2
+          );
+          return top === button || button.contains(top);
+        });
+        return (
+          rect.width > 100 &&
+          rect.height > 150 &&
+          style.visibility !== "hidden" &&
+          exposed
+        );
+      })(),
     { timeout: 5000 }
   );
+  await new Promise(resolve => setTimeout(resolve, 120));
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-users-0.5.1.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.5.2.png",
     fullPage: false,
   });
+  await page.evaluate(() =>
+    [...document.querySelectorAll(".user-action-menu > button")]
+      .find(item => item.textContent?.includes("同IP会员检测"))
+      ?.click()
+  );
+  await page.waitForSelector('[data-user-operation-dialog="sameIp"]');
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "关闭")
+      ?.click()
+  );
+  await openFirstOperation();
+  await page.evaluate(() =>
+    [...document.querySelectorAll(".user-action-menu > button")]
+      .find(item => item.textContent?.trim() === "修改邀请码")
+      ?.click()
+  );
+  await page.waitForSelector('[data-user-operation-dialog="inviteSource"]');
+  await page.screenshot({
+    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.5.2.png",
+    fullPage: false,
+  });
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "取消")
+      ?.click()
+  );
+  await openFirstOperation();
+  await page.evaluate(() =>
+    [...document.querySelectorAll(".user-action-menu > button")]
+      .find(item => item.textContent?.includes("登录密码"))
+      ?.click()
+  );
+  await page.waitForSelector('[data-user-operation-dialog="password"]');
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "取消")
+      ?.click()
+  );
+  await openFirstOperation();
+  await page.evaluate(() =>
+    [...document.querySelectorAll(".user-action-menu button")]
+      .find(item => item.textContent?.trim() === "状态变更")
+      ?.click()
+  );
+  await page.waitForSelector(".user-status-submenu");
+  await page.evaluate(() =>
+    [...document.querySelectorAll(".user-status-submenu button")]
+      .find(item => item.textContent?.includes("银行卡锁定"))
+      ?.click()
+  );
+  await page.waitForSelector('[data-user-operation-dialog="bankCardLocked"]');
+  await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find(item => item.textContent?.trim() === "取消")
+      ?.click()
+  );
 
   const menuGroups = {
     账户系统: [
@@ -639,5 +764,5 @@ try {
 }
 
 console.log(
-  `ADMIN_051_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 viewports=1440x900,390x844`
+  `ADMIN_052_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 account_menus=all viewports=1440x900,390x844`
 );

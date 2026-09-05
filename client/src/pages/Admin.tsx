@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Clock3,
   Coins,
-  Copy,
   ContactRound,
   Download,
   FileClock,
@@ -58,6 +57,18 @@ const LOGO =
   "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/cBQkYfNchSuunZhX.png";
 type IconType = typeof Home;
 type UserStatus = "Active" | "Restricted" | "Disabled" | "PendingDeletion";
+type UserOperationKind =
+  | "sameIp"
+  | "inviteSource"
+  | "displayName"
+  | "loginIpRestriction"
+  | "forceOffline"
+  | "accountLocked"
+  | "loginLocked"
+  | "bankCardLocked"
+  | "cancellationEnabled"
+  | "redFlagged"
+  | "password";
 type PageId =
   | "home"
   | "account-users"
@@ -618,7 +629,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.5.1
+                ADMIN 0.5.2
               </div>
             </div>
           </a>
@@ -941,8 +952,12 @@ function UsersPanel({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [menuId, setMenuId] = useState<string>();
+  const [statusMenuId, setStatusMenuId] = useState<string>();
+  const [operation, setOperation] = useState<{
+    user: AdminUser;
+    kind: UserOperationKind;
+  }>();
   const [createMode, setCreateMode] = useState<"single" | "batch">();
-  const [busy, setBusy] = useState(false);
   const path = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
@@ -967,46 +982,6 @@ function UsersPanel({
     totalPages: 1,
   });
 
-  async function request(path: string, init: RequestInit, success: string) {
-    setBusy(true);
-    try {
-      await api(path, init);
-      toast.success(success);
-      setMenuId(undefined);
-      reload();
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "操作失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-  const change = (user: AdminUser, next: UserStatus) =>
-    request(
-      `/api/admin/users/${user.account}/status`,
-      {
-        method: "POST",
-        body: JSON.stringify({ status: next, reason: "后台用户管理" }),
-      },
-      "用户状态已更新"
-    );
-  const profile = (user: AdminUser, values: Record<string, string>) =>
-    request(
-      `/api/admin/users/${user.account}/profile`,
-      { method: "PUT", body: JSON.stringify(values) },
-      "用户资料已更新"
-    );
-  const security = (
-    user: AdminUser,
-    values: Record<string, boolean | number | string>
-  ) =>
-    request(
-      `/api/admin/users/${user.account}/security`,
-      {
-        method: "PUT",
-        body: JSON.stringify({ ...values, reason: "后台用户管理" }),
-      },
-      "用户安全状态已更新"
-    );
   async function exportUsers() {
     const response = await authorizedFetch(
       `/api/admin/users/export?${path.split("?")[1]}`
@@ -1019,57 +994,10 @@ function UsersPanel({
     link.click();
     URL.revokeObjectURL(url);
   }
-  async function sameIp(user: AdminUser) {
-    const matches = await api<
-      { account: string; displayName: string; lastLoginIp: string }[]
-    >(`/api/admin/users/${user.account}/same-ip`);
-    toast.info(
-      matches.length
-        ? matches.map(x => `${x.displayName}(@${x.account})`).join("、")
-        : "未发现同登录 IP 的其他账号",
-      { duration: 7000 }
-    );
+  const openOperation = (user: AdminUser, kind: UserOperationKind) => {
+    setOperation({ user, kind });
     setMenuId(undefined);
-  }
-  const askProfile = (
-    user: AdminUser,
-    field: "displayName" | "inviteSource" | "loginIpRestriction",
-    label: string,
-    current: string
-  ) => {
-    const value = window.prompt(label, current);
-    if (value !== null) profile(user, { [field]: value });
-  };
-  const resetPassword = (user: AdminUser) => {
-    const password = window.prompt(
-      `为 @${user.account} 设置新登录密码（至少 8 位）`
-    );
-    if (password)
-      request(
-        `/api/admin/users/${user.account}/password`,
-        { method: "PUT", body: JSON.stringify({ password }) },
-        "登录密码已重置，原设备已下线"
-      );
-  };
-  const duplicate = (user: AdminUser) => {
-    const account = window.prompt("输入新用户账号");
-    if (!account) return;
-    const password = window.prompt("输入新用户初始密码（至少 8 位）");
-    if (!password) return;
-    request(
-      `/api/admin/users/${user.account}/duplicate`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          account,
-          password,
-          displayName: `${user.displayName} 副本`,
-          mobilePhone: "",
-          inviteSource: user.inviteSource,
-        }),
-      },
-      "用户已复制"
-    );
+    setStatusMenuId(undefined);
   };
   const filter = (key: keyof typeof draft, value: string) =>
     setDraft(current => ({ ...current, [key]: value }));
@@ -1451,158 +1379,142 @@ function UsersPanel({
                     className={`${user.redFlagged ? "bg-rose-50" : "bg-white"} border-b border-slate-200 hover:bg-amber-50/40`}
                   >
                     <td
-                      className={`sticky left-0 z-10 border-r border-slate-200 p-2 ${user.redFlagged ? "bg-rose-50" : "bg-white"}`}
+                      className={`sticky left-0 ${menuId === user.id ? "z-40" : "z-10"} border-r border-slate-200 p-2 ${user.redFlagged ? "bg-rose-50" : "bg-white"}`}
                     >
-                      {user.id !== currentUserId ? (
-                        <div className="relative">
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              setMenuId(value =>
-                                value === user.id ? undefined : user.id
-                              )
-                            }
-                            className="flex items-center gap-1 bg-sky-600 px-3 py-1.5 font-medium text-white"
-                          >
-                            <MoreHorizontal size={14} />
-                            操作
-                          </button>
-                          {menuId === user.id && (
-                            <div className="user-action-menu absolute left-0 top-9 z-50 w-44 border border-slate-200 bg-white py-1 text-sm shadow-xl">
-                              <button onClick={() => sameIp(user)}>
-                                同IP会员检测
-                              </button>
-                              <button onClick={() => duplicate(user)}>
-                                <Copy size={13} />
-                                复制用户
-                              </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            setMenuId(value =>
+                              value === user.id ? undefined : user.id
+                            );
+                            setStatusMenuId(undefined);
+                          }}
+                          className="flex items-center gap-1 bg-sky-600 px-3 py-1.5 font-medium text-white"
+                        >
+                          <MoreHorizontal size={14} />
+                          操作
+                        </button>
+                        {menuId === user.id && (
+                          <div className="user-action-menu absolute left-0 top-9 z-50 w-44 border border-slate-200 bg-white py-1 text-sm shadow-xl">
+                            <button
+                              onClick={() => openOperation(user, "sameIp")}
+                            >
+                              <Search size={14} />
+                              同IP会员检测
+                            </button>
+                            <button
+                              onClick={() =>
+                                openOperation(user, "inviteSource")
+                              }
+                            >
+                              修改邀请码
+                            </button>
+                            <button
+                              onClick={() => openOperation(user, "displayName")}
+                            >
+                              修改用户昵称
+                            </button>
+                            <button
+                              onClick={() =>
+                                openOperation(user, "loginIpRestriction")
+                              }
+                            >
+                              限制登录IP
+                            </button>
+                            <div className="user-status-trigger relative">
                               <button
+                                onMouseEnter={() => setStatusMenuId(user.id)}
                                 onClick={() =>
-                                  askProfile(
-                                    user,
-                                    "inviteSource",
-                                    "修改邀请码来源",
-                                    user.inviteSource
+                                  setStatusMenuId(value =>
+                                    value === user.id ? undefined : user.id
                                   )
                                 }
                               >
-                                修改邀请码
+                                <span>状态变更</span>
+                                <ChevronRight className="ml-auto" size={15} />
                               </button>
-                              <button
-                                onClick={() =>
-                                  askProfile(
-                                    user,
-                                    "displayName",
-                                    "修改用户昵称",
-                                    user.displayName
-                                  )
-                                }
-                              >
-                                修改用户昵称
-                              </button>
-                              <button
-                                onClick={() =>
-                                  askProfile(
-                                    user,
-                                    "loginIpRestriction",
-                                    "限制登录 IP（多个用逗号分隔，留空解除）",
-                                    user.loginIpRestriction
-                                  )
-                                }
-                              >
-                                限制登录IP
-                              </button>
-                              <button
-                                onClick={() =>
-                                  request(
-                                    `/api/admin/users/${user.account}/sessions/revoke`,
-                                    { method: "POST" },
-                                    "用户已强制下线"
-                                  )
-                                }
-                              >
-                                强制下线
-                              </button>
-                              <button
-                                onClick={() =>
-                                  security(user, {
-                                    accountLocked: !user.accountLocked,
-                                  })
-                                }
-                              >
-                                {user.accountLocked
-                                  ? "解除账号锁定"
-                                  : "账号锁定"}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  security(user, {
-                                    loginLocked: !user.loginLocked,
-                                  })
-                                }
-                              >
-                                {user.loginLocked ? "解除登录锁定" : "登录锁定"}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  security(user, {
-                                    bankCardLocked: !user.bankCardLocked,
-                                  })
-                                }
-                              >
-                                {user.bankCardLocked
-                                  ? "解除银行卡锁定"
-                                  : "银行卡锁定"}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  security(user, {
-                                    cancellationEnabled:
-                                      !user.cancellationEnabled,
-                                  })
-                                }
-                              >
-                                {user.cancellationEnabled
-                                  ? "取消注销"
-                                  : "注销开启"}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  security(user, {
-                                    redFlagged: !user.redFlagged,
-                                  })
-                                }
-                              >
-                                {user.redFlagged ? "取消红号" : "设置红号"}
-                              </button>
-                              <button onClick={() => resetPassword(user)}>
-                                重置登录密码
-                              </button>
-                              {user.status === "Active" ? (
-                                <>
+                              {statusMenuId === user.id && (
+                                <div
+                                  className="user-status-submenu"
+                                  onMouseLeave={() =>
+                                    setStatusMenuId(undefined)
+                                  }
+                                >
                                   <button
-                                    onClick={() => change(user, "Restricted")}
+                                    disabled={user.id === currentUserId}
+                                    onClick={() =>
+                                      openOperation(user, "forceOffline")
+                                    }
                                   >
-                                    限制账户
+                                    强制下线
                                   </button>
                                   <button
-                                    className="danger"
-                                    onClick={() => change(user, "Disabled")}
+                                    disabled={
+                                      user.id === currentUserId &&
+                                      !user.accountLocked
+                                    }
+                                    onClick={() =>
+                                      openOperation(user, "accountLocked")
+                                    }
                                   >
-                                    停用账户
+                                    {user.accountLocked
+                                      ? "解除账户锁定"
+                                      : "账户锁定"}
                                   </button>
-                                </>
-                              ) : (
-                                <button onClick={() => change(user, "Active")}>
-                                  恢复正常
-                                </button>
+                                  <button
+                                    disabled={
+                                      user.id === currentUserId &&
+                                      !user.loginLocked
+                                    }
+                                    onClick={() =>
+                                      openOperation(user, "loginLocked")
+                                    }
+                                  >
+                                    {user.loginLocked
+                                      ? "解除登录锁定"
+                                      : "登录锁定"}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      openOperation(user, "bankCardLocked")
+                                    }
+                                  >
+                                    {user.bankCardLocked
+                                      ? "解除银行卡锁定"
+                                      : "银行卡锁定"}
+                                  </button>
+                                  <button
+                                    disabled={
+                                      user.id === currentUserId &&
+                                      !user.cancellationEnabled
+                                    }
+                                    onClick={() =>
+                                      openOperation(user, "cancellationEnabled")
+                                    }
+                                  >
+                                    {user.cancellationEnabled
+                                      ? "取消注销"
+                                      : "注销开启"}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      openOperation(user, "redFlagged")
+                                    }
+                                  >
+                                    {user.redFlagged ? "取消红号" : "设置红号"}
+                                  </button>
+                                </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">当前账号</span>
-                      )}
+                            <button
+                              onClick={() => openOperation(user, "password")}
+                            >
+                              <KeyRound size={14} />
+                              登录密码
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2" title={user.id}>
                       {user.id.slice(0, 8)}
@@ -1704,6 +1616,302 @@ function UsersPanel({
           }}
         />
       )}
+      {operation && (
+        <UserOperationDialog
+          key={`${operation.user.id}:${operation.kind}`}
+          operation={operation}
+          currentUserId={currentUserId}
+          onClose={() => setOperation(undefined)}
+          onSaved={() => {
+            setOperation(undefined);
+            reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function UserOperationDialog({
+  operation,
+  currentUserId,
+  onClose,
+  onSaved,
+}: {
+  operation: { user: AdminUser; kind: UserOperationKind };
+  currentUserId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { user, kind } = operation;
+  const initialValue =
+    kind === "inviteSource"
+      ? user.inviteSource
+      : kind === "displayName"
+        ? user.displayName
+        : kind === "loginIpRestriction"
+          ? user.loginIpRestriction
+          : "";
+  const [value, setValue] = useState(initialValue);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [reason, setReason] = useState("后台账号操作菜单");
+  const [matches, setMatches] = useState<
+    { id: string; account: string; displayName: string; lastLoginIp: string }[]
+  >([]);
+  const [loading, setLoading] = useState(kind === "sameIp");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (kind !== "sameIp") return;
+    api<
+      {
+        id: string;
+        account: string;
+        displayName: string;
+        lastLoginIp: string;
+      }[]
+    >(`/api/admin/users/${user.account}/same-ip`)
+      .then(setMatches)
+      .catch(cause =>
+        toast.error(cause instanceof Error ? cause.message : "同 IP 检测失败")
+      )
+      .finally(() => setLoading(false));
+  }, [kind, user.account]);
+
+  const labels: Record<UserOperationKind, string> = {
+    sameIp: "同IP会员检测",
+    inviteSource: "修改邀请码",
+    displayName: "修改用户昵称",
+    loginIpRestriction: "限制登录IP",
+    forceOffline: "强制下线",
+    accountLocked: user.accountLocked ? "解除账户锁定" : "账户锁定",
+    loginLocked: user.loginLocked ? "解除登录锁定" : "登录锁定",
+    bankCardLocked: user.bankCardLocked ? "解除银行卡锁定" : "银行卡锁定",
+    cancellationEnabled: user.cancellationEnabled ? "取消注销" : "注销开启",
+    redFlagged: user.redFlagged ? "取消红号" : "设置红号",
+    password: "登录密码",
+  };
+  const profileKinds: UserOperationKind[] = [
+    "inviteSource",
+    "displayName",
+    "loginIpRestriction",
+  ];
+  const securityKinds: UserOperationKind[] = [
+    "accountLocked",
+    "loginLocked",
+    "bankCardLocked",
+    "cancellationEnabled",
+    "redFlagged",
+  ];
+  const destructive = [
+    "forceOffline",
+    "accountLocked",
+    "loginLocked",
+    "cancellationEnabled",
+  ].includes(kind);
+
+  async function submit() {
+    setBusy(true);
+    try {
+      if (profileKinds.includes(kind)) {
+        const field = kind as
+          | "inviteSource"
+          | "displayName"
+          | "loginIpRestriction";
+        await api(`/api/admin/users/${user.account}/profile`, {
+          method: "PUT",
+          body: JSON.stringify({ [field]: value }),
+        });
+      } else if (kind === "password") {
+        if (value.length < 8 || value.length > 72)
+          throw new Error("登录密码长度需为 8–72 位");
+        if (value !== confirmPassword) throw new Error("两次输入的密码不一致");
+        await api(`/api/admin/users/${user.account}/password`, {
+          method: "PUT",
+          body: JSON.stringify({ password: value }),
+        });
+      } else if (kind === "forceOffline") {
+        await api(`/api/admin/users/${user.account}/sessions/revoke`, {
+          method: "POST",
+        });
+      } else if (securityKinds.includes(kind)) {
+        const current = {
+          accountLocked: user.accountLocked,
+          loginLocked: user.loginLocked,
+          bankCardLocked: user.bankCardLocked,
+          cancellationEnabled: user.cancellationEnabled,
+          redFlagged: user.redFlagged,
+        }[
+          kind as Exclude<
+            UserOperationKind,
+            | "sameIp"
+            | "inviteSource"
+            | "displayName"
+            | "loginIpRestriction"
+            | "forceOffline"
+            | "password"
+          >
+        ];
+        await api(`/api/admin/users/${user.account}/security`, {
+          method: "PUT",
+          body: JSON.stringify({ [kind]: !current, reason }),
+        });
+      }
+      toast.success(`${labels[kind]}已完成`);
+      if (kind === "password" && user.id === currentUserId) {
+        setSession(null);
+        window.location.assign("/admin");
+        return;
+      }
+      onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "账号操作失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-4"
+      role="dialog"
+      aria-modal="true"
+      data-user-operation-dialog={kind}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-600">
+              账号操作
+            </p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">
+              {labels[kind]}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {user.displayName} · @{user.account}
+              {user.id === currentUserId ? " · 当前管理账号" : ""}
+            </p>
+          </div>
+          <button onClick={onClose} aria-label="关闭">
+            <X />
+          </button>
+        </div>
+
+        {kind === "sameIp" ? (
+          <div className="mt-5">
+            <div className="rounded-xl bg-slate-50 p-4 text-sm">
+              <span className="text-slate-500">最后登录 IP：</span>
+              <b>{user.lastLoginIp || "尚无登录记录"}</b>
+            </div>
+            {loading ? (
+              <Loading />
+            ) : matches.length ? (
+              <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200">
+                {matches.map(match => (
+                  <div
+                    key={match.id}
+                    className="flex items-center justify-between border-b border-slate-100 px-4 py-3 text-sm last:border-0"
+                  >
+                    <div>
+                      <b>{match.displayName}</b>
+                      <p className="text-xs text-slate-500">@{match.account}</p>
+                    </div>
+                    <code className="text-xs text-slate-500">
+                      {match.lastLoginIp}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="未发现同登录 IP 的其他账号" />
+            )}
+          </div>
+        ) : profileKinds.includes(kind) ? (
+          <div className="mt-5 space-y-2">
+            <label className="text-sm font-medium text-slate-700">
+              {kind === "inviteSource"
+                ? "邀请码 / 邀请来源"
+                : kind === "displayName"
+                  ? "用户昵称"
+                  : "允许登录的 IP"}
+            </label>
+            {kind === "loginIpRestriction" ? (
+              <textarea
+                value={value}
+                onChange={event => setValue(event.target.value)}
+                rows={5}
+                className="admin-input font-mono text-sm"
+                placeholder="多个 IP 使用逗号或换行分隔；留空表示解除限制"
+              />
+            ) : (
+              <input
+                value={value}
+                onChange={event => setValue(event.target.value)}
+                className="admin-input"
+                maxLength={60}
+              />
+            )}
+          </div>
+        ) : kind === "password" ? (
+          <div className="mt-5 space-y-3">
+            <input
+              value={value}
+              onChange={event => setValue(event.target.value)}
+              type="password"
+              className="admin-input"
+              placeholder="新登录密码（8–72 位）"
+              autoComplete="new-password"
+            />
+            <input
+              value={confirmPassword}
+              onChange={event => setConfirmPassword(event.target.value)}
+              type="password"
+              className="admin-input"
+              placeholder="再次输入新登录密码"
+              autoComplete="new-password"
+            />
+            <p className="text-xs text-amber-700">
+              保存后该账号全部设备会话将立即失效。
+            </p>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            <div
+              className={`rounded-xl border p-4 text-sm ${destructive ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+            >
+              即将对 <b>@{user.account}</b> 执行“{labels[kind]}”。
+              {kind === "forceOffline" ||
+              kind === "accountLocked" ||
+              kind === "loginLocked" ||
+              kind === "cancellationEnabled"
+                ? " 此操作可能使现有设备立即离线。"
+                : ""}
+            </div>
+            <textarea
+              value={reason}
+              onChange={event => setReason(event.target.value)}
+              rows={3}
+              className="admin-input"
+              placeholder="操作原因（将写入审计日志）"
+            />
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onClose} className="admin-secondary">
+            {kind === "sameIp" ? "关闭" : "取消"}
+          </button>
+          {kind !== "sameIp" && (
+            <button
+              disabled={busy}
+              onClick={submit}
+              className={`${destructive ? "admin-danger" : "admin-primary"} !w-auto`}
+            >
+              {busy ? "处理中…" : "确认执行"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
