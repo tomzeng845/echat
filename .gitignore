@@ -118,3 +118,7 @@ client/public/__manus__/version.json
 **/obj/
 Api/wwwroot/
 Api/.media/
+
+# Reproducible Android source/build artifacts kept outside WebDev checkpoints
+assets/icon.png
+releases/*.apk

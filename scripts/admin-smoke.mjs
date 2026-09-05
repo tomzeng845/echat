@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.7.1" || overview.metrics.users < 1)
+if (overview.version !== "0.8.0" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -637,7 +637,7 @@ try {
   )
     throw new Error(`status menu invalid: ${JSON.stringify(statusMenu)}`);
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.7.1.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.8.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -659,7 +659,7 @@ try {
   );
   await page.waitForSelector('[data-user-operation-dialog="inviteSource"]');
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.7.1.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.8.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -841,5 +841,5 @@ try {
 }
 
 console.log(
-  `ADMIN_071_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
+  `ADMIN_080_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );

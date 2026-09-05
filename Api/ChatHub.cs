@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace EChat.Api;
 
 [Authorize]
-public sealed class ChatHub(IChatRepository repository, IConfiguration configuration) : Hub
+public sealed class ChatHub(IChatRepository repository, IConfiguration configuration, PushNotificationService push) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -43,6 +43,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         if (existing is null) await repository.UpsertCallAsync(new CallRecord { Id = callId, ConversationId = conversationId, CallerId = caller.Id, Mode = mode, ParticipantIds = participants });
         else if (existing.CallerId != caller.Id || existing.ConversationId != conversationId) throw new HubException("CALL_ID_CONFLICT");
         await Clients.OthersInGroup($"conversation:{conversation.Id}").SendAsync("call.invited", new { conversationId, callId, mode, callerId = caller.Id, callerName = caller.DisplayName, callerAvatarUrl = caller.AvatarUrl });
+        _ = push.SendCallInviteAsync(participants.Where(x => x != caller.Id), caller, conversationId, callId, mode, CancellationToken.None);
     }
 
     public async Task CallAccept(string conversationId, string callId)

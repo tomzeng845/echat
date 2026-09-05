@@ -1,5 +1,22 @@
 # E聊开发跟踪
 
+## Android APP 0.8.0 验收清单
+
+- [x] 使用 Capacitor 8 生成包名 `com.echat.app` 的原生 Android 工程
+- [x] Android 本地 Web 资源的 REST、刷新令牌与 SignalR 统一连接可配置 HTTPS API
+- [x] 后端实现 FCM HTTP v1 OAuth 认证、推送令牌注册/查询/停用与 MongoDB/内存持久化
+- [x] 新消息、好友申请和音视频来电触发高优先级 Android 通知
+- [x] 通知载荷不包含端到端加密消息明文，点击通知可跳转到会话或好友申请
+- [x] Android 13+ 运行时请求通知权限并创建消息、通话两个通知频道
+- [x] 扫码、语音录制与音视频通话按需请求摄像头/麦克风原生权限
+- [x] Capacitor System Bars 安全区适配刘海、挖孔、状态栏和底部手势/三键导航栏
+- [x] 移动端底部菜单、聊天输入栏和后台布局使用安全区后的可用高度
+- [x] 使用现有 E聊品牌图生成 Android 自适应图标、启动屏和单色通知图标
+- [x] FCM 客户端文件、服务账号和 Android 签名密钥不写入仓库
+- [x] xUnit 推送设备测试通过，完整 xUnit 共 17 项
+- [x] Android Gradle 单元测试、lint 和 debug APK 组装通过
+- [ ] 使用项目方 Firebase `google-services.json` 和服务账号完成真机 FCM 实发验证
+
 ## GeoIP 0.7.1 验收清单
 
 - [x] 使用可配置 HTTPS `ipwho.is` 接口，把公网 IP 解析为中文国家、省州和城市

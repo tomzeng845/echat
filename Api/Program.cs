@@ -18,7 +18,9 @@ builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddSingleton<GeoIpService>();
+builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
 var mongoConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI"));
@@ -50,7 +52,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 builder.Services.AddAuthorization();
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => builder.Environment.IsDevelopment()).AllowCredentials()));
+var configuredOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .SetIsOriginAllowed(origin => builder.Environment.IsDevelopment()
+        || origin.Equals("https://localhost", StringComparison.OrdinalIgnoreCase)
+        || origin.Equals("capacitor://localhost", StringComparison.OrdinalIgnoreCase)
+        || configuredOrigins.Contains(origin))
+    .AllowCredentials()));
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -107,13 +119,14 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp) => Results.Ok(new
+app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.7.1",
+    version = "0.8.0",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },
+    push = new { enabled = push.Enabled, provider = push.Provider },
     utcNow = DateTime.UtcNow
 }));
 app.MapFallbackToFile("index.html");

@@ -303,6 +303,25 @@ public sealed class CoreTests
         Assert.Equal(1, calls);
     }
 
+    [Fact]
+    public async Task PushDevices_AreUpsertedDeduplicatedAndDisabledPerUser()
+    {
+        var repository = new InMemoryChatRepository();
+        await repository.UpsertPushDeviceAsync(new PushDevice { UserId = "u1", DeviceId = "android-device-1", Token = new string('a', 64), AppVersion = "0.8.0" });
+        await repository.UpsertPushDeviceAsync(new PushDevice { UserId = "u1", DeviceId = "android-device-1", Token = new string('b', 64), AppVersion = "0.8.1" });
+        await repository.UpsertPushDeviceAsync(new PushDevice { UserId = "u2", DeviceId = "android-device-2", Token = new string('c', 64), AppVersion = "0.8.0" });
+
+        var userOne = await repository.GetPushDevicesAsync(["u1"]);
+        Assert.Single(userOne);
+        Assert.Equal(new string('b', 64), userOne[0].Token);
+        Assert.Equal("0.8.1", userOne[0].AppVersion);
+        Assert.Equal(2, (await repository.GetPushDevicesAsync(["u1", "u2"])).Count);
+
+        await repository.DisablePushDeviceAsync("u1", "android-device-1");
+        Assert.Empty(await repository.GetPushDevicesAsync(["u1"]));
+        Assert.Single(await repository.GetPushDevicesAsync(["u2"]));
+    }
+
     private sealed class StubHttpClientFactory(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(new StubHandler(responder), disposeHandler: true);

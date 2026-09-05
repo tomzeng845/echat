@@ -5,14 +5,13 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/p1")]
-public sealed class CapabilitiesController(IConfiguration configuration) : ControllerBase
+public sealed class CapabilitiesController(IConfiguration configuration, PushNotificationService pushNotifications) : ControllerBase
 {
     [HttpGet("capabilities")]
     public IActionResult Get()
     {
         var turn = !string.IsNullOrWhiteSpace(configuration["Rtc:TurnUrls"] ?? Environment.GetEnvironmentVariable("TURN_URLS")) && !string.IsNullOrWhiteSpace(configuration["Rtc:TurnSecret"] ?? Environment.GetEnvironmentVariable("TURN_SECRET"));
         var sfu = !string.IsNullOrWhiteSpace(configuration["Rtc:SfuUrl"] ?? Environment.GetEnvironmentVariable("SFU_URL"));
-        var push = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FCM_SERVICE_ACCOUNT")) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("APNS_KEY"));
         return Ok(new
         {
             qrLogin = "ready",
@@ -22,7 +21,7 @@ public sealed class CapabilitiesController(IConfiguration configuration) : Contr
             momentPrivacy = "ready",
             momentReports = "ready",
             mediaProcessing = "metadata-only",
-            push = push ? "configured" : "not-configured",
+            push = pushNotifications.Enabled ? "android-fcm-configured" : "android-fcm-ready-needs-credentials",
             turn = turn ? "configured" : "stun-only",
             sfu = sfu ? "configured" : "p2p-up-to-4"
         });

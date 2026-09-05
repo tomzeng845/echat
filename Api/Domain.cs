@@ -80,6 +80,20 @@ public sealed class RefreshSession
     public string RevokedReason { get; set; } = "";
 }
 
+public sealed class PushDevice
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string UserId { get; set; } = "";
+    public string DeviceId { get; set; } = "";
+    public string Token { get; set; } = "";
+    public string Platform { get; set; } = "android";
+    public string AppVersion { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime LastSeenAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? DisabledAtUtc { get; set; }
+}
+
 public sealed class QrLoginChallenge
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -298,6 +312,8 @@ public sealed record ContactQrResponse(string QrPayload, DateTime ExpiresAtUtc);
 public sealed record ContactQrRequest(string Token);
 public sealed record ContactQrPreview(UserView User, DateTime ExpiresAtUtc);
 public sealed record DeviceSessionView(string Id, string DeviceId, string DeviceName, DateTime CreatedAtUtc, DateTime LastSeenAtUtc, bool Current);
+public sealed record RegisterPushDeviceRequest(string DeviceId, string Token, string Platform = "android", string AppVersion = "");
+public sealed record PushDeviceView(string DeviceId, string Platform, string AppVersion, DateTime LastSeenAtUtc, bool Enabled);
 public sealed record LogoutRequest(string? RefreshToken = null);
 public sealed record MomentReportRequest(string Reason, string Detail = "");
 public sealed record CallRecordView(string Id, string ConversationId, string ConversationName, string CallerId, string Mode, CallRecordStatus Status, DateTime StartedAtUtc, DateTime? AnsweredAtUtc, DateTime? EndedAtUtc, string EndReason);

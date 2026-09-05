@@ -18,6 +18,10 @@ public interface IChatRepository
     Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default);
     Task<long> CountActiveSessionsAsync(CancellationToken ct = default);
     Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default);
+    Task<PushDevice> UpsertPushDeviceAsync(PushDevice device, CancellationToken ct = default);
+    Task<IReadOnlyList<PushDevice>> GetPushDevicesAsync(IEnumerable<string> userIds, CancellationToken ct = default);
+    Task DisablePushDeviceAsync(string userId, string deviceId, CancellationToken ct = default);
+    Task DisablePushTokenAsync(string token, CancellationToken ct = default);
     Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default);
     Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default);
     Task<bool> TryUpdateQrLoginAsync(string id, QrLoginStatus expected, QrLoginStatus next, string? userId = null, CancellationToken ct = default);

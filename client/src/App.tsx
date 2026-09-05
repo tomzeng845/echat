@@ -13,7 +13,19 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          {isAdmin ? <Suspense fallback={<div className="grid min-h-screen place-items-center bg-[#071421] text-sm text-teal-200">正在加载 E聊控制台…</div>}><Admin /></Suspense> : <Home />}
+          {isAdmin ? (
+            <Suspense
+              fallback={
+                <div className="grid min-h-full place-items-center bg-[#071421] text-sm text-teal-200">
+                  正在加载 E聊控制台…
+                </div>
+              }
+            >
+              <Admin />
+            </Suspense>
+          ) : (
+            <Home />
+          )}
           <Toaster position="top-center" richColors />
         </TooltipProvider>
       </ThemeProvider>

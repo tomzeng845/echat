@@ -192,3 +192,17 @@ GeoIP 单元测试使用模拟 HTTP 响应验证中文国家/省州/城市拼接
 ### GeoIP 0.7.1 最终结果
 
 `pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项与 xUnit 16 项全部通过；`pnpm build` 生产构建成功。全量业务回归依次返回 `E2E_OK`、`ADMIN_REQUIREMENTS_071_OK`、`ADMIN_071_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844` 和 `GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`。GeoIP 只表示基于公网 IP 的近似地区，不表示精确物理住址。
+
+## 2026-09-06 Android APP 0.8.0 验证
+
+Capacitor 8.5.1 已生成包名 `com.echat.app` 的原生 Android 工程，`aapt dump badging` 确认 `versionCode=8`、`versionName=0.8.0`、`minSdkVersion=24`、`targetSdkVersion=36`。Manifest 包含 Internet、Camera、Record Audio、Modify Audio Settings、Post Notifications、Vibrate 与 Wake Lock 权限，并把摄像头和麦克风声明为非强制硬件能力。Gradle `testDebugUnitTest lintDebug assembleDebug` 完整通过；最终 APK 使用 Android debug 证书和 APK Signature Scheme v2 验证成功，大小约 7.1 MB，SHA-256 为 `49b9011dc2da37a8dbbaec647d2a7fa372c8c74df07c0cfe0ffc6436c6d4c842`。
+
+Android WebView 构建内置生产 API 地址 `https://echatapp-favrlscm.manus.space`；REST、刷新令牌和 SignalR 均通过统一地址解析。临时 Production 实例的 CORS 回归确认 `https://localhost` 返回 `Access-Control-Allow-Origin`，非白名单 `https://evil.example` 不返回该响应头。Android Manifest 禁止明文 HTTP。
+
+Capacitor System Bars 以 CSS 变量注入系统 inset。`android-safe-area-smoke.mjs` 在 390×844 视口模拟顶部 30 px 刘海、左右 8 px 挖孔和底部 34 px 系统导航栏，结果为 `ANDROID_SAFE_AREA_OK`：主界面边界为 `top=30, right=382, bottom=810, left=8`，底部 APP 菜单按钮最下缘为 810，没有进入系统导航区域。扫码、语音录制和音视频通话分别在操作前请求 Camera、Microphone 或两者权限；Capacitor WebChromeClient 再完成 WebView 媒体授权。
+
+服务端新增 FCM HTTP v1 OAuth 发送、MongoDB/内存推送设备持久化、失效令牌停用及消息、好友申请、音视频来电高优先级通知。通知数据只含事件与资源编号，不含端到端加密消息明文。客户端实现 Android 13+ 通知权限、消息/通话频道、令牌注册、退出注销、前台状态及点击通知跳转。`ANDROID_PUSH_OK provider=Firebase Cloud Messaging server_enabled=false registered=1 disabled=1` 验证设备 API；xUnit 新增令牌更新、用户隔离与停用测试，总数为 17 项。当前未提供项目方 `google-services.json` 和 FCM 服务账号，因此真实设备 FCM 实发尚未执行，health 正确返回 `push.enabled=false`，客户端显示“待配置 FCM”而不影响聊天和媒体能力。
+
+### Android 0.8.0 最终结果
+
+`pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 3 项、xUnit 17 项、生产 Web 构建和 Android APK 构建均通过。完整业务回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_080_OK`、`ADMIN_080_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`、`GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。交付 APK 是便于安装验证的 debug 包；上架应用商店前仍需项目方 Firebase 配置、独立 release 签名、真机通知/通话验证及 AAB 发布流程。

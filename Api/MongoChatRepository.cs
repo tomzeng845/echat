@@ -7,6 +7,7 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<UserAccount> _users;
     private readonly IMongoCollection<InviteCode> _invites;
     private readonly IMongoCollection<RefreshSession> _sessions;
+    private readonly IMongoCollection<PushDevice> _pushDevices;
     private readonly IMongoCollection<QrLoginChallenge> _qrLogins;
     private readonly IMongoCollection<ContactQrToken> _contactQrs;
     private readonly IMongoCollection<FriendRequest> _friendRequests;
@@ -30,6 +31,7 @@ public sealed class MongoChatRepository : IChatRepository
         _users = db.GetCollection<UserAccount>("users");
         _invites = db.GetCollection<InviteCode>("inviteCodes");
         _sessions = db.GetCollection<RefreshSession>("refreshSessions");
+        _pushDevices = db.GetCollection<PushDevice>("pushDevices");
         _qrLogins = db.GetCollection<QrLoginChallenge>("qrLogins");
         _contactQrs = db.GetCollection<ContactQrToken>("contactQrs");
         _friendRequests = db.GetCollection<FriendRequest>("friendRequests");
@@ -55,6 +57,10 @@ public sealed class MongoChatRepository : IChatRepository
         await _momentLikes.Indexes.CreateOneAsync(new CreateIndexModel<MomentLike>(Builders<MomentLike>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentComments.Indexes.CreateOneAsync(new CreateIndexModel<MomentComment>(Builders<MomentComment>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.CreatedAtUtc)), cancellationToken: ct);
         await _sessions.Indexes.CreateOneAsync(new CreateIndexModel<RefreshSession>(Builders<RefreshSession>.IndexKeys.Ascending(x => x.TokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _pushDevices.Indexes.CreateManyAsync([
+            new CreateIndexModel<PushDevice>(Builders<PushDevice>.IndexKeys.Ascending(x => x.UserId).Ascending(x => x.DeviceId), new CreateIndexOptions { Unique = true }),
+            new CreateIndexModel<PushDevice>(Builders<PushDevice>.IndexKeys.Ascending(x => x.Token), new CreateIndexOptions { Unique = true })
+        ], ct);
         await _qrLogins.Indexes.CreateOneAsync(new CreateIndexModel<QrLoginChallenge>(Builders<QrLoginChallenge>.IndexKeys.Ascending(x => x.ScanTokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _contactQrs.Indexes.CreateOneAsync(new CreateIndexModel<ContactQrToken>(Builders<ContactQrToken>.IndexKeys.Ascending(x => x.TokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentReports.Indexes.CreateOneAsync(new CreateIndexModel<MomentReport>(Builders<MomentReport>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.ReporterId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
@@ -107,6 +113,22 @@ public sealed class MongoChatRepository : IChatRepository
         if (!string.IsNullOrWhiteSpace(exceptSessionId)) filter &= Builders<RefreshSession>.Filter.Ne(x => x.Id, exceptSessionId);
         return _sessions.UpdateManyAsync(filter, Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, DateTime.UtcNow).Set(x => x.RevokedReason, reason), cancellationToken: ct);
     }
+    public async Task<PushDevice> UpsertPushDeviceAsync(PushDevice device, CancellationToken ct = default)
+    {
+        device.Id = $"{device.UserId}:{device.DeviceId}";
+        device.Enabled = true;
+        device.DisabledAtUtc = null;
+        device.LastSeenAtUtc = DateTime.UtcNow;
+        await _pushDevices.DeleteManyAsync(x => x.Token == device.Token && x.Id != device.Id, ct);
+        await _pushDevices.ReplaceOneAsync(x => x.Id == device.Id, device, new ReplaceOptions { IsUpsert = true }, ct);
+        return device;
+    }
+    public async Task<IReadOnlyList<PushDevice>> GetPushDevicesAsync(IEnumerable<string> userIds, CancellationToken ct = default) =>
+        await _pushDevices.Find(Builders<PushDevice>.Filter.In(x => x.UserId, userIds) & Builders<PushDevice>.Filter.Eq(x => x.Enabled, true)).ToListAsync(ct);
+    public Task DisablePushDeviceAsync(string userId, string deviceId, CancellationToken ct = default) =>
+        _pushDevices.UpdateOneAsync(x => x.UserId == userId && x.DeviceId == deviceId, Builders<PushDevice>.Update.Set(x => x.Enabled, false).Set(x => x.DisabledAtUtc, DateTime.UtcNow), cancellationToken: ct);
+    public Task DisablePushTokenAsync(string token, CancellationToken ct = default) =>
+        _pushDevices.UpdateManyAsync(x => x.Token == token, Builders<PushDevice>.Update.Set(x => x.Enabled, false).Set(x => x.DisabledAtUtc, DateTime.UtcNow), cancellationToken: ct);
     public Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default) => _qrLogins.InsertOneAsync(challenge, cancellationToken: ct);
     public async Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default) => await _qrLogins.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public async Task<bool> TryUpdateQrLoginAsync(string id, QrLoginStatus expected, QrLoginStatus next, string? userId = null, CancellationToken ct = default)

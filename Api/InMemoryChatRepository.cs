@@ -7,6 +7,7 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, UserAccount> _users = new();
     private readonly ConcurrentDictionary<string, InviteCode> _invites = new();
     private readonly ConcurrentDictionary<string, RefreshSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, PushDevice> _pushDevices = new();
     private readonly ConcurrentDictionary<string, QrLoginChallenge> _qrLogins = new();
     private readonly ConcurrentDictionary<string, ContactQrToken> _contactQrs = new();
     private readonly ConcurrentDictionary<string, FriendRequest> _friendRequests = new();
@@ -81,6 +82,34 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default)
     {
         foreach (var item in _sessions.Values.Where(x => x.UserId == userId && x.Id != exceptSessionId && x.RevokedAtUtc is null)) { item.RevokedAtUtc = DateTime.UtcNow; item.RevokedReason = reason; }
+        return Task.CompletedTask;
+    }
+    public Task<PushDevice> UpsertPushDeviceAsync(PushDevice device, CancellationToken ct = default)
+    {
+        var key = $"{device.UserId}:{device.DeviceId}";
+        var createdAt = _pushDevices.TryGetValue(key, out var existing) ? existing.CreatedAtUtc : device.CreatedAtUtc;
+        device.Id = key;
+        device.CreatedAtUtc = createdAt;
+        device.Enabled = true;
+        device.DisabledAtUtc = null;
+        device.LastSeenAtUtc = DateTime.UtcNow;
+        foreach (var duplicate in _pushDevices.Where(x => x.Key != key && x.Value.Token == device.Token).ToList()) _pushDevices.TryRemove(duplicate.Key, out _);
+        _pushDevices[key] = device;
+        return Task.FromResult(device);
+    }
+    public Task<IReadOnlyList<PushDevice>> GetPushDevicesAsync(IEnumerable<string> userIds, CancellationToken ct = default)
+    {
+        var wanted = userIds.ToHashSet(StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyList<PushDevice>>(_pushDevices.Values.Where(x => wanted.Contains(x.UserId) && x.Enabled).ToList());
+    }
+    public Task DisablePushDeviceAsync(string userId, string deviceId, CancellationToken ct = default)
+    {
+        if (_pushDevices.TryGetValue($"{userId}:{deviceId}", out var device)) { device.Enabled = false; device.DisabledAtUtc = DateTime.UtcNow; }
+        return Task.CompletedTask;
+    }
+    public Task DisablePushTokenAsync(string token, CancellationToken ct = default)
+    {
+        foreach (var device in _pushDevices.Values.Where(x => x.Token == token)) { device.Enabled = false; device.DisabledAtUtc = DateTime.UtcNow; }
         return Task.CompletedTask;
     }
     public Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default) { _qrLogins[challenge.Id] = challenge; return Task.CompletedTask; }

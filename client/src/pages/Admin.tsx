@@ -52,6 +52,7 @@ import {
   type AuthResponse,
 } from "@/lib/echat-api";
 import AuthenticatedMedia from "@/components/AuthenticatedMedia";
+import { apiUrl } from "@/lib/runtime-config";
 import {
   AnnouncementPanel as DocAnnouncementPanel,
   ConversationSearchPanel as DocConversationSearchPanel,
@@ -413,7 +414,7 @@ function AdminLogin({
     previewAdminEnabled?: boolean;
   } | null>(null);
   useEffect(() => {
-    fetch("/api/health")
+    fetch(apiUrl("/api/health"))
       .then(r => r.json())
       .then(setRuntime)
       .catch(() => null);
@@ -472,7 +473,7 @@ function AdminLogin({
     }
   }
   return (
-    <main className="grid min-h-screen bg-[#071421] text-white lg:grid-cols-[1.05fr_.95fr]">
+    <main className="grid min-h-full bg-[#071421] text-white lg:grid-cols-[1.05fr_.95fr]">
       <section className="relative hidden overflow-hidden p-14 lg:flex lg:flex-col lg:justify-between">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,212,191,.18),transparent_38%),radial-gradient(circle_at_90%_85%,rgba(16,185,129,.12),transparent_36%)]" />
         <div className="relative flex items-center gap-3">
@@ -503,7 +504,7 @@ function AdminLogin({
           <span>操作审计</span>
         </div>
       </section>
-      <section className="flex min-h-screen items-center justify-center bg-[#0b1b2a] px-5 py-10">
+      <section className="flex min-h-full items-center justify-center bg-[#0b1b2a] px-5 py-10">
         <div className="w-full max-w-md">
           <div className="rounded-[28px] border border-white/10 bg-white/[.06] p-7 shadow-2xl backdrop-blur sm:p-9">
             <ShieldCheck className="mb-4 text-teal-300" />
@@ -642,7 +643,7 @@ export default function Admin() {
     setAdminSession(null);
   };
   return (
-    <main className="min-h-screen bg-[#f2f4f6] text-slate-900">
+    <main className="min-h-full bg-[#f2f4f6] text-slate-900">
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-[270px] flex-col bg-[#292d32] text-slate-200 shadow-2xl transition-transform duration-200 lg:translate-x-0 ${drawer ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -652,7 +653,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.7.1
+                ADMIN 0.8.0
               </div>
             </div>
           </a>
@@ -724,7 +725,7 @@ export default function Admin() {
           className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
         />
       )}
-      <section className="min-h-screen lg:pl-[270px]">
+      <section className="min-h-full lg:pl-[270px]">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-4 backdrop-blur md:px-7">
           <button
             onClick={() => setDrawer(true)}

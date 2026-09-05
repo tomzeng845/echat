@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/conversations")]
-public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub) : ControllerBase
+public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ConversationView>>> List(CancellationToken ct)
@@ -102,6 +102,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Ciphertext = request.Ciphertext, Nonce = request.Nonce, Algorithm = request.Algorithm, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);
+        _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         return Ok(view);
     }
 

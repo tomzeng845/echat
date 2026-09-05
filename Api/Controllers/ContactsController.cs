@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/contacts")]
-public sealed class ContactsController(IChatRepository repository, IHubContext<ChatHub> hub) : ControllerBase
+public sealed class ContactsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult> List(CancellationToken ct)
@@ -33,6 +33,7 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         var sender = await repository.GetUserByIdAsync(senderId, ct);
         var view = RequestView(item, sender);
         await hub.Clients.Group($"user:{peer.Id}").SendAsync("contact.requested", view, ct);
+        if (sender is not null) _ = push.SendFriendRequestAsync(peer.Id, sender, item, CancellationToken.None);
         return Ok(view);
     }
 
