@@ -19,11 +19,17 @@ public sealed class AdminModulesController(
         "system.roles", "system.announcements", "chat.customer-service", "chat.group-monitors",
         "chat.group-speech", "chat.robots", "chat.red-packet-bot", "chat.group-invites"
     };
+    private static readonly HashSet<string> RolePermissions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "users:read", "users:write", "logs:read", "funds:read", "funds:write", "operators:read",
+        "operators:write", "announcements:write", "errors:read", "conversations:read", "groups:write",
+        "robots:write", "audit:read"
+    };
 
     [HttpGet("modules/{module}")]
     public async Task<ActionResult> ModuleRecords(string module, [FromQuery] int limit = 200, CancellationToken ct = default)
     {
-        if (!EditableModules.Contains(module) && module is not ("account.login-logs" or "account.offline-logs" or "account.feedback" or "account.verifications" or "account.login-ip-decisions" or "fund.subjects" or "fund.adjustments" or "chat.automation-logs" or "system.images" or "system.error-logs" or "chat.bulk-messages" or "system.push" or "system.admin-totp"))
+        if (!EditableModules.Contains(module) && module is not ("account.login-logs" or "account.offline-logs" or "account.feedback" or "account.verifications" or "account.login-ip-decisions" or "fund.subjects" or "fund.adjustments" or "chat.automation-logs" or "system.images" or "system.error-logs" or "chat.bulk-messages" or "system.admin-totp"))
             return NotFound(new { error = "管理模块不存在" });
         return Ok(await repository.GetAdminRecordsAsync(module, Math.Clamp(limit, 1, 500), ct));
     }
@@ -33,12 +39,14 @@ public sealed class AdminModulesController(
     {
         if (!EditableModules.Contains(module)) return BadRequest(new { error = "此模块不允许通用编辑" });
         if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest(new { error = "名称不能为空" });
+        var data = SanitizeData(request.Data);
+        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase) && !ValidPermissions(data)) return BadRequest(new { error = "包含未授权的角色权限" });
         var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = module,
             Name = request.Name.Trim()[..Math.Min(request.Name.Trim().Length, 100)],
             Status = NormalizeStatus(request.Status),
-            Data = SanitizeData(request.Data)
+            Data = data
         }, ct);
         await AuditAsync("module.upsert", module, record.Id, record.Name, ct);
         return Ok(record);
@@ -53,6 +61,7 @@ public sealed class AdminModulesController(
         record.Name = string.IsNullOrWhiteSpace(request.Name) ? record.Name : request.Name.Trim()[..Math.Min(request.Name.Trim().Length, 100)];
         record.Status = NormalizeStatus(request.Status);
         record.Data = SanitizeData(request.Data);
+        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase) && !ValidPermissions(record.Data)) return BadRequest(new { error = "包含未授权的角色权限" });
         await repository.UpsertAdminRecordAsync(record, ct);
         await AuditAsync("module.update", module, id, record.Name, ct);
         return Ok(record);
@@ -105,12 +114,30 @@ public sealed class AdminModulesController(
         return Ok(item);
     }
 
+    [HttpPost("feedback/seen")]
+    public async Task<ActionResult> MarkFeedbackSeen(AdminFeedbackSeenRequest request, CancellationToken ct)
+    {
+        var updated = 0;
+        foreach (var id in request.Ids.Distinct().Take(200))
+        {
+            var item = await repository.GetAdminRecordAsync(id, ct);
+            if (item is null || item.Module != "account.feedback") continue;
+            item.Data["seen"] = "true";
+            item.Data["seenAtUtc"] = DateTime.UtcNow.ToString("O");
+            item.Data["seenBy"] = User.Identity?.Name ?? "admin";
+            await repository.UpsertAdminRecordAsync(item, ct);
+            updated++;
+        }
+        await AuditAsync("feedback.seen", "feedback", "batch", $"updated={updated}", ct);
+        return Ok(new { updated });
+    }
+
     [HttpPost("wallet/adjust")]
     public async Task<ActionResult> AdjustWallet(AdminWalletAdjustmentRequest request, CancellationToken ct)
     {
         if (request.Amount == 0 || Math.Abs(request.Amount) > 1_000_000) return BadRequest(new { error = "调整金额需在 ±1,000,000 且不能为 0" });
         var user = await repository.GetUserByAccountAsync(request.Account.Trim().ToLowerInvariant(), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         var walletId = $"wallet:{user.Id}";
         var wallet = await repository.GetAdminRecordAsync(walletId, ct) ?? new AdminModuleRecord { Id = walletId, Module = "fund.wallets", Name = user.Account, Data = new Dictionary<string, string> { ["balance"] = "0" } };
         decimal.TryParse(wallet.Data.GetValueOrDefault("balance"), NumberStyles.Number, CultureInfo.InvariantCulture, out var before);
@@ -138,7 +165,7 @@ public sealed class AdminModulesController(
     {
         var users = await repository.GetUsersAsync(null, null, 200, ct);
         var result = new List<object>();
-        foreach (var user in users)
+        foreach (var user in users.Where(x => x.Role == UserRole.User))
         {
             var wallet = await repository.GetAdminRecordAsync($"wallet:{user.Id}", ct);
             result.Add(new { user.Id, user.Account, user.DisplayName, balance = wallet?.Data.GetValueOrDefault("balance", user.AccountBalance.ToString("0.00", CultureInfo.InvariantCulture)) ?? user.AccountBalance.ToString("0.00", CultureInfo.InvariantCulture) });
@@ -147,7 +174,7 @@ public sealed class AdminModulesController(
     }
 
     [HttpGet("operators")]
-    public async Task<ActionResult> Operators(CancellationToken ct) => Ok((await repository.GetUsersAsync(null, null, 200, ct)).Where(x => x.Role != UserRole.User).Select(SessionService.View));
+    public async Task<ActionResult> Operators(CancellationToken ct) => Ok((await repository.GetUsersAsync(null, null, 200, ct)).Where(x => x.Role == UserRole.Admin).Select(SessionService.View));
 
     [HttpPost("operators")]
     public async Task<ActionResult> CreateOperator(AdminAccountCreateRequest request, CancellationToken ct)
@@ -155,9 +182,8 @@ public sealed class AdminModulesController(
         var account = request.Account.Trim().ToLowerInvariant();
         if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(new { error = "账号格式无效" });
         if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" });
-        if (request.Role == UserRole.User) return BadRequest(new { error = "管理账号必须分配管理角色" });
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(new { error = "账号已存在" });
-        var user = new UserAccount { Account = account, DisplayName = Trim(request.DisplayName, 50), Role = request.Role };
+        var user = new UserAccount { Account = account, DisplayName = Trim(request.DisplayName, 50), Role = UserRole.Admin };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.AddUserAsync(user, ct);
         await AuditAsync("operator.create", "user", user.Id, $"{user.Account}; {user.Role}", ct);
@@ -186,24 +212,13 @@ public sealed class AdminModulesController(
     }
 
     [HttpGet("contacts")]
-    public async Task<ActionResult> Contacts(CancellationToken ct)
-    {
-        var relations = await repository.GetAllRelationsAsync(500, ct);
-        var result = new List<object>();
-        foreach (var relation in relations)
-        {
-            var user = await repository.GetUserByIdAsync(relation.UserId, ct);
-            var peer = await repository.GetUserByIdAsync(relation.PeerUserId, ct);
-            result.Add(new { relation.Id, user = user?.Account ?? relation.UserId, peer = peer?.Account ?? relation.PeerUserId, relation.Status, relation.Remark, relation.UpdatedAtUtc });
-        }
-        return Ok(result);
-    }
+    public ActionResult Contacts() => StatusCode(StatusCodes.Status410Gone, new { error = "通讯录模块已按 V2 需求下线" });
 
     [HttpPost("bulk-messages")]
     public async Task<ActionResult> BulkMessage(AdminBulkMessageRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Content) || request.Content.Length > 1000) return BadRequest(new { error = "消息内容需为 1–1000 字" });
-        var users = await repository.GetUsersAsync(null, UserStatus.Active, 500, ct);
+        var users = (await repository.GetUsersAsync(null, UserStatus.Active, 500, ct)).Where(x => x.Role == UserRole.User).ToList();
         var targets = request.Audience == "selected" ? users.Where(x => request.Accounts?.Contains(x.Account, StringComparer.OrdinalIgnoreCase) == true).ToList() : users.ToList();
         var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "chat.bulk-messages", Name = "群发通知", Status = "Sent", Data = new Dictionary<string, string> { ["content"] = request.Content.Trim(), ["audience"] = request.Audience, ["targetCount"] = targets.Count.ToString() } }, ct);
         await hub.Clients.Users(targets.Select(x => x.Id)).SendAsync("admin.notice", new { id = record.Id, content = request.Content.Trim(), sentAtUtc = DateTime.UtcNow }, ct);
@@ -230,12 +245,37 @@ public sealed class AdminModulesController(
         return Ok(record);
     }
 
+    [HttpPut("images/{id}")]
+    public async Task<ActionResult> UpdateImage(string id, AdminModuleRecordRequest request, CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "system.images") return NotFound(new { error = "图片记录不存在" });
+        record.Name = string.IsNullOrWhiteSpace(request.Name) ? record.Name : Trim(request.Name, 100);
+        record.Data["category"] = Trim(request.Data?.GetValueOrDefault("category"), 50);
+        record.Data["tags"] = Trim(request.Data?.GetValueOrDefault("tags"), 200);
+        await repository.UpsertAdminRecordAsync(record, ct);
+        await AuditAsync("image.update", "media", id, $"{record.Data["category"]};{record.Data["tags"]}", ct);
+        return Ok(record);
+    }
+
+    [HttpDelete("images/{id}")]
+    public async Task<ActionResult> DeleteImage(string id, CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "system.images") return NotFound(new { error = "图片记录不存在" });
+        await repository.DeleteAdminRecordAsync(id, ct);
+        await AuditAsync("image.delete", "media", id, record.Name, ct);
+        return NoContent();
+    }
+
     private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct)
     {
-        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Trim(detail, 300), IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" }, ct);
+        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Trim(detail, 300), IpAddress = RequestMetadata.ClientIp(HttpContext), Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext)) }, ct);
     }
 
     private static Dictionary<string, string> SanitizeData(Dictionary<string, string>? data) => (data ?? []).Take(30).ToDictionary(x => Trim(x.Key, 50), x => Trim(x.Value, 1000));
+    private static bool ValidPermissions(IReadOnlyDictionary<string, string> data) =>
+        data.GetValueOrDefault("permissions", "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).All(RolePermissions.Contains);
     private static string NormalizeStatus(string value) => string.IsNullOrWhiteSpace(value) ? "Active" : Trim(value, 30);
     private static string Trim(string? value, int max) { var text = value?.Trim() ?? ""; return text[..Math.Min(text.Length, max)]; }
 }

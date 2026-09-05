@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.6.0" || overview.metrics.users < 1)
+if (overview.version !== "0.7.0" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -297,8 +297,7 @@ await fetchApi("/api/conversations/direct", normalActive.accessToken, {
 });
 if (!(await fetchApi("/api/admin/conversations", token)).length)
   throw new Error("conversation admin list missing");
-if ((await fetchApi("/api/admin/contacts", token)).length < 2)
-  throw new Error("contacts admin list missing");
+await fetchApi("/api/admin/contacts", token, {}, 410);
 
 const moduleCases = [
   ["system.roles", "自动角色", "permissions", "users:read"],
@@ -318,6 +317,19 @@ for (const [module, name, field, value] of moduleCases) {
   if (!list.some(item => item.id === record.id))
     throw new Error(`module ${module} save failed`);
 }
+await fetchApi(
+  "/api/admin/modules/system.roles",
+  token,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      name: "越权角色",
+      status: "Active",
+      data: { permissions: "root:*" },
+    }),
+  },
+  400
+);
 
 await fetchApi("/api/admin/wallet/adjust", token, {
   method: "POST",
@@ -333,6 +345,11 @@ if (wallets.find(item => item.account === normalAccount)?.balance !== "88.50")
   throw new Error("wallet balance incorrect");
 if (!(await fetchApi("/api/admin/modules/fund.adjustments", token)).length)
   throw new Error("fund transaction missing");
+const transactions = await fetchApi(
+  `/api/admin/fund/transactions?page=1&pageSize=20&search=${normalAccount}`,
+  token
+);
+if (!transactions.total) throw new Error("transaction details missing");
 
 const operatorAccount = `operator${suffix}`;
 await fetchApi("/api/admin/operators", token, {
@@ -340,8 +357,8 @@ await fetchApi("/api/admin/operators", token, {
   body: JSON.stringify({
     account: operatorAccount,
     password: userPassword,
-    displayName: "运营测试账号",
-    role: "Operator",
+    displayName: "管理测试账号",
+    role: "Admin",
   }),
 });
 if (
@@ -350,6 +367,20 @@ if (
   )
 )
   throw new Error("operator missing");
+const operatorInUsers = await fetchApi(
+  `/api/admin/users?page=1&pageSize=20&search=${operatorAccount}`,
+  token
+);
+if (operatorInUsers.total !== 0)
+  throw new Error("admin leaked into normal user management");
+await fetchApi(
+  `/api/admin/operators/${operatorAccount}`,
+  token,
+  {
+    method: "DELETE",
+  },
+  204
+);
 
 await fetchApi("/api/feedback", normalActive.accessToken, {
   method: "POST",
@@ -361,6 +392,10 @@ await fetchApi("/api/feedback", normalActive.accessToken, {
 const feedback = (
   await fetchApi("/api/admin/modules/account.feedback", token)
 )[0];
+await fetchApi("/api/admin/feedback/seen", token, {
+  method: "POST",
+  body: JSON.stringify({ ids: [feedback.id] }),
+});
 await fetchApi(`/api/admin/feedback/${feedback.id}/decision`, token, {
   method: "POST",
   body: JSON.stringify({ status: "Resolved", reply: "已记录" }),
@@ -408,9 +443,31 @@ imageForm.append(
   ),
   "admin-test.png"
 );
-await fetchApi("/api/admin/images", token, { method: "POST", body: imageForm });
-if (!(await fetchApi("/api/admin/modules/system.images", token)).length)
+const uploadedImage = await fetchApi("/api/admin/images", token, {
+  method: "POST",
+  body: imageForm,
+});
+await fetchApi(`/api/admin/images/${uploadedImage.id}`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    name: "运营测试图",
+    status: "Active",
+    data: { category: "公告", tags: "测试,运营" },
+  }),
+});
+const imageRows = await fetchApi("/api/admin/modules/system.images", token);
+if (
+  !imageRows.some(
+    item => item.id === uploadedImage.id && item.data.category === "公告"
+  )
+)
   throw new Error("admin image missing");
+await fetchApi(
+  `/api/admin/images/${uploadedImage.id}`,
+  token,
+  { method: "DELETE" },
+  204
+);
 const audits = await fetchApi("/api/admin/audit", token);
 if (audits.length < 10) throw new Error("audit log incomplete");
 
@@ -580,7 +637,7 @@ try {
   )
     throw new Error(`status menu invalid: ${JSON.stringify(statusMenu)}`);
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.6.0.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.7.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -602,7 +659,7 @@ try {
   );
   await page.waitForSelector('[data-user-operation-dialog="inviteSource"]');
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.6.0.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.7.0.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -650,12 +707,11 @@ try {
       "意见反馈",
       "邀请码设置",
     ],
-    资金系统: ["额度增减科目", "额度增减记录"],
+    资金系统: ["额度增减科目", "额度增减记录", "交易明细"],
     管理系统: [
       "管理账号",
       "登录日志",
       "角色管理",
-      "安卓厂商推送设置",
       "公告管理",
       "图片上传",
       "操作日志",
@@ -664,9 +720,8 @@ try {
     聊天系统: [
       "会话管理",
       "客服管理",
-      "群监控",
+      "群管理",
       "群发言",
-      "通讯录",
       "机器人发信息",
       "抢红包机器人",
       "群邀请码",
@@ -720,7 +775,7 @@ try {
       ?.click()
   );
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-0.6-desktop.png",
+    path: "/home/ubuntu/screenshots/echat-admin-0.7-desktop.png",
     fullPage: false,
   });
 
@@ -778,7 +833,7 @@ try {
   );
   await new Promise(resolve => setTimeout(resolve, 300));
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-0.6-mobile.png",
+    path: "/home/ubuntu/screenshots/echat-admin-0.7-mobile.png",
     fullPage: false,
   });
 } finally {
@@ -786,5 +841,5 @@ try {
 }
 
 console.log(
-  `ADMIN_060_OK modules=${moduleCases.length} pages=25 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
+  `ADMIN_070_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );

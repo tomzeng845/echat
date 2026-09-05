@@ -54,8 +54,7 @@ import {
 import AuthenticatedMedia from "@/components/AuthenticatedMedia";
 import {
   AnnouncementPanel as DocAnnouncementPanel,
-  ContactsPanel as DocContactsPanel,
-  ConversationsPanel as DocConversationsPanel,
+  ConversationSearchPanel as DocConversationSearchPanel,
   ErrorLogsPanel as DocErrorLogsPanel,
   FailureIpPanel as DocFailureIpPanel,
   FeedbackPanel as DocFeedbackPanel,
@@ -66,7 +65,7 @@ import {
   InviteManagementPanel as DocInviteManagementPanel,
   LogsPanel as DocLogsPanel,
   OperatorsPanel as DocOperatorsPanel,
-  PushProvidersPanel as DocPushProvidersPanel,
+  TransactionDetailsPanel as DocTransactionDetailsPanel,
   VerificationDialog,
 } from "@/components/admin/RequirementPanels";
 
@@ -96,10 +95,10 @@ type PageId =
   | "account-invites"
   | "fund-subjects"
   | "fund-adjust"
+  | "fund-transactions"
   | "system-operators"
   | "system-admin-login"
   | "system-roles"
-  | "system-push"
   | "system-announcements"
   | "system-images"
   | "system-audit"
@@ -108,7 +107,6 @@ type PageId =
   | "chat-customer"
   | "chat-groups"
   | "chat-bulk"
-  | "chat-contacts"
   | "chat-robots"
   | "chat-redpacket"
   | "chat-group-invites";
@@ -186,6 +184,7 @@ type Audit = {
   targetId: string;
   detail: string;
   ipAddress: string;
+  address: string;
   createdAtUtc: string;
 };
 type Conversation = {
@@ -227,6 +226,7 @@ const groups: MenuGroup[] = [
     children: [
       { id: "fund-subjects", label: "额度增减科目" },
       { id: "fund-adjust", label: "额度增减记录" },
+      { id: "fund-transactions", label: "交易明细" },
     ],
   },
   {
@@ -237,7 +237,6 @@ const groups: MenuGroup[] = [
       { id: "system-operators", label: "管理账号" },
       { id: "system-admin-login", label: "登录日志" },
       { id: "system-roles", label: "角色管理" },
-      { id: "system-push", label: "安卓厂商推送设置" },
       { id: "system-announcements", label: "公告管理" },
       { id: "system-images", label: "图片上传" },
       { id: "system-audit", label: "操作日志" },
@@ -251,9 +250,8 @@ const groups: MenuGroup[] = [
     children: [
       { id: "chat-conversations", label: "会话管理" },
       { id: "chat-customer", label: "客服管理" },
-      { id: "chat-groups", label: "群监控" },
+      { id: "chat-groups", label: "群管理" },
       { id: "chat-bulk", label: "群发言" },
-      { id: "chat-contacts", label: "通讯录" },
       { id: "chat-robots", label: "机器人发信息" },
       { id: "chat-redpacket", label: "抢红包机器人" },
       { id: "chat-group-invites", label: "群邀请码" },
@@ -497,7 +495,7 @@ function AdminLogin({
         </div>
         <div className="relative flex gap-8 text-xs text-slate-400">
           <span>ASP.NET Core 8</span>
-          <span>30 个功能页</span>
+          <span>24 个功能页</span>
           <span>操作审计</span>
         </div>
       </section>
@@ -650,7 +648,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.6.0
+                ADMIN 0.7.0
               </div>
             </div>
           </a>
@@ -774,6 +772,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocFundSubjectsPanel refresh={refresh} />;
   if (page === "fund-adjust")
     return <DocFundAdjustmentsPanel refresh={refresh} />;
+  if (page === "fund-transactions")
+    return <DocTransactionDetailsPanel refresh={refresh} />;
   if (page === "system-operators")
     return <DocOperatorsPanel refresh={refresh} />;
   if (page === "system-admin-login")
@@ -788,23 +788,35 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
         fields={[
           {
             key: "permissions",
-            label: "权限范围，使用逗号分隔",
-            multiline: true,
+            label: "从系统固定权限列表中多选",
+            options: [
+              "users:read",
+              "users:write",
+              "logs:read",
+              "funds:read",
+              "funds:write",
+              "operators:read",
+              "operators:write",
+              "announcements:write",
+              "errors:read",
+              "conversations:read",
+              "groups:write",
+              "robots:write",
+              "audit:read",
+            ],
           },
         ]}
       />
     );
-  if (page === "system-push")
-    return <DocPushProvidersPanel refresh={refresh} />;
   if (page === "system-announcements")
     return <DocAnnouncementPanel refresh={refresh} />;
   if (page === "system-images") return <ImagesPanel refresh={refresh} />;
   if (page === "system-audit") return <AuditPanel refresh={refresh} />;
   if (page === "system-errors") return <DocErrorLogsPanel refresh={refresh} />;
   if (page === "chat-conversations")
-    return <DocConversationsPanel refresh={refresh} />;
+    return <DocConversationSearchPanel refresh={refresh} />;
   if (page === "chat-groups")
-    return <DocConversationsPanel refresh={refresh} groupsOnly />;
+    return <DocConversationSearchPanel refresh={refresh} groupsOnly />;
   if (page === "chat-customer")
     return (
       <DocGenericManagedPanel
@@ -834,7 +846,6 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
         runnable
       />
     );
-  if (page === "chat-contacts") return <DocContactsPanel refresh={refresh} />;
   if (page === "chat-robots")
     return (
       <DocGenericManagedPanel
@@ -1146,92 +1157,25 @@ function UsersPanel({
         }
       />
       <Card className="space-y-3 p-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <button
-            disabled={page <= 1}
-            onClick={() => setPage(1)}
-            className="admin-filter-button"
-          >
-            «
-          </button>
-          <button
-            disabled={page <= 1}
-            onClick={() => setPage(value => Math.max(1, value - 1))}
-            className="admin-filter-button"
-          >
-            ‹
-          </button>
-          <span className="min-w-10 border border-slate-200 bg-white px-3 py-2 text-center">
-            {data.page}
-          </span>
-          <button
-            disabled={page >= data.totalPages}
-            onClick={() =>
-              setPage(value => Math.min(data.totalPages, value + 1))
-            }
-            className="admin-filter-button"
-          >
-            ›
-          </button>
-          <button
-            disabled={page >= data.totalPages}
-            onClick={() => setPage(data.totalPages)}
-            className="admin-filter-button"
-          >
-            »
-          </button>
-          <span>共 {data.totalPages} 页</span>
+        <div className="flex flex-wrap justify-end gap-2">
           <select
-            value={pageSize}
-            onChange={event => {
-              setPageSize(Number(event.target.value));
-              setPage(1);
-            }}
-            className="admin-filter-select !w-20"
+            value={draft.realNameVerified}
+            onChange={e => filter("realNameVerified", e.target.value)}
+            className="admin-filter-select !w-auto min-w-36"
           >
-            <option>20</option>
-            <option>50</option>
-            <option>100</option>
+            <option value="">全部实名状态</option>
+            <option value="true">已实名</option>
+            <option value="false">未实名</option>
           </select>
-          <span>条 | 共 {data.total.toLocaleString()} 条记录</span>
-          <button
-            onClick={reload}
-            className="admin-filter-button"
-            aria-label="刷新"
+          <select
+            value={draft.enterpriseVerified}
+            onChange={e => filter("enterpriseVerified", e.target.value)}
+            className="admin-filter-select !w-auto min-w-40"
           >
-            <RefreshCw size={15} />
-          </button>
-          <div className="ml-auto flex w-auto flex-wrap gap-2">
-            <select
-              value={draft.role}
-              onChange={e => filter("role", e.target.value)}
-              className="admin-filter-select !w-auto min-w-32"
-            >
-              <option value="">全部角色</option>
-              <option>User</option>
-              <option>Reviewer</option>
-              <option>Operator</option>
-              <option>Admin</option>
-            </select>
-            <select
-              value={draft.realNameVerified}
-              onChange={e => filter("realNameVerified", e.target.value)}
-              className="admin-filter-select !w-auto min-w-36"
-            >
-              <option value="">全部实名状态</option>
-              <option value="true">已实名</option>
-              <option value="false">未实名</option>
-            </select>
-            <select
-              value={draft.enterpriseVerified}
-              onChange={e => filter("enterpriseVerified", e.target.value)}
-              className="admin-filter-select !w-auto min-w-40"
-            >
-              <option value="">全部企业认证状态</option>
-              <option value="true">已认证</option>
-              <option value="false">未认证</option>
-            </select>
-          </div>
+            <option value="">全部企业认证状态</option>
+            <option value="true">已认证</option>
+            <option value="false">未认证</option>
+          </select>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           <input
@@ -1731,6 +1675,65 @@ function UsersPanel({
           </div>
         </Card>
       )}
+      <Card className="p-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+          <span>
+            第 {data.page} / {data.totalPages} 页 · 共{" "}
+            {data.total.toLocaleString()} 条普通用户
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={event => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+              className="admin-filter-select !w-24"
+            >
+              <option>20</option>
+              <option>50</option>
+              <option>100</option>
+            </select>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(1)}
+              className="admin-filter-button"
+            >
+              首页
+            </button>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(value => Math.max(1, value - 1))}
+              className="admin-filter-button"
+            >
+              上一页
+            </button>
+            <button
+              disabled={page >= data.totalPages}
+              onClick={() =>
+                setPage(value => Math.min(data.totalPages, value + 1))
+              }
+              className="admin-filter-button"
+            >
+              下一页
+            </button>
+            <button
+              disabled={page >= data.totalPages}
+              onClick={() => setPage(data.totalPages)}
+              className="admin-filter-button"
+            >
+              末页
+            </button>
+            <button
+              onClick={reload}
+              className="admin-filter-button"
+              aria-label="刷新"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
+        </div>
+      </Card>
       {createMode && (
         <UserCreateDialog
           mode={createMode}
@@ -1793,6 +1796,9 @@ function UserOperationDialog({
   >([]);
   const [loading, setLoading] = useState(kind === "sameIp");
   const [busy, setBusy] = useState(false);
+  const [inviteCodes, setInviteCodes] = useState<
+    { code: string; status: string }[]
+  >([]);
 
   useEffect(() => {
     if (kind !== "sameIp") return;
@@ -1810,6 +1816,15 @@ function UserOperationDialog({
       )
       .finally(() => setLoading(false));
   }, [kind, user.account]);
+
+  useEffect(() => {
+    if (kind !== "inviteSource") return;
+    api<{ code: string; status: string }[]>("/api/admin/invites")
+      .then(setInviteCodes)
+      .catch(cause =>
+        toast.error(cause instanceof Error ? cause.message : "邀请码加载失败")
+      );
+  }, [kind]);
 
   const labels: Record<UserOperationKind, string> = {
     sameIp: "同IP会员检测",
@@ -1847,6 +1862,17 @@ function UserOperationDialog({
     setBusy(true);
     try {
       if (profileKinds.includes(kind)) {
+        if (kind === "inviteSource") {
+          if (!/^[A-Z0-9]{8}$/.test(value))
+            throw new Error("请选择有效的八位邀请码");
+          await api(`/api/admin/users/${user.account}/invite-code`, {
+            method: "PUT",
+            body: JSON.stringify({ code: value }),
+          });
+          toast.success("用户邀请码已更新");
+          onSaved();
+          return;
+        }
         const field = kind as
           | "inviteSource"
           | "displayName"
@@ -1968,7 +1994,24 @@ function UserOperationDialog({
                   ? "用户昵称"
                   : "允许登录的 IP"}
             </label>
-            {kind === "loginIpRestriction" ? (
+            {kind === "inviteSource" ? (
+              <select
+                value={value}
+                onChange={event => setValue(event.target.value)}
+                className="admin-input"
+              >
+                <option value="">请选择八位邀请码</option>
+                {inviteCodes
+                  .filter(
+                    code => code.status === "Active" || code.code === value
+                  )
+                  .map(code => (
+                    <option key={code.code} value={code.code}>
+                      {code.code} · {code.status}
+                    </option>
+                  ))}
+              </select>
+            ) : kind === "loginIpRestriction" ? (
               <textarea
                 value={value}
                 onChange={event => setValue(event.target.value)}
@@ -2751,11 +2794,35 @@ function AuditPanel({ refresh }: { refresh: number }) {
     refresh,
     []
   );
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = data.filter(
+    item =>
+      !search ||
+      item.adminAccount.includes(search) ||
+      item.action.includes(search) ||
+      item.targetId.includes(search) ||
+      item.ipAddress.includes(search) ||
+      item.address?.includes(search)
+  );
+  const pageSize = 20;
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
   return (
     <div>
       <PanelTitle
         title="操作日志"
         description="记录所有关键管理操作的账号、目标、来源 IP 与详情。"
+        action={
+          <input
+            value={search}
+            onChange={event => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="管理员 / 操作 / 目标 / IP / 地址"
+            className="admin-filter-input"
+          />
+        }
       />
       {loading ? (
         <Loading />
@@ -2770,10 +2837,11 @@ function AuditPanel({ refresh }: { refresh: number }) {
                 <th>目标</th>
                 <th>详情</th>
                 <th>IP</th>
+                <th>地址</th>
               </tr>
             </thead>
             <tbody>
-              {data.map(x => (
+              {rows.map(x => (
                 <tr key={x.id} className="border-t">
                   <td className="p-4">{formatTime(x.createdAtUtc)}</td>
                   <td>{x.adminAccount}</td>
@@ -2785,10 +2853,33 @@ function AuditPanel({ refresh }: { refresh: number }) {
                   </td>
                   <td className="max-w-xs truncate">{x.detail}</td>
                   <td>{x.ipAddress}</td>
+                  <td>{x.address || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t p-4 text-sm">
+            <span>
+              第 {page} / {Math.max(1, Math.ceil(filtered.length / pageSize))}{" "}
+              页 · 共 {filtered.length} 条
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(value => value - 1)}
+                className="admin-secondary"
+              >
+                上一页
+              </button>
+              <button
+                disabled={page >= Math.ceil(filtered.length / pageSize)}
+                onClick={() => setPage(value => value + 1)}
+                className="admin-secondary"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         </Card>
       )}
     </div>
@@ -2802,6 +2893,20 @@ function ImagesPanel({ refresh }: { refresh: number }) {
     []
   );
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<ModuleRecord>();
+  const [imageForm, setImageForm] = useState({
+    name: "",
+    category: "",
+    tags: "",
+  });
+  const rows = data.filter(
+    item =>
+      !search ||
+      item.name.includes(search) ||
+      item.data.category?.includes(search) ||
+      item.data.tags?.includes(search)
+  );
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2824,6 +2929,25 @@ function ImagesPanel({ refresh }: { refresh: number }) {
       e.target.value = "";
     }
   }
+  async function saveImage() {
+    if (!editing) return;
+    await api(`/api/admin/images/${editing.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: imageForm.name,
+        status: editing.status,
+        data: { category: imageForm.category, tags: imageForm.tags },
+      }),
+    });
+    setEditing(undefined);
+    reload();
+    toast.success("图片资料已更新");
+  }
+  async function deleteImage(item: ModuleRecord) {
+    if (!window.confirm(`确定从图片库删除 ${item.name} 吗？`)) return;
+    await api(`/api/admin/images/${item.id}`, { method: "DELETE" });
+    reload();
+  }
   return (
     <div>
       <PanelTitle
@@ -2841,8 +2965,16 @@ function ImagesPanel({ refresh }: { refresh: number }) {
           </label>
         }
       />
+      <Card className="mb-4">
+        <input
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          placeholder="搜索名称、分类或标签"
+          className="admin-filter-input"
+        />
+      </Card>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {data.map(x => (
+        {rows.map(x => (
           <Card key={x.id}>
             <div className="aspect-video overflow-hidden rounded-xl bg-slate-100">
               <AuthenticatedMedia src={x.data.url} type="image" alt={x.name} />
@@ -2851,14 +2983,81 @@ function ImagesPanel({ refresh }: { refresh: number }) {
             <p className="text-xs text-slate-400">
               {x.data.contentType} · {x.data.size} B
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {x.data.category || "未分类"} · {x.data.tags || "无标签"}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setEditing(x);
+                  setImageForm({
+                    name: x.name,
+                    category: x.data.category || "",
+                    tags: x.data.tags || "",
+                  });
+                }}
+                className="admin-secondary"
+              >
+                编辑
+              </button>
+              <button onClick={() => deleteImage(x)} className="admin-danger">
+                删除
+              </button>
+            </div>
           </Card>
         ))}
-        {!data.length && (
+        {!rows.length && (
           <Card>
             <Empty text="暂无运营图片" />
           </Card>
         )}
       </div>
+      {editing && (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold">编辑图片资料</h3>
+              <button onClick={() => setEditing(undefined)} aria-label="关闭">
+                <X />
+              </button>
+            </div>
+            <input
+              value={imageForm.name}
+              onChange={event =>
+                setImageForm(value => ({ ...value, name: event.target.value }))
+              }
+              placeholder="图片名称"
+              className="admin-input"
+            />
+            <input
+              value={imageForm.category}
+              onChange={event =>
+                setImageForm(value => ({
+                  ...value,
+                  category: event.target.value,
+                }))
+              }
+              placeholder="分类"
+              className="admin-input mt-3"
+            />
+            <input
+              value={imageForm.tags}
+              onChange={event =>
+                setImageForm(value => ({ ...value, tags: event.target.value }))
+              }
+              placeholder="标签，使用逗号分隔"
+              className="admin-input mt-3"
+            />
+            <button onClick={saveImage} className="admin-primary mt-4">
+              保存
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -66,8 +66,8 @@ public sealed class MongoChatRepository : IChatRepository
             await _invites.ReplaceOneAsync(x => x.Code == seedCode, new InviteCode { Code = seedCode, MaxUses = 1000 }, new ReplaceOptions { IsUpsert = true }, ct);
         var moduleSeeds = new[]
         {
-            new AdminModuleRecord { Id = "seed-fund-credit", Module = "fund.subjects", Name = "人工增加", Data = new() { ["code"] = "MANUAL_CREDIT" } },
-            new AdminModuleRecord { Id = "seed-fund-debit", Module = "fund.subjects", Name = "人工扣减", Data = new() { ["code"] = "MANUAL_DEBIT" } },
+            new AdminModuleRecord { Id = "seed-fund-credit", Module = "fund.subjects", Name = "人工增加", Data = new() { ["code"] = "MANUAL_CREDIT", ["direction"] = "Increase" } },
+            new AdminModuleRecord { Id = "seed-fund-debit", Module = "fund.subjects", Name = "人工扣减", Data = new() { ["code"] = "MANUAL_DEBIT", ["direction"] = "Decrease" } },
             new AdminModuleRecord { Id = "seed-role-admin", Module = "system.roles", Name = "超级管理员", Data = new() { ["permissions"] = "*" } },
             new AdminModuleRecord { Id = "seed-customer-service", Module = "chat.customer-service", Name = "系统客服", Data = new() { ["account"] = "service" } },
         };

@@ -25,7 +25,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.6.0",
+            version = "0.7.0",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -57,7 +57,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> UserByAccount(string account, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         var sessions = await repository.GetSessionsAsync(user.Id, ct);
         return Ok(ToView(user, sessions));
     }
@@ -114,7 +114,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult<AdminUserView>> UpdateUserProfile(string account, AdminUserProfileRequest request, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (request.DisplayName is not null) user.DisplayName = Trim(request.DisplayName, 60);
         if (request.MobilePhone is not null) user.MobilePhone = Trim(request.MobilePhone, 30);
         if (request.InviteSource is not null) user.InviteSource = Trim(request.InviteSource, 60);
@@ -128,7 +128,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult<AdminUserView>> UpdateUserSecurity(string account, AdminUserSecurityRequest request, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId() && (request.AccountLocked == true || request.LoginLocked == true || request.CancellationEnabled == true)) return BadRequest(new { error = "不能锁定或注销当前管理账号" });
         if (request.AccountLocked.HasValue) user.AccountLocked = request.AccountLocked.Value;
         if (request.LoginLocked.HasValue) user.LoginLocked = request.LoginLocked.Value;
@@ -158,7 +158,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     {
         if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" });
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         user.LoginPasswordChangedAtUtc = DateTime.UtcNow;
         user.FailedLoginAttempts = 0; user.LockoutUntilUtc = null;
@@ -173,7 +173,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult<AdminUserView>> DuplicateUser(string account, AdminUserCreateRequest request, CancellationToken ct)
     {
         var source = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (source is null) return NotFound(new { error = "源用户不存在" });
+        if (source is null || source.Role != UserRole.User) return NotFound(new { error = "源用户不存在" });
         UserAccount? created;
         try { created = await CreateUserCoreAsync(request with { DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? source.DisplayName + " 副本" : request.DisplayName }, ct); }
         catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
@@ -188,17 +188,45 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> SameIpUsers(string account, CancellationToken ct)
     {
         var source = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (source is null) return NotFound(new { error = "用户不存在" });
+        if (source is null || source.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (string.IsNullOrWhiteSpace(source.LastLoginIp)) return Ok(Array.Empty<object>());
         var users = await repository.GetUsersAsync(null, null, 10000, ct);
-        return Ok(users.Where(x => x.Id != source.Id && x.LastLoginIp == source.LastLoginIp).Select(x => new { x.Id, x.Account, x.DisplayName, x.LastLoginIp }));
+        return Ok(users.Where(x => x.Role == UserRole.User && x.Id != source.Id && x.LastLoginIp == source.LastLoginIp).Select(x => new { x.Id, x.Account, x.DisplayName, x.LastLoginIp }));
+    }
+
+    [HttpGet("users/{account}/invite-options")]
+    public async Task<ActionResult> UserInviteOptions(string account, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        var invites = (await repository.GetInvitesAsync(500, ct))
+            .Where(x => x.Code.Length == 8)
+            .OrderByDescending(x => x.IsActive)
+            .ThenBy(x => x.Code)
+            .Select(x => new { x.Code, x.IsActive, x.UsedCount, x.MaxUses, x.ExpiresAtUtc });
+        return Ok(new { user.Account, currentCode = user.InviteSource, invites });
+    }
+
+    [HttpPut("users/{account}/invite-code")]
+    public async Task<ActionResult> UpdateUserInvite(string account, AdminUserInviteRequest request, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        var code = request.Code.Trim().ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9]{8}$")) return BadRequest(new { error = "邀请码必须为 8 位大写字母或数字" });
+        var invite = (await repository.GetInvitesAsync(500, ct)).FirstOrDefault(x => x.Code == code);
+        if (invite is null) return BadRequest(new { error = "邀请码不存在，请先在邀请码设置中创建" });
+        user.InviteSource = code;
+        await repository.UpdateUserAsync(user, ct);
+        await AuditAsync("user.invite-code", "user", user.Id, $"code={code}", ct);
+        return Ok(new { user.Account, code });
     }
 
     [HttpPost("users/{account}/status")]
     public async Task<ActionResult> SetUserStatus(string account, AdminUserStatusRequest request, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId() && request.Status != UserStatus.Active) return BadRequest(new { error = "不能停用当前管理账号" });
 
         var previous = user.Status;
@@ -222,7 +250,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> RevokeUserSessions(string account, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId()) return BadRequest(new { error = "请勿从此入口撤销当前管理会话" });
         await repository.RevokeSessionsAsync(user.Id, null, "admin-revoked", ct);
         await AddOfflineLogAsync(user, "管理员强制退出全部设备", ct);
@@ -298,14 +326,13 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         var activeSessions = (await repository.GetAllSessionsAsync(20000, ct))
             .Where(x => x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow)
             .GroupBy(x => x.UserId).ToDictionary(x => x.Key, x => (IReadOnlyList<RefreshSession>)x.ToList());
-        IEnumerable<UserAccount> filtered = users;
+        IEnumerable<UserAccount> filtered = users.Where(x => x.Role == UserRole.User);
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var term = query.Search.Trim();
             filtered = filtered.Where(x => x.Id.Contains(term, StringComparison.OrdinalIgnoreCase) || x.Account.Contains(term, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) || x.MobilePhone.Contains(term, StringComparison.OrdinalIgnoreCase));
         }
         if (query.Status.HasValue) filtered = filtered.Where(x => x.Status == query.Status.Value);
-        if (query.Role.HasValue) filtered = filtered.Where(x => x.Role == query.Role.Value);
         if (query.Online.HasValue) filtered = filtered.Where(x => activeSessions.ContainsKey(x.Id) == query.Online.Value);
         if (query.HasMobile.HasValue) filtered = filtered.Where(x => !string.IsNullOrWhiteSpace(x.MobilePhone) == query.HasMobile.Value);
         if (query.RealNameVerified.HasValue) filtered = filtered.Where(x => x.RealNameVerified == query.RealNameVerified.Value);
@@ -346,7 +373,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
             Account = account,
             DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : Trim(request.DisplayName, 60),
             MobilePhone = Trim(request.MobilePhone, 30),
-            Role = request.Role,
+            Role = UserRole.User,
             RegistrationSource = "后台开户",
             InviteSource = Trim(request.InviteSource, 60),
             AgreementVersion = "admin-created",
@@ -384,7 +411,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
             TargetType = targetType,
             TargetId = targetId,
             Detail = TrimDetail(detail),
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"
+            IpAddress = RequestMetadata.ClientIp(HttpContext),
+            Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext))
         }, ct);
     }
 

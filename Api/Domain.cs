@@ -253,6 +253,7 @@ public sealed class AdminAuditLog
     public string TargetId { get; set; } = "";
     public string Detail { get; set; } = "";
     public string IpAddress { get; set; } = "";
+    public string Address { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -369,10 +370,12 @@ public sealed record AdminUserBatchCreateRequest(IReadOnlyList<AdminUserCreateRe
 public sealed record AdminUserProfileRequest(string? DisplayName = null, string? MobilePhone = null, string? InviteSource = null, string? LoginIpRestriction = null);
 public sealed record AdminUserSecurityRequest(bool? AccountLocked = null, bool? LoginLocked = null, bool? BankCardLocked = null, bool? CancellationEnabled = null, bool? RedFlagged = null, bool? RealNameVerified = null, bool? EnterpriseVerified = null, int? RiskLevel1 = null, int? RiskLevel2 = null, string Reason = "");
 public sealed record AdminUserPasswordRequest(string Password);
+public sealed record AdminUserInviteRequest(string Code);
 public sealed record AdminInviteRequest(string Code, int MaxUses = 1, DateTime? ExpiresAtUtc = null, bool IsActive = true);
 public sealed record AdminReportDecisionRequest(MomentReportStatus Status, string Note = "");
 public sealed record AdminModuleRecordRequest(string Name, string Status = "Active", Dictionary<string, string>? Data = null);
 public sealed record AdminFeedbackDecisionRequest(string Status, string Reply = "");
+public sealed record AdminFeedbackSeenRequest(IReadOnlyList<string> Ids);
 public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount, string Subject, string Note = "");
 public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
@@ -389,4 +392,7 @@ public sealed record AdminAnnouncementActionRequest(string Action);
 public sealed record AdminContactUpdateRequest(RelationStatus Status, string Remark = "");
 public sealed record AdminAutomationRunRequest(string? ConversationId = null);
 public sealed record AdminGroupInviteRequest(string Code, string ConversationId, int MaxUses = 100, DateTime? ExpiresAtUtc = null, bool Enabled = true);
+public sealed record AdminConversationQuery(string? Search = null, string? Account = null, string? Status = null, int Page = 1, int PageSize = 20);
+public sealed record AdminGroupRequest(string Name, string OwnerAccount, IReadOnlyList<string> MemberAccounts);
+public sealed record AdminGroupUpdateRequest(string Name);
 public sealed record GroupInviteRedeemRequest(string Code);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -187,14 +188,113 @@ public sealed class AdminRequirementsController(
         return Ok(Page(records.OrderByDescending(x => x.CreatedAtUtc).ToList(), page, pageSize));
     }
 
+    [HttpGet("fund/transactions")]
+    public async Task<ActionResult> FundTransactions([FromQuery] string? search, [FromQuery] decimal? minAmount, [FromQuery] decimal? maxAmount, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        IEnumerable<AdminModuleRecord> records = await repository.GetAdminRecordsAsync("fund.adjustments", 10000, ct);
+        if (!string.IsNullOrWhiteSpace(search)) records = records.Where(x => x.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || x.Data.Values.Any(v => v.Contains(search, StringComparison.OrdinalIgnoreCase)));
+        if (minAmount.HasValue) records = records.Where(x => decimal.TryParse(x.Data.GetValueOrDefault("amount"), NumberStyles.Number, CultureInfo.InvariantCulture, out var amount) && amount >= minAmount);
+        if (maxAmount.HasValue) records = records.Where(x => decimal.TryParse(x.Data.GetValueOrDefault("amount"), NumberStyles.Number, CultureInfo.InvariantCulture, out var amount) && amount <= maxAmount);
+        return Ok(Page(records.OrderByDescending(x => x.CreatedAtUtc).ToList(), page, pageSize));
+    }
+
+    [HttpGet("chat/conversations")]
+    public async Task<ActionResult> SearchConversations([FromQuery] AdminConversationQuery query, [FromQuery] bool groupsOnly = false, CancellationToken ct = default)
+    {
+        var conversations = await repository.GetAllConversationsAsync(1000, ct);
+        var users = await repository.GetUsersAsync(null, null, 10000, ct);
+        var byId = users.ToDictionary(x => x.Id);
+        IEnumerable<Conversation> filtered = conversations;
+        if (groupsOnly) filtered = filtered.Where(x => x.Type == ConversationType.Group);
+        if (!string.IsNullOrWhiteSpace(query.Status)) filtered = query.Status.Equals("Dissolved", StringComparison.OrdinalIgnoreCase) ? filtered.Where(x => x.IsDissolved) : filtered.Where(x => !x.IsDissolved);
+        if (!string.IsNullOrWhiteSpace(query.Search)) filtered = filtered.Where(x => x.Id.Contains(query.Search, StringComparison.OrdinalIgnoreCase) || x.Name.Contains(query.Search, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(query.Account))
+        {
+            var memberIds = users.Where(x => x.Account.Contains(query.Account, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(query.Account, StringComparison.OrdinalIgnoreCase)).Select(x => x.Id).ToHashSet();
+            filtered = filtered.Where(x => x.Members.Any(m => memberIds.Contains(m.UserId)));
+        }
+        var rows = filtered.OrderByDescending(x => x.LastMessageAtUtc ?? x.CreatedAtUtc).Select(x => new
+        {
+            x.Id, x.Type, x.Name, x.IsDissolved, x.LastSequence, x.LastMessageAtUtc,
+            memberCount = x.Members.Count(m => m.LeftAtSequence is null),
+            owner = byId.GetValueOrDefault(x.CreatedBy)?.Account ?? x.CreatedBy,
+            members = x.Members.Where(m => m.LeftAtSequence is null).Take(20).Select(m => byId.GetValueOrDefault(m.UserId)?.Account ?? m.UserId).ToList()
+        }).ToList();
+        return Ok(Page(rows, query.Page, query.PageSize));
+    }
+
+    [HttpPost("chat/groups")]
+    public async Task<ActionResult> CreateGroup(AdminGroupRequest request, CancellationToken ct)
+    {
+        var name = Limit(request.Name, 80);
+        var ownerAccount = request.OwnerAccount.Trim().ToLowerInvariant();
+        var accounts = request.MemberAccounts.Append(ownerAccount).Select(x => x.Trim().ToLowerInvariant()).Where(x => x.Length > 0).Distinct().Take(200).ToList();
+        if (name.Length < 2 || accounts.Count < 2) return BadRequest(new { error = "群名称至少 2 字且至少包含 2 个成员" });
+        var users = new List<UserAccount>();
+        foreach (var account in accounts)
+        {
+            var member = await repository.GetUserByAccountAsync(account, ct);
+            if (member is null || member.Role != UserRole.User || member.Status != UserStatus.Active) return BadRequest(new { error = $"成员 @{account} 不存在或不可用" });
+            if (string.IsNullOrWhiteSpace(member.PublicKeyJwk)) return BadRequest(new { error = $"成员 @{account} 尚未发布加密公钥" });
+            users.Add(member);
+        }
+        var owner = users.First(x => x.Account == ownerAccount);
+        var key = RandomNumberGenerator.GetBytes(32);
+        try
+        {
+            var conversation = new Conversation
+            {
+                Type = ConversationType.Group,
+                Name = name,
+                CreatedBy = owner.Id,
+                Members = users.Select(member => new ConversationMember { UserId = member.Id, Role = member.Id == owner.Id ? MemberRole.Owner : MemberRole.Member }).ToList(),
+                KeyEnvelopes = users.ToDictionary(member => member.Id, member => EncryptEnvelope(member.PublicKeyJwk, key))
+            };
+            await repository.AddConversationAsync(conversation, ct);
+            await AuditAsync("group.create", "conversation", conversation.Id, $"owner={owner.Account};members={users.Count};server-generated-envelope", ct);
+            return Ok(new { conversation.Id, conversation.Name, owner = owner.Account, memberCount = users.Count });
+        }
+        catch (Exception error) when (error is CryptographicException or JsonException or FormatException)
+        {
+            return BadRequest(new { error = "成员加密公钥格式无效，无法创建安全群聊" });
+        }
+        finally { CryptographicOperations.ZeroMemory(key); }
+    }
+
+    [HttpPut("chat/groups/{id}")]
+    public async Task<ActionResult> UpdateGroup(string id, AdminGroupUpdateRequest request, CancellationToken ct)
+    {
+        var conversation = await repository.GetConversationAsync(id, ct);
+        if (conversation is null || conversation.Type != ConversationType.Group) return NotFound(new { error = "群聊不存在" });
+        var name = Limit(request.Name, 80);
+        if (name.Length < 2) return BadRequest(new { error = "群名称至少 2 字" });
+        conversation.Name = name;
+        await repository.UpdateConversationAsync(conversation, ct);
+        await AuditAsync("group.update", "conversation", id, name, ct);
+        return Ok(new { conversation.Id, conversation.Name });
+    }
+
     [HttpPut("operators/{account}")]
     public async Task<ActionResult> UpdateOperator(string account, AdminOperatorUpdateRequest request, CancellationToken ct)
     {
         var user = await UserAsync(account, ct); if (user is null || user.Role == UserRole.User) return NotFound(new { error = "管理账号不存在" });
         if (user.Id == User.UserId() && request.Status != UserStatus.Active) return BadRequest(new { error = "不能停用当前管理账号" });
-        user.DisplayName = Limit(request.DisplayName, 60); user.Role = request.Role == UserRole.User ? UserRole.Operator : request.Role; user.Status = request.Status;
+        user.DisplayName = Limit(request.DisplayName, 60); user.Role = UserRole.Admin; user.Status = request.Status;
         await repository.UpdateUserAsync(user, ct); if (request.Status != UserStatus.Active) await repository.RevokeSessionsAsync(user.Id, null, "operator-disabled", ct);
         await AuditAsync("operator.update", "user", user.Id, $"{user.Role};{user.Status}", ct); return Ok(SessionService.View(user));
+    }
+
+    [HttpDelete("operators/{account}")]
+    public async Task<ActionResult> DeleteOperator(string account, CancellationToken ct)
+    {
+        var user = await UserAsync(account, ct);
+        if (user is null || user.Role != UserRole.Admin) return NotFound(new { error = "管理账号不存在" });
+        if (user.Id == User.UserId()) return BadRequest(new { error = "不能删除当前管理账号" });
+        user.Status = UserStatus.Disabled;
+        await repository.UpdateUserAsync(user, ct);
+        await repository.RevokeSessionsAsync(user.Id, null, "operator-deleted", ct);
+        await AuditAsync("operator.delete", "user", user.Id, user.Account, ct);
+        return NoContent();
     }
 
     [HttpGet("operators/{account}/totp")]
@@ -282,11 +382,7 @@ public sealed class AdminRequirementsController(
     }
 
     [HttpPut("contacts/{id}")]
-    public async Task<ActionResult> UpdateContact(string id, AdminContactUpdateRequest request, CancellationToken ct)
-    {
-        var relation = (await repository.GetAllRelationsAsync(10000, ct)).FirstOrDefault(x => x.Id == id); if (relation is null) return NotFound(new { error = "通讯录关系不存在" });
-        relation.Status = request.Status; relation.Remark = Limit(request.Remark, 80); relation.UpdatedAtUtc = DateTime.UtcNow; await repository.UpsertRelationAsync(relation, ct); await AuditAsync("contact.update", "contact", id, $"{request.Status};{request.Remark}", ct); return Ok(relation);
-    }
+    public ActionResult UpdateContact(string id, AdminContactUpdateRequest request) => StatusCode(StatusCodes.Status410Gone, new { error = "通讯录模块已按 V2 需求下线" });
 
     [HttpPost("automations/{id}/run")]
     public async Task<ActionResult> RunAutomation(string id, AdminAutomationRunRequest request, CancellationToken ct)
@@ -332,7 +428,20 @@ public sealed class AdminRequirementsController(
     }
 
     private async Task<UserAccount?> UserAsync(string account, CancellationToken ct) => await repository.GetUserByAccountAsync(account.Trim().ToLowerInvariant(), ct);
-    private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct) => await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Limit(detail, 300), IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" }, ct);
+    private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct) => await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Limit(detail, 300), IpAddress = RequestMetadata.ClientIp(HttpContext), Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext)) }, ct);
+    private static string EncryptEnvelope(string publicKeyJwk, byte[] key)
+    {
+        using var document = JsonDocument.Parse(publicKeyJwk);
+        var root = document.RootElement;
+        using var rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters { Modulus = Base64Url(root.GetProperty("n").GetString() ?? ""), Exponent = Base64Url(root.GetProperty("e").GetString() ?? "") });
+        return Convert.ToBase64String(rsa.Encrypt(key, RSAEncryptionPadding.OaepSHA256));
+    }
+    private static byte[] Base64Url(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        return Convert.FromBase64String(normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '='));
+    }
     private static string Limit(string? value, int max) { var text = value?.Trim() ?? ""; return text[..Math.Min(text.Length, max)]; }
     private static object Page<T>(IReadOnlyList<T> items, int page, int pageSize) { page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100); var total = items.Count; return new { items = items.Skip((page - 1) * pageSize).Take(pageSize).ToList(), total, page, pageSize, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)) }; }
 }

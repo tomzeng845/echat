@@ -69,7 +69,16 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
         await context.RequestServices.GetRequiredService<IChatRepository>().UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = "system.error-logs", Name = error?.GetType().Name ?? "UnhandledError", Status = "Open",
-            Data = new Dictionary<string, string> { ["method"] = context.Request.Method, ["path"] = context.Request.Path, ["message"] = error?.Message ?? "未知错误", ["traceId"] = context.TraceIdentifier }
+            Data = new Dictionary<string, string>(RequestMetadata.Device(context))
+            {
+                ["method"] = context.Request.Method,
+                ["path"] = context.Request.Path,
+                ["message"] = error?.Message ?? "未知错误",
+                ["traceId"] = context.TraceIdentifier,
+                ["userId"] = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                ["ip"] = RequestMetadata.ClientIp(context),
+                ["address"] = RequestMetadata.Address(RequestMetadata.ClientIp(context))
+            }
         }, context.RequestAborted);
     }
     catch { /* the primary exception response must still be returned */ }
@@ -97,7 +106,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.6.0",
+    version = "0.7.0",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     utcNow = DateTime.UtcNow

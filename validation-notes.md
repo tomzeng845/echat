@@ -174,3 +174,11 @@ E聊 0.5.0 已完成首页和截图所示账户、资金、管理、聊天四大
 ### 后台需求文档 0.6.0 最终结果
 
 `pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项与 xUnit 14 项全部通过；生产构建成功。业务回归依次返回 `E2E_OK`、`P1_QR_OK`、`CALL_SIGNAL_OK`、`CONTACT_REALTIME_OK` 和 `UNREAD_CLEAR_OK`。专用后台 API 回归返回 `ADMIN_REQUIREMENTS_060_OK verification=approved fund=12.34 totp=active push=configured announcement=revoke group_speech=sent e2ee=protected retired_modules=4`；后台浏览器回归返回 `ADMIN_060_OK modules=7 pages=25 role_guard=403 viewports=1440x900,390x844`。
+
+## 2026-09-06 后台需求文档 V2 0.7.0 视觉检查
+
+桌面 1440×900 预览显示 `ADMIN 0.7.0`，侧栏已按 V2 精简：资金系统新增“交易明细”，管理系统删除厂商推送，聊天系统删除通讯录并将“群监控”更名为“群管理”。页面标题、刷新、健康状态、卡片和表单层级完整。手机 390×844 抽屉可完整看到聊天系统的会话管理、客服管理、群管理、群发言、机器人发信息、抢红包机器人和群邀请码，页面主体未发生横向溢出；用户密集表格保持自身横向滚动。
+
+### 后台 V2 0.7.0 最终结果
+
+`pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项和 xUnit 15 项全部通过；生产构建成功。聊天、好友、未读、二维码与通话回归分别返回 `E2E_OK`、`CONTACT_REALTIME_OK`、`UNREAD_CLEAR_OK`、`P1_QR_OK` 与 `CALL_SIGNAL_OK`。后台文档 API 验收返回 `ADMIN_REQUIREMENTS_070_OK`，覆盖认证审核、八位邀请码选择、增强日志、失败 IP、交易明细、Admin 独立 TOTP、公告、加密建群/改名、群发言、群邀请码、密文边界与五类下线模块；管理浏览器验收返回 `ADMIN_070_OK modules=7 pages=24 users=1 audits=50 role_guard=403`，并覆盖图片分类标签编辑/删除、角色权限白名单、普通用户/Admin 隔离和桌面/手机布局。

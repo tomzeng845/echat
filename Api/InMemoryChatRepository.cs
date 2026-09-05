@@ -28,7 +28,9 @@ public sealed class InMemoryChatRepository : IChatRepository
     {
         _invites.TryAdd("ECHAT2026", new InviteCode { Code = "ECHAT2026", MaxUses = 1000, IsActive = true });
         Seed("seed-fund-credit", "fund.subjects", "人工增加", "code", "MANUAL_CREDIT");
+        _adminRecords["seed-fund-credit"].Data["direction"] = "Increase";
         Seed("seed-fund-debit", "fund.subjects", "人工扣减", "code", "MANUAL_DEBIT");
+        _adminRecords["seed-fund-debit"].Data["direction"] = "Decrease";
         Seed("seed-role-admin", "system.roles", "超级管理员", "permissions", "*");
         Seed("seed-customer-service", "chat.customer-service", "系统客服", "account", "service");
         return Task.CompletedTask;

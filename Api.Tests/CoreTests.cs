@@ -250,6 +250,21 @@ public sealed class CoreTests
         Assert.Equal(secret, protector.Unprotect(encrypted));
     }
 
+    [Fact]
+    public void RequestMetadata_ParsesDeviceSystemAndAddress()
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Request.Headers.UserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit Chrome/121 Mobile Safari";
+        context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
+
+        var device = RequestMetadata.Device(context);
+
+        Assert.Equal("Mobile", device["deviceType"]);
+        Assert.Equal("Android", device["osVersion"]);
+        Assert.Equal("浏览器移动设备", device["deviceModel"]);
+        Assert.Equal("本机 / 开发环境", RequestMetadata.Address(RequestMetadata.ClientIp(context)));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

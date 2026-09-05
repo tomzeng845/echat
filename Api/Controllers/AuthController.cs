@@ -58,7 +58,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         user.LastLoginAtUtc = DateTime.UtcNow;
         user.LastLoginIp = currentIp;
         user.LastOnlineIp = currentIp;
-        user.LastLoginAddress = currentIp;
+        user.LastLoginAddress = RequestMetadata.Address(currentIp);
         user.LastNodeIp = Environment.GetEnvironmentVariable("HOSTNAME") ?? "api-node";
         if (verified == PasswordVerificationResult.SuccessRehashNeeded) user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.UpdateUserAsync(user, ct);
@@ -123,19 +123,27 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     {
         var sessionId = User.SessionId();
         if (!string.IsNullOrWhiteSpace(sessionId)) await repository.RevokeSessionAsync(sessionId, ct);
-        await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "account.offline-logs", Name = "用户退出", Status = "Offline", Data = new Dictionary<string, string> { ["userId"] = User.UserId(), ["account"] = User.Identity?.Name ?? "", ["sessionId"] = sessionId ?? "", ["ip"] = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" } }, ct);
+        var ip = RequestMetadata.ClientIp(HttpContext);
+        var data = RequestMetadata.Device(HttpContext);
+        data["userId"] = User.UserId(); data["account"] = User.Identity?.Name ?? ""; data["sessionId"] = sessionId ?? ""; data["ip"] = ip; data["address"] = RequestMetadata.Address(ip);
+        await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "account.offline-logs", Name = "用户退出", Status = "Offline", Data = data }, ct);
         return NoContent();
     }
 
-    private Task<AdminModuleRecord> LogLoginAsync(string account, string device, string result, string reason, string? userId, CancellationToken ct) => repository.UpsertAdminRecordAsync(new AdminModuleRecord
+    private Task<AdminModuleRecord> LogLoginAsync(string account, string device, string result, string reason, string? userId, CancellationToken ct)
     {
-        Module = "account.login-logs", Name = result == "success" ? "登录成功" : result == "pending" ? "等待二次验证" : "登录失败", Status = result,
-        Data = new Dictionary<string, string> { ["account"] = account.Trim().ToLowerInvariant(), ["userId"] = userId ?? "", ["device"] = device, ["result"] = result, ["reason"] = reason, ["ip"] = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" }
-    }, ct);
+        var ip = RequestMetadata.ClientIp(HttpContext);
+        var data = RequestMetadata.Device(HttpContext);
+        data["account"] = account.Trim().ToLowerInvariant(); data["userId"] = userId ?? ""; data["device"] = device; data["result"] = result; data["reason"] = reason; data["ip"] = ip; data["address"] = RequestMetadata.Address(ip);
+        return repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Module = "account.login-logs", Name = result == "success" ? "登录成功" : result == "pending" ? "等待二次验证" : "登录失败", Status = result, Data = data
+        }, ct);
+    }
 
     private static AuthResponse Fail(string error) => new(false, null, null, null, null, Error: error);
     private static UserView View(UserAccount user) => SessionService.View(user);
-    private string CurrentIp() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    private string CurrentIp() => RequestMetadata.ClientIp(HttpContext);
     private static bool IpAllowed(string restriction, string currentIp) => string.IsNullOrWhiteSpace(restriction)
         || restriction.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(value => string.Equals(value, currentIp, StringComparison.OrdinalIgnoreCase));

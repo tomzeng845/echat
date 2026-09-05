@@ -152,6 +152,56 @@ function Empty({ text }: { text: string }) {
   );
 }
 
+function Pagination({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t p-4 text-sm">
+      <span>
+        第 {page} / {Math.max(1, totalPages)} 页 · 共 {total} 条
+      </span>
+      <div className="flex gap-2">
+        <button
+          disabled={page <= 1}
+          onClick={() => onPage(1)}
+          className="admin-secondary"
+        >
+          首页
+        </button>
+        <button
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          className="admin-secondary"
+        >
+          上一页
+        </button>
+        <button
+          disabled={page >= totalPages}
+          onClick={() => onPage(page + 1)}
+          className="admin-secondary"
+        >
+          下一页
+        </button>
+        <button
+          disabled={page >= totalPages}
+          onClick={() => onPage(totalPages)}
+          className="admin-secondary"
+        >
+          末页
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function VerificationDialog({
   user,
   type,
@@ -523,13 +573,17 @@ export function LogsPanel({
         {loading ? (
           <Empty text="加载中" />
         ) : (
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[1380px] text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
                 <th className="p-4">时间</th>
                 <th>账号</th>
-                <th>客户端/版本</th>
+                <th>设备类型</th>
+                <th>设备型号</th>
+                <th>系统版本</th>
+                <th>APP版本</th>
                 <th>IP</th>
+                <th>地址</th>
                 <th>结果</th>
                 <th>原因</th>
               </tr>
@@ -539,8 +593,12 @@ export function LogsPanel({
                 <tr key={x.id} className="border-t">
                   <td className="p-4">{time(x.createdAtUtc)}</td>
                   <td>@{x.data.account || "—"}</td>
-                  <td>{x.data.device || "Web"}</td>
+                  <td>{x.data.deviceType || "Desktop"}</td>
+                  <td>{x.data.deviceModel || x.data.device || "浏览器设备"}</td>
+                  <td>{x.data.osVersion || "—"}</td>
+                  <td>{x.data.appVersion || "Web"}</td>
                   <td>{x.data.ip || "—"}</td>
+                  <td>{x.data.address || "—"}</td>
                   <td>{badge(x.data.result || x.status)}</td>
                   <td>{x.data.reason || x.name}</td>
                 </tr>
@@ -548,25 +606,12 @@ export function LogsPanel({
             </tbody>
           </table>
         )}
-        <div className="flex items-center justify-between border-t p-4 text-sm">
-          <span>共 {data.total} 条</span>
-          <div className="flex gap-2">
-            <button
-              disabled={query.page <= 1}
-              onClick={() => setQuery(v => ({ ...v, page: v.page - 1 }))}
-              className="admin-secondary"
-            >
-              上一页
-            </button>
-            <button
-              disabled={query.page >= data.totalPages}
-              onClick={() => setQuery(v => ({ ...v, page: v.page + 1 }))}
-              className="admin-secondary"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
+        <Pagination
+          page={query.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPage={page => setQuery(v => ({ ...v, page }))}
+        />
       </Box>
     </div>
   );
@@ -673,10 +718,12 @@ export function FailureIpPanel({ refresh }: { refresh: number }) {
 
 export function FeedbackPanel({ refresh }: { refresh: number }) {
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [checked, setChecked] = useState<string[]>([]);
   const [selected, setSelected] = useState<ModuleRecord>();
   const [reply, setReply] = useState("");
   const { data, reload } = useLoad<Page<ModuleRecord>>(
-    `/api/admin/feedback/search?status=${status}`,
+    `/api/admin/feedback/search?status=${status}&page=${page}&pageSize=20`,
     { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
     refresh
   );
@@ -690,48 +737,103 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
     reload();
     toast.success("反馈已处理");
   }
+  async function markSeen(ids: string[]) {
+    if (!ids.length) return toast.error("请先选择反馈");
+    await api("/api/admin/feedback/seen", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    setChecked([]);
+    reload();
+    toast.success(`已标记 ${ids.length} 条反馈为已查看`);
+  }
   return (
     <div>
       <Title
         title="意见反馈"
         description="筛选、查看反馈详情并记录处理回复。"
         action={
-          <select
-            value={status}
-            onChange={e => setStatus(e.target.value)}
-            className="admin-filter-select"
-          >
-            <option value="">全部状态</option>
-            <option>Submitted</option>
-            <option>Processing</option>
-            <option>Resolved</option>
-            <option>Rejected</option>
-          </select>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={status}
+              onChange={e => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="admin-filter-select"
+            >
+              <option value="">全部状态</option>
+              <option>Submitted</option>
+              <option>Processing</option>
+              <option>Resolved</option>
+              <option>Rejected</option>
+            </select>
+            <button
+              onClick={() => markSeen(checked)}
+              className="admin-secondary"
+            >
+              批量已查看
+            </button>
+          </div>
         }
       />
       <Box className="overflow-x-auto p-0">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="p-4">时间</th>
+              <th className="p-4">
+                <input
+                  type="checkbox"
+                  aria-label="选择本页全部反馈"
+                  checked={
+                    Boolean(data.items.length) &&
+                    data.items.every(x => checked.includes(x.id))
+                  }
+                  onChange={e =>
+                    setChecked(
+                      e.target.checked ? data.items.map(x => x.id) : []
+                    )
+                  }
+                />
+              </th>
+              <th>时间</th>
               <th>反馈摘要</th>
               <th>用户</th>
               <th>联系方式</th>
               <th>状态</th>
+              <th>查看状态</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {data.items.map(x => (
               <tr key={x.id} className="border-t">
-                <td className="p-4">{time(x.createdAtUtc)}</td>
+                <td className="p-4">
+                  <input
+                    type="checkbox"
+                    aria-label={`选择反馈 ${x.name}`}
+                    checked={checked.includes(x.id)}
+                    onChange={e =>
+                      setChecked(v =>
+                        e.target.checked
+                          ? v.includes(x.id)
+                            ? v
+                            : [...v, x.id]
+                          : v.filter(id => id !== x.id)
+                      )
+                    }
+                  />
+                </td>
+                <td>{time(x.createdAtUtc)}</td>
                 <td>{x.name}</td>
                 <td>{x.data.userId || "—"}</td>
                 <td>{x.data.contact || "—"}</td>
                 <td>{badge(x.status)}</td>
+                <td>{badge(x.data.seen === "true" ? "已查看" : "未查看")}</td>
                 <td>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      if (x.data.seen !== "true") await markSeen([x.id]);
                       setSelected(x);
                       setReply(x.data.reply || "");
                     }}
@@ -745,6 +847,12 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
             ))}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPage={setPage}
+        />
       </Box>
       {selected && (
         <Modal title="反馈详情" onClose={() => setSelected(undefined)}>
@@ -1105,6 +1213,112 @@ export function FundAdjustmentsPanel({ refresh }: { refresh: number }) {
   );
 }
 
+export function TransactionDetailsPanel({ refresh }: { refresh: number }) {
+  const [draft, setDraft] = useState({
+    search: "",
+    minAmount: "",
+    maxAmount: "",
+  });
+  const [filters, setFilters] = useState(draft);
+  const [page, setPage] = useState(1);
+  const params = new URLSearchParams({ page: String(page), pageSize: "20" });
+  if (filters.search) params.set("search", filters.search);
+  if (filters.minAmount) params.set("minAmount", filters.minAmount);
+  if (filters.maxAmount) params.set("maxAmount", filters.maxAmount);
+  const { data } = useLoad<Page<ModuleRecord>>(
+    `/api/admin/fund/transactions?${params}`,
+    { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
+    refresh
+  );
+  return (
+    <div>
+      <Title
+        title="交易明细"
+        description="按账号、科目、备注和金额区间分页查询额度交易流水。"
+      />
+      <Box className="mb-4">
+        <div className="grid gap-2 md:grid-cols-4">
+          <input
+            value={draft.search}
+            onChange={e => setDraft(v => ({ ...v, search: e.target.value }))}
+            placeholder="账号 / 科目 / 备注"
+            className="admin-filter-input"
+          />
+          <input
+            value={draft.minAmount}
+            onChange={e => setDraft(v => ({ ...v, minAmount: e.target.value }))}
+            type="number"
+            step="0.01"
+            placeholder="最小金额"
+            className="admin-filter-input"
+          />
+          <input
+            value={draft.maxAmount}
+            onChange={e => setDraft(v => ({ ...v, maxAmount: e.target.value }))}
+            type="number"
+            step="0.01"
+            placeholder="最大金额"
+            className="admin-filter-input"
+          />
+          <button
+            onClick={() => {
+              setFilters({ ...draft });
+              setPage(1);
+            }}
+            className="admin-primary !w-auto"
+          >
+            <Search size={15} /> 查询
+          </button>
+        </div>
+      </Box>
+      <Box className="overflow-x-auto p-0">
+        <table className="w-full min-w-[1050px] text-left text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="p-4">交易时间</th>
+              <th>用户</th>
+              <th>科目</th>
+              <th>方向</th>
+              <th>金额</th>
+              <th>调整前</th>
+              <th>调整后</th>
+              <th>操作人</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map(x => (
+              <tr key={x.id} className="border-t">
+                <td className="p-4">{time(x.createdAtUtc)}</td>
+                <td>@{x.data.account}</td>
+                <td>
+                  {x.name}
+                  <div className="text-xs text-slate-400">
+                    {x.data.subjectCode}
+                  </div>
+                </td>
+                <td>{badge(x.data.direction || "—")}</td>
+                <td className="font-semibold tabular-nums">{x.data.amount}</td>
+                <td>{x.data.balanceBefore}</td>
+                <td>{x.data.balanceAfter}</td>
+                <td>{x.data.operator || "—"}</td>
+                <td>{x.data.note || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!data.items.length && <Empty text="暂无交易明细" />}
+        <Pagination
+          page={page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPage={setPage}
+        />
+      </Box>
+    </div>
+  );
+}
+
 export function PushProvidersPanel({ refresh }: { refresh: number }) {
   const { data, reload } = useLoad<
     {
@@ -1217,17 +1431,34 @@ export function AnnouncementPanel({ refresh }: { refresh: number }) {
   );
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
+  const [editingId, setEditingId] = useState<string>();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = data.filter(
+    x =>
+      (!search ||
+        x.name.includes(search) ||
+        x.data.content?.includes(search)) &&
+      (!status || x.status === status)
+  );
+  const pageSize = 10;
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
   async function create() {
-    await api("/api/admin/modules/system.announcements", {
-      method: "POST",
-      body: JSON.stringify({
-        name,
-        status: "Draft",
-        data: { content, target: "all" },
-      }),
-    });
+    await api(
+      `/api/admin/modules/system.announcements${editingId ? `/${editingId}` : ""}`,
+      {
+        method: editingId ? "PUT" : "POST",
+        body: JSON.stringify({
+          name,
+          status: "Draft",
+          data: { content, target: "all" },
+        }),
+      }
+    );
     setName("");
     setContent("");
+    setEditingId(undefined);
     reload();
   }
   async function action(id: string, next: string) {
@@ -1238,11 +1469,19 @@ export function AnnouncementPanel({ refresh }: { refresh: number }) {
     reload();
     toast.success(next === "publish" ? "公告已发布" : "公告已撤回");
   }
+  async function remove(id: string) {
+    if (!window.confirm("确定删除这条公告吗？")) return;
+    await api(`/api/admin/modules/system.announcements/${id}`, {
+      method: "DELETE",
+    });
+    reload();
+    toast.success("公告已删除");
+  }
   return (
     <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
       <Box>
         <Title
-          title="新增公告"
+          title={editingId ? "编辑公告" : "新增公告"}
           description="公告先保存为草稿，再发布给在线用户；历史记录可撤回。"
         />
         <input
@@ -1262,11 +1501,52 @@ export function AnnouncementPanel({ refresh }: { refresh: number }) {
           disabled={!name || !content}
           className="admin-primary mt-3"
         >
-          保存草稿
+          {editingId ? "保存修改" : "保存草稿"}
         </button>
+        {editingId && (
+          <button
+            onClick={() => {
+              setEditingId(undefined);
+              setName("");
+              setContent("");
+            }}
+            className="admin-secondary mt-2"
+          >
+            取消编辑
+          </button>
+        )}
       </Box>
       <div className="grid content-start gap-3">
-        {data.map(x => (
+        <Box>
+          <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+            <input
+              value={search}
+              onChange={e => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="搜索标题或正文"
+              className="admin-filter-input"
+            />
+            <select
+              value={status}
+              onChange={e => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="admin-filter-select"
+            >
+              <option value="">全部状态</option>
+              <option>Draft</option>
+              <option>Published</option>
+              <option>Revoked</option>
+            </select>
+            <span className="self-center text-sm text-slate-500">
+              共 {filtered.length} 条
+            </span>
+          </div>
+        </Box>
+        {rows.map(x => (
           <Box key={x.id}>
             <div className="flex justify-between">
               <b>{x.name}</b>
@@ -1276,6 +1556,16 @@ export function AnnouncementPanel({ refresh }: { refresh: number }) {
               {x.data.content}
             </p>
             <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  setEditingId(x.id);
+                  setName(x.name);
+                  setContent(x.data.content || "");
+                }}
+                className="admin-secondary"
+              >
+                编辑
+              </button>
               {x.status !== "Published" && (
                 <button
                   onClick={() => action(x.id, "publish")}
@@ -1293,9 +1583,25 @@ export function AnnouncementPanel({ refresh }: { refresh: number }) {
                   撤回
                 </button>
               )}
+              <button onClick={() => remove(x.id)} className="admin-danger">
+                删除
+              </button>
             </div>
           </Box>
         ))}
+        {!rows.length && (
+          <Box>
+            <Empty text="暂无公告" />
+          </Box>
+        )}
+        <Box className="p-0">
+          <Pagination
+            page={page}
+            totalPages={Math.max(1, Math.ceil(filtered.length / pageSize))}
+            total={filtered.length}
+            onPage={setPage}
+          />
+        </Box>
       </div>
     </div>
   );
@@ -1307,8 +1613,9 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
     account: "",
     displayName: "",
     password: "",
-    role: "Operator",
+    role: "Admin",
   });
+  const [editing, setEditing] = useState<User>();
   const [enroll, setEnroll] = useState<{
     account: string;
     secret: string;
@@ -1316,11 +1623,30 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
   }>();
   const [code, setCode] = useState("");
   async function create() {
-    await api("/api/admin/operators", {
-      method: "POST",
-      body: JSON.stringify(form),
+    if (editing) {
+      await api(`/api/admin/requirements/operators/${editing.account}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          displayName: form.displayName,
+          role: "Admin",
+          status: editing.status,
+        }),
+      });
+    } else {
+      await api("/api/admin/operators", {
+        method: "POST",
+        body: JSON.stringify({ ...form, role: "Admin" }),
+      });
+    }
+    setEditing(undefined);
+    setForm({ account: "", displayName: "", password: "", role: "Admin" });
+    reload();
+  }
+  async function remove(account: string) {
+    if (!window.confirm(`确定停用管理账号 @${account} 吗？`)) return;
+    await api(`/api/admin/requirements/operators/${account}`, {
+      method: "DELETE",
     });
-    setForm({ account: "", displayName: "", password: "", role: "Operator" });
     reload();
   }
   async function startTotp(account: string) {
@@ -1343,12 +1669,13 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
       <Box>
         <Title
-          title="新增管理账号"
-          description="创建审核员、运营员或管理员账号。"
+          title={editing ? "编辑管理账号" : "新增管理账号"}
+          description="管理账号与普通用户完全隔离，统一使用 Admin 角色和独立动态验证码。"
         />
         <div className="space-y-3">
           <input
             value={form.account}
+            disabled={Boolean(editing)}
             onChange={e => setForm(v => ({ ...v, account: e.target.value }))}
             placeholder="账号"
             className="admin-input"
@@ -1368,18 +1695,25 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
             placeholder="至少 8 位密码"
             className="admin-input"
           />
-          <select
-            value={form.role}
-            onChange={e => setForm(v => ({ ...v, role: e.target.value }))}
-            className="admin-input"
-          >
-            <option>Reviewer</option>
-            <option>Operator</option>
-            <option>Admin</option>
-          </select>
           <button onClick={create} className="admin-primary">
-            创建管理账号
+            {editing ? "保存管理账号" : "创建管理账号"}
           </button>
+          {editing && (
+            <button
+              onClick={() => {
+                setEditing(undefined);
+                setForm({
+                  account: "",
+                  displayName: "",
+                  password: "",
+                  role: "Admin",
+                });
+              }}
+              className="admin-secondary"
+            >
+              取消编辑
+            </button>
+          )}
         </div>
       </Box>
       <div className="grid content-start gap-3">
@@ -1393,6 +1727,26 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
               <div className="flex flex-wrap items-center gap-2">
                 {badge(x.role)}
                 {badge(x.status)}
+                <button
+                  onClick={() => {
+                    setEditing(x);
+                    setForm({
+                      account: x.account,
+                      displayName: x.displayName,
+                      password: "",
+                      role: "Admin",
+                    });
+                  }}
+                  className="admin-secondary"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => remove(x.account)}
+                  className="admin-danger"
+                >
+                  删除
+                </button>
                 {x.role === "Admin" && (
                   <button
                     onClick={() => startTotp(x.account)}
@@ -1451,7 +1805,12 @@ export function GenericManagedPanel({
   title: string;
   description: string;
   module: string;
-  fields: { key: string; label: string; multiline?: boolean }[];
+  fields: {
+    key: string;
+    label: string;
+    multiline?: boolean;
+    options?: string[];
+  }[];
   runnable?: boolean;
 }) {
   const { data, reload } = useLoad<ModuleRecord[]>(
@@ -1462,6 +1821,18 @@ export function GenericManagedPanel({
   const [name, setName] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string>();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = data.filter(
+    item =>
+      (!search ||
+        item.name.includes(search) ||
+        Object.values(item.data).some(value => value.includes(search))) &&
+      (!statusFilter || item.status === statusFilter)
+  );
+  const pageSize = 10;
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
   async function save() {
     await api(
       `/api/admin/modules/${module}${editingId ? `/${editingId}` : ""}`,
@@ -1503,7 +1874,30 @@ export function GenericManagedPanel({
           className="admin-input"
         />
         {fields.map(f =>
-          f.multiline ? (
+          f.options ? (
+            <label key={f.key} className="mt-3 block text-sm text-slate-600">
+              {f.label}
+              <select
+                multiple
+                value={(values[f.key] || "").split(",").filter(Boolean)}
+                onChange={e =>
+                  setValues(v => ({
+                    ...v,
+                    [f.key]: Array.from(e.currentTarget.selectedOptions)
+                      .map(option => option.value)
+                      .join(","),
+                  }))
+                }
+                className="admin-input mt-2 min-h-40"
+              >
+                {f.options.map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : f.multiline ? (
             <textarea
               key={f.key}
               value={values[f.key] || ""}
@@ -1544,7 +1938,32 @@ export function GenericManagedPanel({
         </div>
       </Box>
       <div className="grid content-start gap-3">
-        {data.map(x => (
+        <Box>
+          <div className="grid gap-2 sm:grid-cols-[1fr_180px]">
+            <input
+              value={search}
+              onChange={e => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder={`搜索${title}名称或内容`}
+              className="admin-filter-input"
+            />
+            <select
+              value={statusFilter}
+              onChange={e => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="admin-filter-select"
+            >
+              <option value="">全部状态</option>
+              <option>Active</option>
+              <option>Disabled</option>
+            </select>
+          </div>
+        </Box>
+        {rows.map(x => (
           <Box key={x.id}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1589,11 +2008,19 @@ export function GenericManagedPanel({
             </div>
           </Box>
         ))}
-        {!data.length && (
+        {!rows.length && (
           <Box>
             <Empty text={`暂无${title}`} />
           </Box>
         )}
+        <Box className="p-0">
+          <Pagination
+            page={page}
+            totalPages={Math.max(1, Math.ceil(filtered.length / pageSize))}
+            total={filtered.length}
+            onPage={setPage}
+          />
+        </Box>
       </div>
     </div>
   );
@@ -1708,6 +2135,294 @@ export function ConversationsPanel({
               </div>
             ))}
           </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+export function ConversationSearchPanel({
+  refresh,
+  groupsOnly = false,
+}: {
+  refresh: number;
+  groupsOnly?: boolean;
+}) {
+  type Row = Conversation & { owner: string; members: string[] };
+  const [draft, setDraft] = useState({ search: "", account: "", status: "" });
+  const [filters, setFilters] = useState(draft);
+  const [page, setPage] = useState(1);
+  const [details, setDetails] = useState<any>();
+  const [groupForm, setGroupForm] = useState<{
+    id?: string;
+    name: string;
+    ownerAccount: string;
+    memberAccounts: string;
+  }>({ name: "", ownerAccount: "", memberAccounts: "" });
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: "20",
+    groupsOnly: String(groupsOnly),
+  });
+  Object.entries(filters).forEach(
+    ([key, value]) => value && params.set(key, value)
+  );
+  const { data, reload } = useLoad<Page<Row>>(
+    `/api/admin/chat/conversations?${params}`,
+    { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
+    refresh
+  );
+  async function view(id: string) {
+    setDetails(await api(`/api/admin/conversations/${id}/messages?limit=100`));
+  }
+  async function action(item: Row) {
+    await api(`/api/admin/conversations/${item.id}/action`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: item.isDissolved ? "restore" : "dissolve",
+        note: "V2 后台操作",
+      }),
+    });
+    reload();
+  }
+  async function saveGroup() {
+    if (groupForm.id) {
+      await api(`/api/admin/chat/groups/${groupForm.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: groupForm.name }),
+      });
+    } else {
+      await api("/api/admin/chat/groups", {
+        method: "POST",
+        body: JSON.stringify({
+          name: groupForm.name,
+          ownerAccount: groupForm.ownerAccount,
+          memberAccounts: groupForm.memberAccounts
+            .split(/[\s,，]+/)
+            .filter(Boolean),
+        }),
+      });
+    }
+    setShowGroupForm(false);
+    setGroupForm({ name: "", ownerAccount: "", memberAccounts: "" });
+    reload();
+    toast.success("群资料已保存");
+  }
+  return (
+    <div>
+      <Title
+        title={groupsOnly ? "群管理" : "会话管理"}
+        description={
+          groupsOnly
+            ? "按群号、群名、群主、成员和状态筛选群聊。"
+            : "按会话号、名称、成员账号和状态分页查询。"
+        }
+        action={
+          groupsOnly ? (
+            <button
+              onClick={() => setShowGroupForm(true)}
+              className="admin-primary !w-auto"
+            >
+              新增群聊
+            </button>
+          ) : undefined
+        }
+      />
+      <Box className="mb-4">
+        <div className="grid gap-2 md:grid-cols-4">
+          <input
+            value={draft.search}
+            onChange={e => setDraft(v => ({ ...v, search: e.target.value }))}
+            placeholder={groupsOnly ? "群号 / 群名" : "会话号 / 名称"}
+            className="admin-filter-input"
+          />
+          <input
+            value={draft.account}
+            onChange={e => setDraft(v => ({ ...v, account: e.target.value }))}
+            placeholder="群主 / 成员账号"
+            className="admin-filter-input"
+          />
+          <select
+            value={draft.status}
+            onChange={e => setDraft(v => ({ ...v, status: e.target.value }))}
+            className="admin-filter-select"
+          >
+            <option value="">全部状态</option>
+            <option value="Active">正常</option>
+            <option value="Dissolved">已解散</option>
+          </select>
+          <button
+            onClick={() => {
+              setFilters({ ...draft });
+              setPage(1);
+            }}
+            className="admin-primary !w-auto"
+          >
+            <Search size={15} /> 查询
+          </button>
+        </div>
+      </Box>
+      <Box className="overflow-x-auto p-0">
+        <table className="w-full min-w-[1150px] text-left text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="p-4">{groupsOnly ? "群" : "会话"}</th>
+              <th>类型</th>
+              <th>群主/创建者</th>
+              <th>成员</th>
+              <th>人数</th>
+              <th>消息数</th>
+              <th>最后消息</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map(x => (
+              <tr key={x.id} className="border-t">
+                <td className="p-4">
+                  <b>{x.name || "未命名"}</b>
+                  <div className="font-mono text-xs text-slate-400">{x.id}</div>
+                </td>
+                <td>{x.type}</td>
+                <td>@{x.owner}</td>
+                <td className="max-w-56 truncate" title={x.members.join(", ")}>
+                  {x.members.join(", ") || "—"}
+                </td>
+                <td>{x.memberCount}</td>
+                <td>{x.lastSequence}</td>
+                <td>{time(x.lastMessageAtUtc)}</td>
+                <td>{badge(x.isDissolved ? "Dissolved" : "Active")}</td>
+                <td className="space-x-2">
+                  <button
+                    onClick={() => view(x.id)}
+                    className="admin-secondary"
+                  >
+                    <Eye size={15} />
+                    聊天记录
+                  </button>
+                  {x.type === "Group" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setGroupForm({
+                            id: x.id,
+                            name: x.name,
+                            ownerAccount: x.owner,
+                            memberAccounts: x.members.join(","),
+                          });
+                          setShowGroupForm(true);
+                        }}
+                        className="admin-secondary"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => action(x)}
+                        className={
+                          x.isDissolved ? "admin-secondary" : "admin-danger"
+                        }
+                      >
+                        {x.isDissolved ? "恢复" : "解散"}
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!data.items.length && (
+          <Empty text={groupsOnly ? "暂无群聊" : "暂无会话"} />
+        )}
+        <Pagination
+          page={page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPage={setPage}
+        />
+      </Box>
+      {details && (
+        <Modal
+          title={`聊天记录 · ${details.conversation.name || details.conversation.id}`}
+          onClose={() => setDetails(undefined)}
+          wide
+        >
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            端到端加密边界：后台仅显示发送者、时间、类型、算法、状态和密文。
+          </div>
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto">
+            {details.messages.map((message: any) => (
+              <div key={message.id} className="rounded-xl bg-slate-50 p-4">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>
+                    {message.displayName || message.account || message.senderId}{" "}
+                    · #{message.sequence} · {message.kind}
+                  </span>
+                  <span>{time(message.sentAtUtc)}</span>
+                </div>
+                <p className="mt-2 break-all font-mono text-xs text-slate-600">
+                  {message.ciphertext.slice(0, 240)}
+                  {message.ciphertext.length > 240 ? "…" : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {showGroupForm && (
+        <Modal
+          title={groupForm.id ? "编辑群聊" : "新增群聊"}
+          onClose={() => setShowGroupForm(false)}
+        >
+          <input
+            value={groupForm.name}
+            onChange={event =>
+              setGroupForm(value => ({ ...value, name: event.target.value }))
+            }
+            placeholder="群名称"
+            className="admin-input"
+          />
+          {!groupForm.id && (
+            <>
+              <input
+                value={groupForm.ownerAccount}
+                onChange={event =>
+                  setGroupForm(value => ({
+                    ...value,
+                    ownerAccount: event.target.value,
+                  }))
+                }
+                placeholder="群主账号"
+                className="admin-input mt-3"
+              />
+              <textarea
+                value={groupForm.memberAccounts}
+                onChange={event =>
+                  setGroupForm(value => ({
+                    ...value,
+                    memberAccounts: event.target.value,
+                  }))
+                }
+                placeholder="成员账号，使用空格或逗号分隔"
+                className="admin-input mt-3 min-h-28"
+              />
+              <p className="mt-2 text-xs text-amber-700">
+                后台建群会临时生成 AES 群密钥并仅保存成员 RSA-OAEP
+                密钥信封，明文密钥不会持久化。
+              </p>
+            </>
+          )}
+          <button
+            onClick={saveGroup}
+            disabled={
+              !groupForm.name || (!groupForm.id && !groupForm.ownerAccount)
+            }
+            className="admin-primary mt-4"
+          >
+            保存
+          </button>
         </Modal>
       )}
     </div>
@@ -1900,6 +2615,18 @@ export function ErrorLogsPanel({ refresh }: { refresh: number }) {
     refresh
   );
   const [selected, setSelected] = useState<ModuleRecord>();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = data.filter(
+    item =>
+      (!search ||
+        item.name.includes(search) ||
+        Object.values(item.data).some(value => value.includes(search))) &&
+      (!status || item.status === status)
+  );
+  const pageSize = 20;
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
   async function resolve(id: string) {
     await api(`/api/admin/error-logs/${id}/resolve`, { method: "POST" });
     setSelected(undefined);
@@ -1910,13 +2637,42 @@ export function ErrorLogsPanel({ refresh }: { refresh: number }) {
       <Title
         title="报错日志"
         description="按 traceId、请求路径、异常类型和处理状态查看 API 错误。"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={search}
+              onChange={event => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="异常 / TraceId / 路径 / 用户"
+              className="admin-filter-input"
+            />
+            <select
+              value={status}
+              onChange={event => {
+                setStatus(event.target.value);
+                setPage(1);
+              }}
+              className="admin-filter-select"
+            >
+              <option value="">全部状态</option>
+              <option>Open</option>
+              <option>Resolved</option>
+            </select>
+          </div>
+        }
       />
       <Box className="overflow-x-auto p-0">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1450px] text-left text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="p-4">时间</th>
               <th>异常</th>
+              <th>用户</th>
+              <th>设备/型号</th>
+              <th>系统/APP</th>
+              <th>IP/地址</th>
               <th>方法/路径</th>
               <th>TraceId</th>
               <th>状态</th>
@@ -1924,10 +2680,23 @@ export function ErrorLogsPanel({ refresh }: { refresh: number }) {
             </tr>
           </thead>
           <tbody>
-            {data.map(x => (
+            {rows.map(x => (
               <tr key={x.id} className="border-t">
                 <td className="p-4">{time(x.createdAtUtc)}</td>
                 <td>{x.name}</td>
+                <td>{x.data.userId || "—"}</td>
+                <td>
+                  {x.data.deviceType || "—"} · {x.data.deviceModel || "—"}
+                </td>
+                <td>
+                  {x.data.osVersion || "—"} · {x.data.appVersion || "Web"}
+                </td>
+                <td>
+                  {x.data.ip || "—"}
+                  <div className="text-xs text-slate-400">
+                    {x.data.address || "—"}
+                  </div>
+                </td>
                 <td>
                   {x.data.method} {x.data.path}
                 </td>
@@ -1945,7 +2714,13 @@ export function ErrorLogsPanel({ refresh }: { refresh: number }) {
             ))}
           </tbody>
         </table>
-        {!data.length && <Empty text="暂无报错日志" />}
+        {!rows.length && <Empty text="暂无报错日志" />}
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(filtered.length / pageSize))}
+          total={filtered.length}
+          onPage={setPage}
+        />
       </Box>
       {selected && (
         <Modal title="报错日志详情" onClose={() => setSelected(undefined)}>
@@ -1965,6 +2740,24 @@ export function ErrorLogsPanel({ refresh }: { refresh: number }) {
             <p>
               <b>时间：</b>
               {time(selected.createdAtUtc)}
+            </p>
+            <p>
+              <b>用户：</b>
+              {selected.data.userId || "—"}
+            </p>
+            <p>
+              <b>设备：</b>
+              {selected.data.deviceType || "—"} ·{" "}
+              {selected.data.deviceModel || "—"}
+            </p>
+            <p>
+              <b>系统/版本：</b>
+              {selected.data.osVersion || "—"} ·{" "}
+              {selected.data.appVersion || "Web"}
+            </p>
+            <p>
+              <b>IP/地址：</b>
+              {selected.data.ip || "—"} · {selected.data.address || "—"}
             </p>
           </div>
           <button
