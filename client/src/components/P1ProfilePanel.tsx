@@ -27,6 +27,7 @@ import {
   unregisterNativePush,
   type NativePushState,
 } from "@/lib/mobile-native";
+import { pushStatusLabel } from "@/lib/push-status";
 
 export default function P1ProfilePanel({
   user,
@@ -109,15 +110,7 @@ export default function P1ProfilePanel({
     }
   }
 
-  const pushLabel = !isNativeAndroid()
-    ? "仅 Android APP"
-    : pushState === "registered"
-      ? "已开启"
-      : pushState === "denied"
-        ? "权限已关闭"
-        : pushState === "unavailable"
-          ? "待配置 FCM"
-          : "正在连接";
+  const pushLabel = pushStatusLabel(isNativeAndroid(), pushState);
 
   if (section === "devices")
     return (

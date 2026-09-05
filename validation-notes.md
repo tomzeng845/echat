@@ -195,7 +195,7 @@ GeoIP 单元测试使用模拟 HTTP 响应验证中文国家/省州/城市拼接
 
 ## 2026-09-06 Android APP 0.8.0 验证
 
-Capacitor 8.5.1 已生成包名 `com.echat.app` 的原生 Android 工程，`aapt dump badging` 确认 `versionCode=8`、`versionName=0.8.0`、`minSdkVersion=24`、`targetSdkVersion=36`。Manifest 包含 Internet、Camera、Record Audio、Modify Audio Settings、Post Notifications、Vibrate 与 Wake Lock 权限，并把摄像头和麦克风声明为非强制硬件能力。Gradle `testDebugUnitTest lintDebug assembleDebug` 完整通过；最终 APK 使用 Android debug 证书和 APK Signature Scheme v2 验证成功，大小约 7.1 MB，SHA-256 为 `49b9011dc2da37a8dbbaec647d2a7fa372c8c74df07c0cfe0ffc6436c6d4c842`。
+Capacitor 8.5.1 已生成包名 `com.echat.app` 的原生 Android 工程，`aapt dump badging` 确认 `versionCode=8`、`versionName=0.8.0`、`minSdkVersion=24`、`targetSdkVersion=36`。Manifest 包含 Internet、Camera、Record Audio、Modify Audio Settings、Post Notifications、Vibrate 与 Wake Lock 权限，并把摄像头和麦克风声明为非强制硬件能力。Gradle `testDebugUnitTest lintDebug assembleDebug` 完整通过；最终 APK 使用 Android debug 证书和 APK Signature Scheme v2 验证成功，大小约 7.1 MB，SHA-256 为 `fb85a802ebe81fed116e8acc7f7755660da18470c635fa00290037c81b72f29d`。
 
 Android WebView 构建内置生产 API 地址 `https://echatapp-favrlscm.manus.space`；REST、刷新令牌和 SignalR 均通过统一地址解析。临时 Production 实例的 CORS 回归确认 `https://localhost` 返回 `Access-Control-Allow-Origin`，非白名单 `https://evil.example` 不返回该响应头。Android Manifest 禁止明文 HTTP。
 
@@ -205,4 +205,4 @@ Capacitor System Bars 以 CSS 变量注入系统 inset。`android-safe-area-smok
 
 ### Android 0.8.0 最终结果
 
-`pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 3 项、xUnit 17 项、生产 Web 构建和 Android APK 构建均通过。完整业务回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_080_OK`、`ADMIN_080_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`、`GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。交付 APK 是便于安装验证的 debug 包；上架应用商店前仍需项目方 Firebase 配置、独立 release 签名、真机通知/通话验证及 AAB 发布流程。
+`pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 4 项（含个人中心“待配置 FCM”状态映射）、xUnit 17 项、生产 Web 构建和 Android APK 构建均通过。完整业务回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_080_OK`、`ADMIN_080_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`、`GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。交付 APK 是便于安装验证的 debug 包；上架应用商店前仍需项目方 Firebase 配置、独立 release 签名、真机通知/通话验证及 AAB 发布流程。

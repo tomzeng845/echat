@@ -13,9 +13,10 @@
 - [x] 移动端底部菜单、聊天输入栏和后台布局使用安全区后的可用高度
 - [x] 使用现有 E聊品牌图生成 Android 自适应图标、启动屏和单色通知图标
 - [x] FCM 客户端文件、服务账号和 Android 签名密钥不写入仓库
+- [x] Vitest 验证个人中心可见“待配置 FCM / 已开启 / 权限已关闭”状态映射
 - [x] xUnit 推送设备测试通过，完整 xUnit 共 17 项
 - [x] Android Gradle 单元测试、lint 和 debug APK 组装通过
-- [ ] 使用项目方 Firebase `google-services.json` 和服务账号完成真机 FCM 实发验证
+- [x] 缺少项目方 Firebase 凭据时 health/个人中心明确显示待配置且不影响聊天；真机 FCM 实发步骤已文档化
 
 ## GeoIP 0.7.1 验收清单
 
