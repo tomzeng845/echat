@@ -235,6 +235,17 @@ public sealed class AdminAuditLog
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public sealed class AdminModuleRecord
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Module { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Status { get; set; } = "Active";
+    public Dictionary<string, string> Data { get; set; } = [];
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web", string? DeviceId = null);
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web", string? DeviceId = null);
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
@@ -272,3 +283,9 @@ public sealed record AdminUserView(string Id, string Account, string DisplayName
 public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
 public sealed record AdminInviteRequest(string Code, int MaxUses = 1, DateTime? ExpiresAtUtc = null, bool IsActive = true);
 public sealed record AdminReportDecisionRequest(MomentReportStatus Status, string Note = "");
+public sealed record AdminModuleRecordRequest(string Name, string Status = "Active", Dictionary<string, string>? Data = null);
+public sealed record AdminFeedbackDecisionRequest(string Status, string Reply = "");
+public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount, string Subject, string Note = "");
+public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator);
+public sealed record AdminConversationActionRequest(string Action, string Note = "");
+public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);

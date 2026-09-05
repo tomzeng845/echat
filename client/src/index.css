@@ -90,6 +90,22 @@ button:active { transition: transform 150ms var(--ease-out); }
 .auth-input::placeholder { color: rgb(148 163 184 / 0.7); }
 .auth-input:focus { border-color: rgb(45 212 191 / 0.65); background: rgb(0 0 0 / 0.25); box-shadow: 0 0 0 3px rgb(45 212 191 / 0.12); }
 
+.admin-input {
+  width: 100%;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.75rem;
+  background: rgb(248 250 252);
+  padding: 0.7rem 0.8rem;
+  color: rgb(15 23 42);
+  outline: none;
+  transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out), background 160ms var(--ease-out);
+}
+.admin-input:focus { border-color: rgb(20 184 166 / 0.65); background: white; box-shadow: 0 0 0 3px rgb(20 184 166 / 0.1); }
+.admin-primary { display: block; width: 100%; border-radius: 0.75rem; background: rgb(15 23 42); padding: 0.75rem 1rem; color: white; font-size: 0.875rem; font-weight: 600; text-align: center; }
+.admin-primary:disabled { cursor: not-allowed; opacity: 0.45; }
+.admin-action { border-radius: 0.7rem; padding: 0.55rem 0.85rem; font-size: 0.8rem; font-weight: 600; }
+.admin-mini { border-radius: 0.55rem; padding: 0.45rem 0.65rem; font-size: 0.75rem; font-weight: 600; }
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: rgb(148 163 184 / 0.35); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }

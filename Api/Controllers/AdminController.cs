@@ -23,7 +23,7 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.4.2",
+            version = "0.5.0",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -82,7 +82,11 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
         user.FailedLoginAttempts = 0;
         user.LockoutUntilUtc = null;
         await repository.UpdateUserAsync(user, ct);
-        if (request.Status != UserStatus.Active) await repository.RevokeSessionsAsync(user.Id, null, $"admin:{request.Status}", ct);
+        if (request.Status != UserStatus.Active)
+        {
+            await repository.RevokeSessionsAsync(user.Id, null, $"admin:{request.Status}", ct);
+            await AddOfflineLogAsync(user, $"状态变更为 {request.Status}", ct);
+        }
         await AuditAsync("user.status", "user", user.Id, $"{previous} -> {request.Status}; {TrimDetail(request.Reason)}", ct);
         return Ok(new { user.Account, user.Status });
     }
@@ -97,6 +101,7 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
         if (user is null) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId()) return BadRequest(new { error = "请勿从此入口撤销当前管理会话" });
         await repository.RevokeSessionsAsync(user.Id, null, "admin-revoked", ct);
+        await AddOfflineLogAsync(user, "管理员强制退出全部设备", ct);
         await AuditAsync("user.sessions.revoke", "user", user.Id, "撤销全部活跃设备会话", ct);
         return NoContent();
     }
@@ -178,6 +183,12 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"
         }, ct);
     }
+
+    private Task<AdminModuleRecord> AddOfflineLogAsync(UserAccount user, string reason, CancellationToken ct) => repository.UpsertAdminRecordAsync(new AdminModuleRecord
+    {
+        Module = "account.offline-logs", Name = "管理员下线用户", Status = "Offline",
+        Data = new Dictionary<string, string> { ["userId"] = user.Id, ["account"] = user.Account, ["reason"] = reason, ["admin"] = User.Identity?.Name ?? "admin", ["ip"] = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" }
+    }, ct);
 
     private static string NormalizeAccount(string value) => value.Trim().ToLowerInvariant();
     private static string TrimDetail(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value.Trim()[..Math.Min(value.Trim().Length, 300)];

@@ -20,6 +20,7 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<MomentReport> _momentReports;
     private readonly IMongoCollection<CallRecord> _calls;
     private readonly IMongoCollection<AdminAuditLog> _adminAudits;
+    private readonly IMongoCollection<AdminModuleRecord> _adminRecords;
 
     public MongoChatRepository(IConfiguration configuration)
     {
@@ -42,6 +43,7 @@ public sealed class MongoChatRepository : IChatRepository
         _momentReports = db.GetCollection<MomentReport>("momentReports");
         _calls = db.GetCollection<CallRecord>("calls");
         _adminAudits = db.GetCollection<AdminAuditLog>("adminAudits");
+        _adminRecords = db.GetCollection<AdminModuleRecord>("adminModuleRecords");
     }
 
     public async Task EnsureSeedDataAsync(CancellationToken ct = default)
@@ -58,9 +60,22 @@ public sealed class MongoChatRepository : IChatRepository
         await _momentReports.Indexes.CreateOneAsync(new CreateIndexModel<MomentReport>(Builders<MomentReport>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.ReporterId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _calls.Indexes.CreateOneAsync(new CreateIndexModel<CallRecord>(Builders<CallRecord>.IndexKeys.Descending(x => x.StartedAtUtc)), cancellationToken: ct);
         await _adminAudits.Indexes.CreateOneAsync(new CreateIndexModel<AdminAuditLog>(Builders<AdminAuditLog>.IndexKeys.Descending(x => x.CreatedAtUtc)), cancellationToken: ct);
+        await _adminRecords.Indexes.CreateOneAsync(new CreateIndexModel<AdminModuleRecord>(Builders<AdminModuleRecord>.IndexKeys.Ascending(x => x.Module).Descending(x => x.UpdatedAtUtc)), cancellationToken: ct);
         var seedCode = Environment.GetEnvironmentVariable("SEED_INVITE_CODE");
         if (!string.IsNullOrWhiteSpace(seedCode))
             await _invites.ReplaceOneAsync(x => x.Code == seedCode, new InviteCode { Code = seedCode, MaxUses = 1000 }, new ReplaceOptions { IsUpsert = true }, ct);
+        var moduleSeeds = new[]
+        {
+            new AdminModuleRecord { Id = "seed-fund-credit", Module = "fund.subjects", Name = "人工增加", Data = new() { ["code"] = "MANUAL_CREDIT" } },
+            new AdminModuleRecord { Id = "seed-fund-debit", Module = "fund.subjects", Name = "人工扣减", Data = new() { ["code"] = "MANUAL_DEBIT" } },
+            new AdminModuleRecord { Id = "seed-role-admin", Module = "system.roles", Name = "超级管理员", Data = new() { ["permissions"] = "*" } },
+            new AdminModuleRecord { Id = "seed-resource-users", Module = "system.resources", Name = "用户管理", Data = new() { ["path"] = "admin.users" } },
+            new AdminModuleRecord { Id = "seed-setting-register", Module = "system.settings", Name = "注册模式", Data = new() { ["value"] = "invite-required" } },
+            new AdminModuleRecord { Id = "seed-customer-service", Module = "chat.customer-service", Name = "系统客服", Data = new() { ["account"] = "service" } },
+            new AdminModuleRecord { Id = "seed-daily-cleanup", Module = "chat.tasks", Name = "过期二维码清理", Data = new() { ["schedule"] = "0 3 * * *" } },
+        };
+        foreach (var seed in moduleSeeds)
+            await _adminRecords.UpdateOneAsync(x => x.Id == seed.Id, Builders<AdminModuleRecord>.Update.SetOnInsert(x => x.Id, seed.Id).SetOnInsert(x => x.Module, seed.Module).SetOnInsert(x => x.Name, seed.Name).SetOnInsert(x => x.Status, seed.Status).SetOnInsert(x => x.Data, seed.Data).SetOnInsert(x => x.CreatedAtUtc, seed.CreatedAtUtc).SetOnInsert(x => x.UpdatedAtUtc, seed.UpdatedAtUtc), new UpdateOptions { IsUpsert = true }, ct);
     }
 
     public async Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) => await _users.Find(x => x.Account == account.ToLowerInvariant()).FirstOrDefaultAsync(ct);
@@ -179,4 +194,12 @@ public sealed class MongoChatRepository : IChatRepository
     public Task<long> CountMessagesAsync(CancellationToken ct = default) => _messages.CountDocumentsAsync(FilterDefinition<ChatMessage>.Empty, cancellationToken: ct);
     public Task AddAdminAuditAsync(AdminAuditLog audit, CancellationToken ct = default) => _adminAudits.InsertOneAsync(audit, cancellationToken: ct);
     public async Task<IReadOnlyList<AdminAuditLog>> GetAdminAuditsAsync(int limit, CancellationToken ct = default) => await _adminAudits.Find(FilterDefinition<AdminAuditLog>.Empty).SortByDescending(x => x.CreatedAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<AdminModuleRecord> UpsertAdminRecordAsync(AdminModuleRecord record, CancellationToken ct = default) { record.UpdatedAtUtc = DateTime.UtcNow; await _adminRecords.ReplaceOneAsync(x => x.Id == record.Id, record, new ReplaceOptions { IsUpsert = true }, ct); return record; }
+    public async Task<AdminModuleRecord?> GetAdminRecordAsync(string id, CancellationToken ct = default) => await _adminRecords.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<AdminModuleRecord>> GetAdminRecordsAsync(string module, int limit, CancellationToken ct = default) => await _adminRecords.Find(x => x.Module == module).SortByDescending(x => x.UpdatedAtUtc).Limit(limit).ToListAsync(ct);
+    public Task DeleteAdminRecordAsync(string id, CancellationToken ct = default) => _adminRecords.DeleteOneAsync(x => x.Id == id, ct);
+    public async Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default) => await _sessions.Find(FilterDefinition<RefreshSession>.Empty).SortByDescending(x => x.LastSeenAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default) => await _conversations.Find(FilterDefinition<Conversation>.Empty).SortByDescending(x => x.LastMessageAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<IReadOnlyList<ChatMessage>> GetAllMessagesAsync(int limit, CancellationToken ct = default) => await _messages.Find(FilterDefinition<ChatMessage>.Empty).SortByDescending(x => x.SentAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<IReadOnlyList<ContactRelation>> GetAllRelationsAsync(int limit, CancellationToken ct = default) => await _relations.Find(FilterDefinition<ContactRelation>.Empty).SortByDescending(x => x.UpdatedAtUtc).Limit(limit).ToListAsync(ct);
 }

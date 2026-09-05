@@ -77,6 +77,7 @@ export type RealtimeHandlers = {
   onContactUpdate?: (event: ContactRealtimeEvent) => void;
   onReceipt?: (event: ReceiptUpdated) => void;
   onMoment?: () => void;
+  onAdminNotice?: (notice: { id: string; content: string; sentAtUtc: string }) => void;
   onCallInvite?: (invite: CallInvite) => void;
   onCallAccepted?: (participant: CallParticipant) => void;
   onCallRejected?: (event: CallEnded) => void;
@@ -97,6 +98,7 @@ export function connectRealtime(handlers: RealtimeHandlers) {
   if (handlers.onContactUpdate) connection.on("contact.updated", handlers.onContactUpdate);
   if (handlers.onReceipt) connection.on("receipt.updated", handlers.onReceipt);
   if (handlers.onMoment) connection.on("moment.updated", handlers.onMoment);
+  if (handlers.onAdminNotice) connection.on("admin.notice", handlers.onAdminNotice);
   if (handlers.onCallInvite) connection.on("call.invited", handlers.onCallInvite);
   if (handlers.onCallAccepted) connection.on("call.accepted", handlers.onCallAccepted);
   if (handlers.onCallRejected) connection.on("call.rejected", handlers.onCallRejected);

@@ -20,14 +20,24 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, MomentReport> _momentReports = new();
     private readonly ConcurrentDictionary<string, CallRecord> _calls = new();
     private readonly ConcurrentDictionary<string, AdminAuditLog> _adminAudits = new();
+    private readonly ConcurrentDictionary<string, AdminModuleRecord> _adminRecords = new();
     private readonly ConcurrentDictionary<string, string> _messageIdempotency = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _conversationLocks = new();
 
     public Task EnsureSeedDataAsync(CancellationToken ct = default)
     {
         _invites.TryAdd("ECHAT2026", new InviteCode { Code = "ECHAT2026", MaxUses = 1000, IsActive = true });
+        Seed("seed-fund-credit", "fund.subjects", "人工增加", "code", "MANUAL_CREDIT");
+        Seed("seed-fund-debit", "fund.subjects", "人工扣减", "code", "MANUAL_DEBIT");
+        Seed("seed-role-admin", "system.roles", "超级管理员", "permissions", "*");
+        Seed("seed-resource-users", "system.resources", "用户管理", "path", "admin.users");
+        Seed("seed-setting-register", "system.settings", "注册模式", "value", "invite-required");
+        Seed("seed-customer-service", "chat.customer-service", "系统客服", "account", "service");
+        Seed("seed-daily-cleanup", "chat.tasks", "过期二维码清理", "schedule", "0 3 * * *");
         return Task.CompletedTask;
     }
+
+    private void Seed(string id, string module, string name, string key, string value) => _adminRecords.TryAdd(id, new AdminModuleRecord { Id = id, Module = module, Name = name, Data = new Dictionary<string, string> { [key] = value } });
 
     public Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) =>
         Task.FromResult(_users.Values.FirstOrDefault(x => x.Account.Equals(account, StringComparison.OrdinalIgnoreCase)));
@@ -200,4 +210,12 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<long> CountMessagesAsync(CancellationToken ct = default) => Task.FromResult((long)_messages.Count);
     public Task AddAdminAuditAsync(AdminAuditLog audit, CancellationToken ct = default) { _adminAudits[audit.Id] = audit; return Task.CompletedTask; }
     public Task<IReadOnlyList<AdminAuditLog>> GetAdminAuditsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AdminAuditLog>>(_adminAudits.Values.OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
+    public Task<AdminModuleRecord> UpsertAdminRecordAsync(AdminModuleRecord record, CancellationToken ct = default) { record.UpdatedAtUtc = DateTime.UtcNow; _adminRecords[record.Id] = record; return Task.FromResult(record); }
+    public Task<AdminModuleRecord?> GetAdminRecordAsync(string id, CancellationToken ct = default) => Task.FromResult(_adminRecords.TryGetValue(id, out var item) ? item : null);
+    public Task<IReadOnlyList<AdminModuleRecord>> GetAdminRecordsAsync(string module, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AdminModuleRecord>>(_adminRecords.Values.Where(x => x.Module == module).OrderByDescending(x => x.UpdatedAtUtc).Take(limit).ToList());
+    public Task DeleteAdminRecordAsync(string id, CancellationToken ct = default) { _adminRecords.TryRemove(id, out _); return Task.CompletedTask; }
+    public Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RefreshSession>>(_sessions.Values.OrderByDescending(x => x.LastSeenAtUtc).Take(limit).ToList());
+    public Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Conversation>>(_conversations.Values.OrderByDescending(x => x.LastMessageAtUtc ?? x.CreatedAtUtc).Take(limit).ToList());
+    public Task<IReadOnlyList<ChatMessage>> GetAllMessagesAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ChatMessage>>(_messages.Values.OrderByDescending(x => x.SentAtUtc).Take(limit).ToList());
+    public Task<IReadOnlyList<ContactRelation>> GetAllRelationsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ContactRelation>>(_relations.Values.OrderByDescending(x => x.UpdatedAtUtc).Take(limit).ToList());
 }

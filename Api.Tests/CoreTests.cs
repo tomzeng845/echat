@@ -211,6 +211,28 @@ public sealed class CoreTests
         Assert.Null(await repository.GetUserByAccountAsync("e_admin"));
     }
 
+    [Fact]
+    public async Task AdminModules_AreSeededQueryableAndMutable()
+    {
+        var repository = new InMemoryChatRepository();
+        await repository.EnsureSeedDataAsync();
+        Assert.Equal(2, (await repository.GetAdminRecordsAsync("fund.subjects", 20)).Count);
+        Assert.Single(await repository.GetAdminRecordsAsync("system.roles", 20));
+        Assert.Single(await repository.GetAdminRecordsAsync("chat.tasks", 20));
+
+        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "system.settings", Name = "文件上限", Data = new() { ["value"] = "25MB" } });
+        Assert.Equal("25MB", (await repository.GetAdminRecordAsync(record.Id))!.Data["value"]);
+        await repository.DeleteAdminRecordAsync(record.Id);
+        Assert.Null(await repository.GetAdminRecordAsync(record.Id));
+
+        await repository.AddSessionAsync(new RefreshSession { UserId = "u1", TokenHash = "all-session", ExpiresAtUtc = DateTime.UtcNow.AddDays(1) });
+        await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Name = "后台测试群" });
+        await repository.UpsertRelationAsync(new ContactRelation { Id = "u1:u2", UserId = "u1", PeerUserId = "u2" });
+        Assert.Single(await repository.GetAllSessionsAsync(20));
+        Assert.Single(await repository.GetAllConversationsAsync(20));
+        Assert.Single(await repository.GetAllRelationsAsync(20));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

@@ -62,6 +62,15 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
     var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
     context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiException").LogError(error, "Unhandled API error for {Method} {Path}", context.Request.Method, context.Request.Path);
+    try
+    {
+        await context.RequestServices.GetRequiredService<IChatRepository>().UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Module = "system.error-logs", Name = error?.GetType().Name ?? "UnhandledError", Status = "Open",
+            Data = new Dictionary<string, string> { ["method"] = context.Request.Method, ["path"] = context.Request.Path, ["message"] = error?.Message ?? "未知错误", ["traceId"] = context.TraceIdentifier }
+        }, context.RequestAborted);
+    }
+    catch { /* the primary exception response must still be returned */ }
     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
     context.Response.ContentType = "application/json; charset=utf-8";
     await context.Response.WriteAsJsonAsync(new { success = false, error = "服务器暂时无法完成请求", traceId = context.TraceIdentifier });
@@ -86,7 +95,7 @@ app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.4.2",
+    version = "0.5.0",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     utcNow = DateTime.UtcNow

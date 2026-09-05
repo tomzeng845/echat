@@ -325,6 +325,7 @@ function Messenger({ session, onLogout }: { session: AuthResponse; onLogout: () 
         setConversations(current => current.map(item => item.id === receipt.conversationId ? { ...item, readSequence: Math.max(item.readSequence, receipt.readSequence) } : item));
       },
       onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
+      onAdminNotice: notice => toast.info(notice.content, { duration: 8000 }),
     });
     let disposed = false;
     let retryTimer: number | undefined;
