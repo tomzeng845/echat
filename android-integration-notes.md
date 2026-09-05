@@ -1,4 +1,10 @@
-# E聊 Android 0.8.4 集成说明
+# E聊 Android 0.8.5 集成说明
+
+## 0.8.5 后台通知栏回退
+
+生产健康接口此前显示 `push.enabled=false`，说明服务端没有 Firebase 服务账号；0.8.4 因此只有前台 SignalR 提示音，APP 切到后台后不会产生 Android 系统通知。0.8.5 加入 `@capacitor/local-notifications`：登录后无论 FCM 是否配置，都会检查 Android 13+ `POST_NOTIFICATIONS` 权限并创建 `messages-v2`、`calls-v2` 声音频道。`App.appStateChange` 记录前后台状态；进程仍存活且 SignalR 收到新消息/来电时，前台继续播放应用内提示音，后台则调度即时本地通知，点击后通过 `extra` 中的会话编号回到目标会话。
+
+本地通知与 FCM 是互补而不是替代关系。APP 只切到后台且 WebView/SignalR 尚未被系统冻结时，本地通知无需 Firebase 即可立即显示；APP 被 Doze 冻结、强制停止或进程被杀死后，任何本地 JavaScript 都无法接收服务器事件，必须由 FCM 唤醒系统通知。若 FCM 已配置，后台事件由服务端 FCM 负责，客户端不会再调度同一条本地通知；消息编号和通话编号还用于 5 秒去重。通知摘要不含端到端加密正文。
 
 ## 0.8.4 错误密钥缓存自愈
 
@@ -34,6 +40,7 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Android 容器     | Capacitor 8；最低 API 24，使用 Android System WebView                                                                           | [Capacitor Android](https://capacitorjs.com/docs/android)                                  |
 | 消息推送         | `@capacitor/push-notifications` 接收 FCM；Android 13+ 运行时请求通知权限；`google-services.json` 放在 `android/app/`            | [Capacitor Push Notifications](https://capacitorjs.com/docs/apis/push-notifications)       |
+| 后台本地通知     | `@capacitor/local-notifications` 在进程存活且 APP 位于后台时发布通知栏消息；点击通过 `extra` 跳转会话                           | [Capacitor Local Notifications](https://capacitorjs.com/docs/apis/local-notifications)     |
 | 服务端推送       | FCM HTTP v1；服务账号使用 OAuth 2.0 短期访问令牌；请求发送至 `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` | [Firebase FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api)       |
 | 刘海屏和系统栏   | Android 15 / target SDK 35+ 强制边到边；可点击内容需避开 system bars 与 display cutout insets                                   | [Android edge-to-edge](https://developer.android.com/develop/ui/views/layout/edge-to-edge) |
 | WebView 安全区   | Capacitor 8 System Bars 默认向 WebView 注入 `--safe-area-inset-*`，用于修复部分旧 WebView 的 CSS `env()` 安全区值               | [Capacitor System Bars](https://capacitorjs.com/docs/apis/system-bars)                     |

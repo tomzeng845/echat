@@ -254,3 +254,15 @@ Android 原生层已打包 `echat_message.wav` 和 `echat_call.wav`。前台其�
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 18 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_084_OK`、`ADMIN_084_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
 
 最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=12`、`versionName=0.8.4`、最低 API 24、目标 API 36。文件 `EChat-0.8.4-debug.apk` 的 SHA-256 为 `1ca3a379f12b42bde5df3f9d6847062894707a4af018da22ae4ca396fd95c650`。
+
+## 2026-09-06 Android APP 0.8.5 后台通知栏回退
+
+生产域名健康接口在修复前返回 `push.enabled=false`，说明项目方尚未配置 FCM 服务账号；因此 0.8.4 只有 APP 前台的 SignalR 提示音，切到后台后没有系统通知。0.8.5 加入 Capacitor Local Notifications：登录后独立检查 Android 13+ 通知权限并创建 `messages-v2` 与 `calls-v2` 频道，通过 `App.appStateChange` 记录前后台状态。进程仍存活时，新消息在后台立即调度本地通知，语音/视频来电使用高优先级通话频道；点击通知通过 `extra` 中的会话编号返回对应聊天。通知正文只描述“加密消息/图片/语音/视频/文件”，不包含端到端加密明文。
+
+Vitest 直接模拟服务端 `enabled=false`、APP 由前台切到后台的场景，验证没有调用任何 Firebase API，但已检查本地通知权限、创建两个频道，并通过 `LocalNotifications.schedule()` 写入 `messages-v2` 通知和会话跳转数据。个人中心状态测试确认显示“后台通知已开启”。Android `cap sync` 确认 APK 注册 `com.capacitorjs.plugins.localnotifications.LocalNotificationsPlugin`；合并 Manifest 包含 `POST_NOTIFICATIONS`、通知发布/恢复 Receiver 与文件 Provider，打包配置包含通知图标、颜色和声音。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 9 项、xUnit 18 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_085_OK`、`ADMIN_085_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK` 和 `ANDROID_CALL_AUDIO_OK`。
+
+最终 APK 经 16 KB zipalign 与 APK Signature Scheme v2 验证；`aapt` 确认包名 `com.echat.app`、`versionCode=13`、`versionName=0.8.5`，并声明 `android.permission.POST_NOTIFICATIONS`。文件 `EChat-0.8.5-debug.apk` 的 SHA-256 为 `cc600c4060f8c3c7c726871abec0b883fb4143eba688a2f2c9a2a1b69d8343fc`。
+
+本地通知只覆盖 APP 位于后台且进程/SignalR 仍存活的情况；设备进入 Doze、系统冻结 WebView、用户强制停止或进程被杀死后，可靠通知仍需配置 Firebase 客户端与服务端凭据。已配置 FCM 时，后台由 FCM 负责，客户端不会重复调度本地通知。

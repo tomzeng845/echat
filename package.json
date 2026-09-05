@@ -21,6 +21,7 @@
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
     "@hookform/resolvers": "^5.2.2",
     "@microsoft/signalr": "^10.0.11",

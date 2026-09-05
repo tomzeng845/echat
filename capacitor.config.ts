@@ -18,6 +18,11 @@ const config: CapacitorConfig = {
     PushNotifications: {
       presentationOptions: ["alert"],
     },
+    LocalNotifications: {
+      smallIcon: "ic_stat_echat",
+      iconColor: "#12D6B0",
+      sound: "echat_message.wav",
+    },
   },
 };
 

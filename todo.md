@@ -1,5 +1,23 @@
 # E聊开发跟踪
 
+## Android APP 0.8.5 后台通知栏
+
+- [x] 确认生产 `push.enabled=false`，定位为 Firebase 凭据尚未配置
+- [x] 接入 Capacitor Local Notifications 作为进程存活时的后台回退
+- [x] 登录后检查 Android 13+ 通知权限，不再依赖 FCM 是否启用
+- [x] 使用 `App.appStateChange` 区分前台提示音和后台通知栏
+- [x] 后台新消息按类型显示加密消息/图片/语音/视频/文件摘要
+- [x] 后台语音和视频来电使用 `calls-v2` 高优先级声音频道
+- [x] 点击本地通知通过 `extra` 会话编号回到对应聊天
+- [x] 已注册 FCM 时后台不重复调度本地通知
+- [x] 个人中心在 FCM 未配置但本地通知可用时显示“后台通知已开启”
+- [x] Vitest 覆盖 FCM 关闭、APP 进入后台和本地通知调度
+- [x] APK 已打包本地通知插件、通知权限、Receiver、Provider 和频道配置
+- [x] `pnpm check`、Vitest 9 项、xUnit 18 项和生产构建通过
+- [x] Android 单测、lint、16 KB 对齐和 v2 签名验证通过
+- [x] 13 组聊天、后台、移动、加密、提示音与通话全量回归通过
+- [x] 生成 `versionCode=13`、`versionName=0.8.5` 可覆盖安装 APK
+
 ## Android APP 0.8.4 错误密钥缓存自愈
 
 - [x] 复现 IndexedDB 已存在同版本错误 AES 密钥时仍显示旧设备提示的问题

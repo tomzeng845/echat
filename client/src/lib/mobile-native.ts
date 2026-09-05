@@ -10,6 +10,10 @@ import {
   type PushNotificationSchema,
   type Token,
 } from "@capacitor/push-notifications";
+import {
+  LocalNotifications,
+  type ActionPerformed as LocalNotificationAction,
+} from "@capacitor/local-notifications";
 import { api, getDeviceId } from "./echat-api";
 import { canInitializeNativePush } from "./push-status";
 
@@ -20,6 +24,7 @@ export type NativePushState =
   | "prompt"
   | "registering"
   | "registered"
+  | "local"
   | "denied"
   | "unavailable";
 export type NativeNotificationTarget = {
@@ -52,8 +57,11 @@ let pushState: NativePushState = Capacitor.isNativePlatform()
   ? "prompt"
   : "web";
 let listeners: PluginListenerHandle[] = [];
+let localListeners: PluginListenerHandle[] = [];
 let appListener: PluginListenerHandle | null = null;
 let pushStarted = false;
+let localNotificationsStarted = false;
+let nativeAppActive = true;
 const recentAlerts = new Map<string, number>();
 
 export function isNativeAndroid() {
@@ -72,10 +80,7 @@ function updatePushState(next: NativePushState) {
     );
 }
 
-function openNotificationTarget(
-  action: ActionPerformed | { notification: { data?: Record<string, unknown> } }
-) {
-  const raw = action.notification.data || {};
+function dispatchNotificationTarget(raw: Record<string, unknown>) {
   const target: NativeNotificationTarget = {
     type: typeof raw.type === "string" ? raw.type : undefined,
     conversationId:
@@ -87,6 +92,137 @@ function openNotificationTarget(
   window.dispatchEvent(
     new CustomEvent("echat-open-notification", { detail: target })
   );
+}
+
+function openNotificationTarget(
+  action: ActionPerformed | { notification: { data?: Record<string, unknown> } }
+) {
+  dispatchNotificationTarget(action.notification.data || {});
+}
+
+function openLocalNotificationTarget(action: LocalNotificationAction) {
+  dispatchNotificationTarget(action.notification.extra || {});
+}
+
+function notificationId(eventId: string) {
+  let value = 2166136261;
+  for (let index = 0; index < eventId.length; index += 1) {
+    value ^= eventId.charCodeAt(index);
+    value = Math.imul(value, 16777619);
+  }
+  return value & 0x7fffffff || 1;
+}
+
+async function ensureNativeAppState() {
+  if (!isNativeAndroid() || appListener) return;
+  nativeAppActive = (await App.getState().catch(() => ({ isActive: true })))
+    .isActive;
+  appListener = await App.addListener("appStateChange", ({ isActive }) => {
+    nativeAppActive = isActive;
+    if (isActive && pushState === "registered")
+      PushNotifications.register().catch(() => updatePushState("unavailable"));
+  });
+}
+
+async function registerLocalNotificationFallback() {
+  if (!isNativeAndroid()) return false;
+  await ensureNativeAppState();
+  if (!localNotificationsStarted) {
+    localNotificationsStarted = true;
+    localListeners = [
+      await LocalNotifications.addListener(
+        "localNotificationActionPerformed",
+        openLocalNotificationTarget
+      ),
+    ];
+  }
+  let permission = await LocalNotifications.checkPermissions();
+  if (
+    permission.display === "prompt" ||
+    permission.display === "prompt-with-rationale"
+  )
+    permission = await LocalNotifications.requestPermissions();
+  if (permission.display !== "granted") return false;
+  await Promise.all([
+    LocalNotifications.createChannel({
+      id: "messages-v2",
+      name: "聊天消息",
+      description: "新消息与好友申请",
+      importance: 4,
+      visibility: 1,
+      vibration: true,
+      sound: "echat_message.wav",
+    }),
+    LocalNotifications.createChannel({
+      id: "calls-v2",
+      name: "音视频通话",
+      description: "E聊语音与视频来电",
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      sound: "echat_call.wav",
+    }),
+  ]);
+  return true;
+}
+
+function reserveIncomingEvent(kind: AlertSoundKind, eventId?: string) {
+  const now = Date.now();
+  for (const [key, timestamp] of Array.from(recentAlerts.entries()))
+    if (now - timestamp > 10_000) recentAlerts.delete(key);
+  const dedupeKey = `${kind}:${eventId || now}`;
+  if (eventId && now - (recentAlerts.get(dedupeKey) || 0) < 5_000) return false;
+  recentAlerts.set(dedupeKey, now);
+  return true;
+}
+
+async function playIncomingAlertNow(kind: AlertSoundKind, eventId?: string) {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(
+      new CustomEvent("echat-alert-sound", {
+        detail: { kind, eventId: eventId || "" },
+      })
+    );
+  if (!isNativeAndroid()) return true;
+  return MediaPermissions.playAlertSound({ kind })
+    .then(result => result.playing)
+    .catch(() => false);
+}
+
+export async function notifyIncomingEvent(options: {
+  kind: AlertSoundKind;
+  eventId: string;
+  title: string;
+  body: string;
+  target: NativeNotificationTarget;
+}) {
+  if (!reserveIncomingEvent(options.kind, options.eventId)) return false;
+  if (!isNativeAndroid() || nativeAppActive)
+    return playIncomingAlertNow(options.kind, options.eventId);
+  if (pushState === "registered") return true;
+  if (!(await registerLocalNotificationFallback())) return false;
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: notificationId(`${options.kind}:${options.eventId}`),
+        title: options.title,
+        body: options.body,
+        channelId: options.kind === "message" ? "messages-v2" : "calls-v2",
+        smallIcon: "ic_stat_echat",
+        iconColor: "#12D6B0",
+        group: options.kind === "message" ? "echat-messages" : "echat-calls",
+        autoCancel: true,
+        extra: options.target,
+      },
+    ],
+  });
+  if (typeof window !== "undefined")
+    window.dispatchEvent(
+      new CustomEvent("echat-local-notification", {
+        detail: { kind: options.kind, eventId: options.eventId },
+      })
+    );
+  return true;
 }
 
 function alertFromPush(notification: PushNotificationSchema) {
@@ -109,22 +245,8 @@ export async function playIncomingAlert(
   kind: AlertSoundKind,
   eventId?: string
 ) {
-  const now = Date.now();
-  for (const [key, timestamp] of Array.from(recentAlerts.entries()))
-    if (now - timestamp > 10_000) recentAlerts.delete(key);
-  const dedupeKey = `${kind}:${eventId || now}`;
-  if (eventId && now - (recentAlerts.get(dedupeKey) || 0) < 5_000) return false;
-  recentAlerts.set(dedupeKey, now);
-  if (typeof window !== "undefined")
-    window.dispatchEvent(
-      new CustomEvent("echat-alert-sound", {
-        detail: { kind, eventId: eventId || "" },
-      })
-    );
-  if (!isNativeAndroid()) return true;
-  return MediaPermissions.playAlertSound({ kind })
-    .then(result => result.playing)
-    .catch(() => false);
+  if (!reserveIncomingEvent(kind, eventId)) return false;
+  return playIncomingAlertNow(kind, eventId);
 }
 
 export async function stopIncomingCallAlert() {
@@ -156,7 +278,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.4",
+      appVersion: "0.8.5",
     }),
   });
   updatePushState("registered");
@@ -164,12 +286,15 @@ async function savePushToken(token: Token) {
 
 export async function registerNativePush() {
   if (!isNativeAndroid()) return "web" as const;
+  const localNotificationsAvailable =
+    await registerLocalNotificationFallback().catch(() => false);
   const serverStatus = await api<{ enabled: boolean }>(
     "/api/push/status"
   ).catch(() => ({ enabled: false }));
   if (!serverStatus.enabled) {
-    updatePushState("unavailable");
-    return "unavailable" as const;
+    const nextState = localNotificationsAvailable ? "local" : "denied";
+    updatePushState(nextState);
+    return nextState;
   }
   const nativeCapabilities = await MediaPermissions.getCapabilities().catch(
     () => ({ firebaseConfigured: false })
@@ -180,8 +305,9 @@ export async function registerNativePush() {
       nativeCapabilities.firebaseConfigured
     )
   ) {
-    updatePushState("unavailable");
-    return "unavailable" as const;
+    const nextState = localNotificationsAvailable ? "local" : "unavailable";
+    updatePushState(nextState);
+    return nextState;
   }
   if (!pushStarted) {
     pushStarted = true;
@@ -200,12 +326,6 @@ export async function registerNativePush() {
         alertFromPush(notification).catch(() => undefined)
       ),
     ]);
-    appListener = await App.addListener("appStateChange", ({ isActive }) => {
-      if (isActive && pushState === "registered")
-        PushNotifications.register().catch(() =>
-          updatePushState("unavailable")
-        );
-    });
   }
 
   updatePushState("registering");
@@ -253,12 +373,16 @@ export async function unregisterNativePush() {
   await api(`/api/push/devices/${encodeURIComponent(getDeviceId())}`, {
     method: "DELETE",
   }).catch(() => undefined);
-  await PushNotifications.unregister().catch(() => undefined);
+  if (pushStarted) await PushNotifications.unregister().catch(() => undefined);
   for (const listener of listeners) await listener.remove();
   listeners = [];
+  for (const listener of localListeners) await listener.remove();
+  localListeners = [];
   await appListener?.remove();
   appListener = null;
   pushStarted = false;
+  localNotificationsStarted = false;
+  nativeAppActive = true;
   updatePushState("prompt");
 }
 

@@ -35,7 +35,7 @@ import {
 import {
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
-  playIncomingAlert,
+  notifyIncomingEvent,
   setNativeCallAudioRoute,
   stopIncomingCallAlert,
 } from "@/lib/mobile-native";
@@ -304,10 +304,18 @@ const CallManager = forwardRef<
       };
       setCall(next);
       callRef.current = next;
-      playIncomingAlert(
-        invite.mode === "video" ? "video-call" : "voice-call",
-        invite.callId
-      ).catch(() => undefined);
+      notifyIncomingEvent({
+        kind: invite.mode === "video" ? "video-call" : "voice-call",
+        eventId: invite.callId,
+        title: invite.callerName || "E聊来电",
+        body:
+          invite.mode === "video" ? "邀请你进行视频通话" : "邀请你进行语音通话",
+        target: {
+          type: "call",
+          conversationId: invite.conversationId,
+          callId: invite.callId,
+        },
+      }).catch(() => undefined);
     };
     const accepted = async (participant: CallParticipant) => {
       if (callRef.current?.callId !== participant.callId) return;

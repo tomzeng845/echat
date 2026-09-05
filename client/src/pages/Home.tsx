@@ -39,7 +39,7 @@ import {
 } from "@/lib/echat-crypto";
 import {
   consumePendingNotification,
-  playIncomingAlert,
+  notifyIncomingEvent,
   registerNativePush,
   type NativeNotificationTarget,
 } from "@/lib/mobile-native";
@@ -812,8 +812,30 @@ function Messenger({
     if (!identityReady) return;
     const connection = connectRealtime({
       onMessage: async message => {
-        if (message.senderId !== user.id)
-          playIncomingAlert("message", message.id).catch(() => undefined);
+        if (message.senderId !== user.id) {
+          const conversation = conversationsRef.current.find(
+            item => item.id === message.conversationId
+          );
+          const labels: Record<Message["kind"], string> = {
+            Text: "加密消息",
+            Emoji: "表情消息",
+            Image: "图片消息",
+            Voice: "语音消息",
+            Video: "视频消息",
+            File: "文件消息",
+            System: "系统消息",
+          };
+          notifyIncomingEvent({
+            kind: "message",
+            eventId: message.id,
+            title: conversation?.name || "E聊新消息",
+            body: `收到一条${labels[message.kind]}`,
+            target: {
+              type: "message",
+              conversationId: message.conversationId,
+            },
+          }).catch(() => undefined);
+        }
         if (message.conversationId === selectedRef.current) {
           const value = await decrypt(message);
           setMessages(current =>
