@@ -2,6 +2,9 @@
 
 ## 当前版本验收清单
 
+- [x] 开发预览启动时修复既有 `e_admin` 的旧密码、普通角色、停用和锁定状态
+- [x] 生产环境不重置既有管理员密码，继续要求显式密码与 TOTP 配置
+- [x] 公开预览使用 `E_Admin` / `Heibai@99` 登录返回 200 并进入管理后台
 - [x] 独立 `/admin` HTML5 响应式管理后台，桌面侧栏与手机抽屉导航
 - [x] 开发预览默认管理账号 `E_Admin`，密码使用 ASP.NET PasswordHasher 存储
 - [x] 生产环境仅通过 `ADMIN_BOOTSTRAP_PASSWORD` 创建管理员并强制 TOTP

@@ -23,7 +23,7 @@ public sealed class AdminController(IChatRepository repository, TotpService totp
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.4.0",
+            version = "0.4.1",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,

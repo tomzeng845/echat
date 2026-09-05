@@ -27,13 +27,34 @@ public sealed class AdminBootstrapService(
         var existing = await repository.GetUserByAccountAsync(account, ct);
         if (existing is not null)
         {
+            var changed = false;
             if (existing.Role != UserRole.Admin)
             {
                 existing.Role = UserRole.Admin;
                 existing.Status = UserStatus.Active;
-                await repository.UpdateUserAsync(existing, ct);
+                changed = true;
                 logger.LogWarning("Existing bootstrap account {Account} was promoted to Admin", account);
             }
+
+            if (environment.IsDevelopment())
+            {
+                var passwordMatches = passwordHasher.VerifyHashedPassword(existing, existing.PasswordHash, password) != PasswordVerificationResult.Failed;
+                if (!passwordMatches)
+                {
+                    existing.PasswordHash = passwordHasher.HashPassword(existing, password);
+                    changed = true;
+                    logger.LogWarning("Development bootstrap admin {Account} password was restored to the documented preview password", account);
+                }
+                if (existing.Status != UserStatus.Active || existing.LockoutUntilUtc is not null || existing.FailedLoginAttempts != 0)
+                {
+                    existing.Status = UserStatus.Active;
+                    existing.LockoutUntilUtc = null;
+                    existing.FailedLoginAttempts = 0;
+                    changed = true;
+                }
+            }
+
+            if (changed) await repository.UpdateUserAsync(existing, ct);
             return;
         }
 

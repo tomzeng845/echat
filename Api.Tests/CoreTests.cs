@@ -150,6 +150,39 @@ public sealed class CoreTests
         Assert.Single(await repository.GetAdminAuditsAsync(20));
     }
 
+    [Fact]
+    public async Task AdminBootstrap_DevelopmentRestoresExistingPreviewCredentials()
+    {
+        var repository = new InMemoryChatRepository();
+        var hasher = new PasswordHasher<UserAccount>();
+        var existing = new UserAccount
+        {
+            Account = "e_admin",
+            DisplayName = "旧账号",
+            Role = UserRole.User,
+            Status = UserStatus.Disabled,
+            LockoutUntilUtc = DateTime.UtcNow.AddHours(1),
+            FailedLoginAttempts = 4
+        };
+        existing.PasswordHash = hasher.HashPassword(existing, "old-password");
+        await repository.AddUserAsync(existing);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Admin:BootstrapAccount"] = "E_Admin",
+            ["Admin:BootstrapPassword"] = "Heibai@99"
+        }).Build();
+
+        await new AdminBootstrapService(repository, hasher, configuration, new TestHostEnvironment(), NullLogger<AdminBootstrapService>.Instance).EnsureAsync();
+
+        var restored = await repository.GetUserByAccountAsync("e_admin");
+        Assert.NotNull(restored);
+        Assert.Equal(UserRole.Admin, restored!.Role);
+        Assert.Equal(UserStatus.Active, restored.Status);
+        Assert.Null(restored.LockoutUntilUtc);
+        Assert.Equal(0, restored.FailedLoginAttempts);
+        Assert.NotEqual(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(restored, restored.PasswordHash, "Heibai@99"));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;

@@ -23,7 +23,7 @@ const admin = await fetchApi("/api/auth/login", null, {
 if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp) throw new Error("development bootstrap admin login failed");
 
 const overview = await fetchApi("/api/admin/overview", admin.accessToken);
-if (overview.version !== "0.4.0" || overview.metrics.users < 1) throw new Error("admin overview metrics invalid");
+if (overview.version !== "0.4.1" || overview.metrics.users < 1) throw new Error("admin overview metrics invalid");
 
 const normalAccount = `adminuser${suffix}`;
 const normal = await fetchApi("/api/auth/register", null, {
