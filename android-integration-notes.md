@@ -1,4 +1,10 @@
-# E聊 Android 0.8.0 集成说明
+# E聊 Android 0.8.1 集成说明
+
+## 0.8.1 登录防闪退
+
+0.8.0 测试 APK 未包含项目方 `google-services.json`，但登录成功后会无条件执行 Capacitor Push Notifications 的 `register()`。该插件内部直接调用 `FirebaseMessaging.getInstance()`；Firebase 默认应用不存在时，部分设备会因此终止 Activity。
+
+0.8.1 改为三级门控：先查询服务端 `/api/push/status`，服务端 FCM 未启用时立即降级且不触发任何原生推送 API；服务端启用后，再由原生桥接检查 APK 是否包含 `google_app_id`；只有两项均就绪时才注册通知监听、请求通知权限并获取 FCM token。任一配置缺失时个人中心显示“待配置 FCM”，但聊天、SignalR、摄像头、麦克风和音视频通话继续正常工作。
 
 ## 技术路线
 

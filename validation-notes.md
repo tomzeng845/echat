@@ -206,3 +206,13 @@ Capacitor System Bars 以 CSS 变量注入系统 inset。`android-safe-area-smok
 ### Android 0.8.0 最终结果
 
 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 4 项（含个人中心“待配置 FCM”状态映射）、xUnit 17 项、生产 Web 构建和 Android APK 构建均通过。完整业务回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_080_OK`、`ADMIN_080_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`、`GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。交付 APK 是便于安装验证的 debug 包；上架应用商店前仍需项目方 Firebase 配置、独立 release 签名、真机通知/通话验证及 AAB 发布流程。
+
+## 2026-09-06 Android APP 0.8.1 登录闪退修复
+
+0.8.0 debug APK 未包含项目方 `google-services.json`，登录成功进入 Messenger 后仍会自动调用 Capacitor Push Notifications 的 `register()`。插件源码中的 `FirebaseMessaging.getInstance()` 要求已经创建 Firebase 默认应用，因此这是缺少客户端 Firebase 配置时最直接的原生异常路径。
+
+0.8.1 在任何原生推送调用前先请求 `/api/push/status`。当前生产服务返回 `push.enabled=false` 时，客户端立即进入“待配置 FCM”，不会添加推送监听、检查/请求通知权限、创建通知频道、调用 `register()`，甚至不会调用 Firebase 客户端能力检查。服务端日后启用 FCM 后，原生桥接还会检查 APK 是否包含 `google_app_id`；只有服务端与 APK 两端配置均完整时才初始化 FCM。
+
+新增直接回归通过：`mobile-native-guard.test.ts` 模拟 Android 登录后服务端 FCM 关闭，确认 `getCapabilities`、`addListener`、`checkPermissions`、`requestPermissions`、`createChannel` 和 `register` 均为零调用；四种客户端/服务端组合门控与个人中心状态映射也通过。最终为 Vitest 6 项、xUnit 17 项。
+
+无 `google_app_id` 条件下，Android `testDebugUnitTest`、`lintDebug`、`assembleDebug` 全部成功。新包经 16 KB zipalign 与 APK Signature Scheme v2 验证，`aapt` 确认包名 `com.echat.app`、`versionCode=9`、`versionName=0.8.1`；SHA-256 为 `921fef26902f6552d042c88fa2f47f0661acdf45962e37dd095ee085ece0ebee`。全量回归返回 `E2E_OK`、`ADMIN_REQUIREMENTS_081_OK`、`ADMIN_081_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK` 与 `ANDROID_SAFE_AREA_OK`。

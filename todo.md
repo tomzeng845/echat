@@ -1,5 +1,17 @@
 # E聊开发跟踪
 
+## Android APP 0.8.1 登录防闪退
+
+- [x] 定位为未配置 `google-services.json` 时，登录后自动调用 `FirebaseMessaging.getInstance()` 的异常路径
+- [x] 登录后先查询 `/api/push/status`；服务端 FCM 未启用时完全跳过原生推送插件
+- [x] 原生 `MediaPermissions.getCapabilities()` 检查 APK 是否包含 `google_app_id`
+- [x] 只有服务端凭据与 Android Firebase 客户端配置同时存在时才注册通知监听和 FCM
+- [x] 缺少任一配置时降级为“待配置 FCM”，聊天、好友、通话和媒体功能照常初始化
+- [x] Vitest 增加四种配置组合及“服务端关闭时零原生调用”测试，前端测试共 6 项
+- [x] 无 `google_app_id` 条件下 Gradle 单测、lint 与 APK 组装通过
+- [x] 全量业务、后台、GeoIP、推送 API 和安全区回归通过
+- [x] 生成 `versionCode=9`、`versionName=0.8.1` 防闪退 APK
+
 ## Android APP 0.8.0 验收清单
 
 - [x] 使用 Capacitor 8 生成包名 `com.echat.app` 的原生 Android 工程

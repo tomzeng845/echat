@@ -10,6 +10,7 @@ import {
   type Token,
 } from "@capacitor/push-notifications";
 import { api, getDeviceId } from "./echat-api";
+import { canInitializeNativePush } from "./push-status";
 
 const PENDING_NOTIFICATION_KEY = "echat.pending-notification.v1";
 
@@ -28,6 +29,7 @@ export type NativeNotificationTarget = {
 };
 
 type MediaPermissionsPlugin = {
+  getCapabilities(): Promise<{ firebaseConfigured: boolean }>;
   requestPermissions(options: {
     camera: boolean;
     microphone: boolean;
@@ -53,7 +55,10 @@ export function getNativePushState() {
 
 function updatePushState(next: NativePushState) {
   pushState = next;
-  window.dispatchEvent(new CustomEvent("echat-push-status", { detail: next }));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(
+      new CustomEvent("echat-push-status", { detail: next })
+    );
 }
 
 function openNotificationTarget(
@@ -93,7 +98,7 @@ async function savePushToken(token: Token) {
       deviceId: getDeviceId(),
       token: token.value,
       platform: "android",
-      appVersion: "0.8.0",
+      appVersion: "0.8.1",
     }),
   });
   updatePushState("registered");
@@ -101,6 +106,25 @@ async function savePushToken(token: Token) {
 
 export async function registerNativePush() {
   if (!isNativeAndroid()) return "web" as const;
+  const serverStatus = await api<{ enabled: boolean }>(
+    "/api/push/status"
+  ).catch(() => ({ enabled: false }));
+  if (!serverStatus.enabled) {
+    updatePushState("unavailable");
+    return "unavailable" as const;
+  }
+  const nativeCapabilities = await MediaPermissions.getCapabilities().catch(
+    () => ({ firebaseConfigured: false })
+  );
+  if (
+    !canInitializeNativePush(
+      serverStatus.enabled,
+      nativeCapabilities.firebaseConfigured
+    )
+  ) {
+    updatePushState("unavailable");
+    return "unavailable" as const;
+  }
   if (!pushStarted) {
     pushStarted = true;
     listeners = await Promise.all([

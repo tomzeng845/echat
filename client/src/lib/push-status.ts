@@ -1,5 +1,12 @@
 import type { NativePushState } from "./mobile-native";
 
+export function canInitializeNativePush(
+  serverEnabled: boolean,
+  firebaseConfigured: boolean
+) {
+  return serverEnabled && firebaseConfigured;
+}
+
 export function pushStatusLabel(
   nativeAndroid: boolean,
   state: NativePushState

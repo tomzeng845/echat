@@ -21,6 +21,14 @@ import java.util.List;
 )
 public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
+    public void getCapabilities(PluginCall call) {
+        int googleAppId = getContext().getResources().getIdentifier("google_app_id", "string", getContext().getPackageName());
+        JSObject result = new JSObject();
+        result.put("firebaseConfigured", googleAppId != 0);
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void requestPermissions(PluginCall call) {
         List<String> aliases = new ArrayList<>();
         if (Boolean.TRUE.equals(call.getBoolean("camera", false)) && getPermissionState("camera") != PermissionState.GRANTED) {

@@ -18,7 +18,7 @@
 | 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                  | 已完成           |
 | 管理后台    | HTML5 响应式四大系统；按 V2 文档实现普通用户隔离、邀请码、日志、交易、Admin、公告、图片和聊天治理 API   | 已完成 0.7.1     |
 | 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区       | 已完成 0.7.1     |
-| Android APP | Capacitor 8、本地 Web 资源、系统通知、通知深链、相机/麦克风权限、刘海屏和系统导航栏安全区               | 已完成 0.8.0     |
+| Android APP | Capacitor 8、本地 Web 资源、系统通知、通知深链、相机/麦克风权限、刘海屏和系统导航栏安全区               | 已完成 0.8.1     |
 | 消息推送    | Android FCM 令牌注册/停用、消息/好友申请/来电高优先级通知、失效令牌停用；通知不含聊天明文               | 应用层已完成     |
 | 音视频通话  | 单聊与群聊入口、来电、接听、拒接、结束、静音、摄像头控制、持久化通话记录、动态 ICE 配置、SignalR 信令   | 已完成 P1 应用层 |
 | 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                            | 已完成 P1        |
@@ -119,7 +119,7 @@ pnpm android:apk
 
 debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。正式发布前应在 Android Studio 配置独立签名并生成 release AAB/APK，不能使用 debug 签名。
 
-Android 13 及以上会在登录后请求系统通知权限；扫码只请求摄像头，语音录制只请求麦克风，视频通话请求摄像头和麦克风。Capacitor System Bars 把正确的 display cutout、状态栏和底部手势/三键导航栏 inset 注入 CSS；根布局、聊天发送栏和移动底部菜单均在安全区内显示，不会与刘海或系统菜单重叠。
+只有服务端 FCM 凭据与 APK 的 Firebase 客户端配置同时存在时，Android 13 及以上才会在登录后请求系统通知权限。0.8.1 修复了缺少 `google-services.json` 时登录后自动调用 Firebase、导致部分手机闪退的问题：未配置时完全跳过 FCM 初始化并显示“待配置 FCM”。扫码只请求摄像头，语音录制只请求麦克风，视频通话请求摄像头和麦克风。Capacitor System Bars 把正确的 display cutout、状态栏和底部手势/三键导航栏 inset 注入 CSS；根布局、聊天发送栏和移动底部菜单均在安全区内显示，不会与刘海或系统菜单重叠。
 
 FCM 正式启用需要在 [Firebase 控制台](https://console.firebase.google.com/) 创建与包名 `com.echat.app` 对应的 Android 应用，把客户端 `google-services.json` 放到 `android/app/google-services.json`，再执行 `pnpm android:sync` 和 APK/AAB 构建。该文件和签名密钥已被 Git 忽略。服务端通过秘密变量配置，不要把服务账号 JSON 写入仓库：
 
