@@ -173,7 +173,7 @@ const subject = await call("/api/admin/fund/subjects", token, {
     minAmount: 1,
     maxAmount: 5000,
     enabled: true,
-    remark: "0.7.0",
+    remark: "0.7.1",
   }),
 });
 const adjustment = await call("/api/admin/fund/adjustments", token, {
@@ -254,7 +254,7 @@ const announcement = await call(
   {
     method: "POST",
     body: JSON.stringify({
-      name: "0.7.0 公告",
+      name: "0.7.1 公告",
       status: "Draft",
       data: { content: "需求文档公告测试" },
     }),
@@ -342,5 +342,5 @@ for (const retired of [
 await call("/api/admin/tasks/retired/run", token, { method: "POST" }, 410);
 
 console.log(
-  `ADMIN_REQUIREMENTS_070_OK verification=approved invite=${generated.code} login_logs=${loginSearch.total} failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=paged group_speech=sent group_invite=${groupInvite.data.code} e2ee=protected retired_modules=5`
+  `ADMIN_REQUIREMENTS_071_OK verification=approved invite=${generated.code} login_logs=${loginSearch.total} failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=paged group_speech=sent group_invite=${groupInvite.data.code} e2ee=protected retired_modules=5`
 );

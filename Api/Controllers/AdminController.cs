@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -25,7 +25,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.7.0",
+            version = "0.7.1",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -45,7 +45,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
                 totpConfigured = totp.IsConfigured,
                 developmentPasswordLogin = RuntimeMode.IsEphemeralPreview(configuration, environment),
                 transport = "TLS required in production",
-                messagePayload = "client-side AES-GCM ciphertext"
+                messagePayload = "client-side AES-GCM ciphertext",
+                geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries }
             }
         });
     }
@@ -403,6 +404,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     {
         var adminUserId = User.UserId();
         var admin = await repository.GetUserByIdAsync(adminUserId, ct);
+        var ip = RequestMetadata.ClientIp(HttpContext);
         await repository.AddAdminAuditAsync(new AdminAuditLog
         {
             AdminUserId = adminUserId,
@@ -411,16 +413,20 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
             TargetType = targetType,
             TargetId = targetId,
             Detail = TrimDetail(detail),
-            IpAddress = RequestMetadata.ClientIp(HttpContext),
-            Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext))
+            IpAddress = ip,
+            Address = await geoIp.ResolveAddressAsync(ip, ct)
         }, ct);
     }
 
-    private Task<AdminModuleRecord> AddOfflineLogAsync(UserAccount user, string reason, CancellationToken ct) => repository.UpsertAdminRecordAsync(new AdminModuleRecord
+    private async Task<AdminModuleRecord> AddOfflineLogAsync(UserAccount user, string reason, CancellationToken ct)
     {
-        Module = "account.offline-logs", Name = "管理员下线用户", Status = "Offline",
-        Data = new Dictionary<string, string> { ["userId"] = user.Id, ["account"] = user.Account, ["reason"] = reason, ["admin"] = User.Identity?.Name ?? "admin", ["ip"] = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown" }
-    }, ct);
+        var ip = RequestMetadata.ClientIp(HttpContext);
+        return await repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Module = "account.offline-logs", Name = "管理员下线用户", Status = "Offline",
+            Data = new Dictionary<string, string> { ["userId"] = user.Id, ["account"] = user.Account, ["reason"] = reason, ["admin"] = User.Identity?.Name ?? "admin", ["ip"] = ip, ["address"] = await geoIp.ResolveAddressAsync(ip, ct) }
+        }, ct);
+    }
 
     private static string NormalizeAccount(string value) => value.Trim().ToLowerInvariant();
     private static string Trim(string? value, int maxLength)

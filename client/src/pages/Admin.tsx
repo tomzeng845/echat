@@ -124,7 +124,11 @@ type Overview = {
     messages: number;
     pendingReports: number;
   };
-  security: { totpConfigured: boolean; developmentPasswordLogin: boolean };
+  security: {
+    totpConfigured: boolean;
+    developmentPasswordLogin: boolean;
+    geoIp: { enabled: boolean; provider: string; cachedEntries: number };
+  };
 };
 type AdminUser = {
   id: string;
@@ -648,7 +652,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.7.0
+                ADMIN 0.7.1
               </div>
             </div>
           </a>
@@ -967,6 +971,20 @@ function OverviewPanel({ refresh }: { refresh: number }) {
                 </span>
               </div>
             ))}
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm">
+              <span>GeoIP 登录地区</span>
+              <span
+                className={
+                  data.security.geoIp.enabled
+                    ? "text-emerald-700"
+                    : "text-slate-500"
+                }
+              >
+                {data.security.geoIp.enabled
+                  ? `${data.security.geoIp.provider} · 缓存 ${data.security.geoIp.cachedEntries}`
+                  : "已关闭"}
+              </span>
+            </div>
           </div>
         </Card>
       </div>

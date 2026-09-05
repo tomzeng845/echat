@@ -17,6 +17,8 @@ builder.Services.AddSingleton<AdminSecretProtector>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
+builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
 var mongoConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI"));
@@ -66,6 +68,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiException").LogError(error, "Unhandled API error for {Method} {Path}", context.Request.Method, context.Request.Path);
     try
     {
+        var ip = RequestMetadata.ClientIp(context);
+        var address = await context.RequestServices.GetRequiredService<GeoIpService>().ResolveAddressAsync(ip, context.RequestAborted);
         await context.RequestServices.GetRequiredService<IChatRepository>().UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = "system.error-logs", Name = error?.GetType().Name ?? "UnhandledError", Status = "Open",
@@ -76,8 +80,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
                 ["message"] = error?.Message ?? "未知错误",
                 ["traceId"] = context.TraceIdentifier,
                 ["userId"] = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-                ["ip"] = RequestMetadata.ClientIp(context),
-                ["address"] = RequestMetadata.Address(RequestMetadata.ClientIp(context))
+                ["ip"] = ip,
+                ["address"] = address
             }
         }, context.RequestAborted);
     }
@@ -103,12 +107,13 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment) => Results.Ok(new
+app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp) => Results.Ok(new
 {
     name = "E聊 API",
-    version = "0.7.0",
+    version = "0.7.1",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
+    geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },
     utcNow = DateTime.UtcNow
 }));
 app.MapFallbackToFile("index.html");

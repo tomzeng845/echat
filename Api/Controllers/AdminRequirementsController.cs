@@ -14,7 +14,8 @@ public sealed class AdminRequirementsController(
     IChatRepository repository,
     TotpService totp,
     AdminSecretProtector protector,
-    IHubContext<ChatHub> hub) : ControllerBase
+    IHubContext<ChatHub> hub,
+    GeoIpService geoIp) : ControllerBase
 {
     private static readonly string[] PushProviders = ["xiaomi", "huawei", "honor", "oppo", "vivo"];
 
@@ -428,7 +429,11 @@ public sealed class AdminRequirementsController(
     }
 
     private async Task<UserAccount?> UserAsync(string account, CancellationToken ct) => await repository.GetUserByAccountAsync(account.Trim().ToLowerInvariant(), ct);
-    private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct) => await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Limit(detail, 300), IpAddress = RequestMetadata.ClientIp(HttpContext), Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext)) }, ct);
+    private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct)
+    {
+        var ip = RequestMetadata.ClientIp(HttpContext);
+        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Limit(detail, 300), IpAddress = ip, Address = await geoIp.ResolveAddressAsync(ip, ct) }, ct);
+    }
     private static string EncryptEnvelope(string publicKeyJwk, byte[] key)
     {
         using var document = JsonDocument.Parse(publicKeyJwk);

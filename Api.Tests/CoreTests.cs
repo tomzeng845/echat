@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net;
+using System.Text;
 using Xunit;
 
 namespace EChat.Api.Tests;
@@ -263,6 +265,52 @@ public sealed class CoreTests
         Assert.Equal("Android", device["osVersion"]);
         Assert.Equal("浏览器移动设备", device["deviceModel"]);
         Assert.Equal("本机 / 开发环境", RequestMetadata.Address(RequestMetadata.ClientIp(context)));
+    }
+
+    [Fact]
+    public async Task GeoIp_ResolvesChineseAddress_CachesPublicIp_AndSkipsPrivateIp()
+    {
+        var calls = 0;
+        var factory = new StubHttpClientFactory(async request =>
+        {
+            calls++;
+            Assert.Equal("8.8.8.8", request.RequestUri?.AbsolutePath.Trim('/'));
+            await Task.Yield();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"success":true,"country":"美国","region":"加利福尼亚州","city":"圣何塞","connection":{"isp":"Google LLC"}}""", Encoding.UTF8, "application/json")
+            };
+        });
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["GeoIp:UrlTemplate"] = "https://geo.test/{ip}",
+            ["GeoIp:CacheHours"] = "24",
+            ["GeoIp:TimeoutMs"] = "1000"
+        }).Build();
+        var service = new GeoIpService(factory, configuration, NullLogger<GeoIpService>.Instance);
+
+        var first = await service.ResolveAsync("8.8.8.8");
+        var cached = await service.ResolveAsync("8.8.8.8");
+        var privateIp = await service.ResolveAsync("192.168.1.8");
+
+        Assert.True(first.Resolved);
+        Assert.Equal("美国 · 加利福尼亚州 · 圣何塞", first.Address);
+        Assert.Equal("Google LLC", first.Isp);
+        Assert.Equal(first, cached);
+        Assert.Equal(1, calls);
+        Assert.False(privateIp.Resolved);
+        Assert.Equal("内网地址", privateIp.Address);
+        Assert.Equal(1, calls);
+    }
+
+    private sealed class StubHttpClientFactory(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(new StubHandler(responder), disposeHandler: true);
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => responder(request);
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

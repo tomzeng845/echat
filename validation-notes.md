@@ -182,3 +182,13 @@ E聊 0.5.0 已完成首页和截图所示账户、资金、管理、聊天四大
 ### 后台 V2 0.7.0 最终结果
 
 `pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项和 xUnit 15 项全部通过；生产构建成功。聊天、好友、未读、二维码与通话回归分别返回 `E2E_OK`、`CONTACT_REALTIME_OK`、`UNREAD_CLEAR_OK`、`P1_QR_OK` 与 `CALL_SIGNAL_OK`。后台文档 API 验收返回 `ADMIN_REQUIREMENTS_070_OK`，覆盖认证审核、八位邀请码选择、增强日志、失败 IP、交易明细、Admin 独立 TOTP、公告、加密建群/改名、群发言、群邀请码、密文边界与五类下线模块；管理浏览器验收返回 `ADMIN_070_OK modules=7 pages=24 users=1 audits=50 role_guard=403`，并覆盖图片分类标签编辑/删除、角色权限白名单、普通用户/Admin 隔离和桌面/手机布局。
+
+## 2026-09-06 GeoIP 登录地区 0.7.1 验证
+
+服务重启并清空进程缓存后，`geoip-smoke.mjs` 使用 `X-Forwarded-For: 8.8.8.8` 完成 Admin 登录，并使用 `1.1.1.1` 注册新用户。第三方 HTTPS 查询成功把用户地址解析为“澳大利亚 · 昆士蘭州 · 布里斯班”；用户资料 `lastLoginAddress` 与登录日志 `data.address` 完全一致。`/api/health` 返回 `version: 0.7.1`、`provider: ipwho.is`、`enabled: true` 和 `cachedEntries: 2`，重复请求没有增加缓存数量。
+
+GeoIP 单元测试使用模拟 HTTP 响应验证中文国家/省州/城市拼接、ISP 返回和缓存命中，并确认私网地址不会触发外部请求。代码路径同时覆盖登录、离线、强制下线、管理员操作审计和未处理异常日志；第三方失败、超时或非公网地址均回退到 `RequestMetadata.Address(ip)`，不改变认证成功条件。
+
+### GeoIP 0.7.1 最终结果
+
+`pnpm check` 通过，TypeScript 与 ASP.NET Core 编译为 0 个错误、0 个警告；Vitest 3 项与 xUnit 16 项全部通过；`pnpm build` 生产构建成功。全量业务回归依次返回 `E2E_OK`、`ADMIN_REQUIREMENTS_071_OK`、`ADMIN_071_OK modules=7 pages=24 users=1 audits=50 role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844` 和 `GEOIP_OK provider=ipwho.is address=澳大利亚 · 昆士蘭州 · 布里斯班 cached=2`。GeoIP 只表示基于公网 IP 的近似地区，不表示精确物理住址。

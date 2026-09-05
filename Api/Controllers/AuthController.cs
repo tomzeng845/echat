@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
@@ -27,10 +27,19 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
             RegistrationSource = "邀请注册",
             InviteSource = request.InviteCode.Trim().ToUpperInvariant()
         };
+        var currentIp = CurrentIp();
+        user.LastSeenAtUtc = DateTime.UtcNow;
+        user.LastLoginAtUtc = DateTime.UtcNow;
+        user.LastLoginIp = currentIp;
+        user.LastOnlineIp = currentIp;
+        user.LastLoginAddress = await geoIp.ResolveAddressAsync(currentIp, ct);
+        user.LastNodeIp = Environment.GetEnvironmentVariable("HOSTNAME") ?? "api-node";
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         try { await repository.AddUserAsync(user, ct); }
         catch (InvalidOperationException) { return Conflict(Fail("账号已存在")); }
-        return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct));
+        var response = await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct);
+        await LogLoginAsync(user.Account, request.DeviceName, "success", "注册登录成功", user.Id, ct);
+        return Ok(response);
     }
 
     [HttpPost("login")]
@@ -58,7 +67,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         user.LastLoginAtUtc = DateTime.UtcNow;
         user.LastLoginIp = currentIp;
         user.LastOnlineIp = currentIp;
-        user.LastLoginAddress = RequestMetadata.Address(currentIp);
+        user.LastLoginAddress = await geoIp.ResolveAddressAsync(currentIp, ct);
         user.LastNodeIp = Environment.GetEnvironmentVariable("HOSTNAME") ?? "api-node";
         if (verified == PasswordVerificationResult.SuccessRehashNeeded) user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.UpdateUserAsync(user, ct);
@@ -125,17 +134,17 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         if (!string.IsNullOrWhiteSpace(sessionId)) await repository.RevokeSessionAsync(sessionId, ct);
         var ip = RequestMetadata.ClientIp(HttpContext);
         var data = RequestMetadata.Device(HttpContext);
-        data["userId"] = User.UserId(); data["account"] = User.Identity?.Name ?? ""; data["sessionId"] = sessionId ?? ""; data["ip"] = ip; data["address"] = RequestMetadata.Address(ip);
+        data["userId"] = User.UserId(); data["account"] = User.Identity?.Name ?? ""; data["sessionId"] = sessionId ?? ""; data["ip"] = ip; data["address"] = await geoIp.ResolveAddressAsync(ip, ct);
         await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "account.offline-logs", Name = "用户退出", Status = "Offline", Data = data }, ct);
         return NoContent();
     }
 
-    private Task<AdminModuleRecord> LogLoginAsync(string account, string device, string result, string reason, string? userId, CancellationToken ct)
+    private async Task<AdminModuleRecord> LogLoginAsync(string account, string device, string result, string reason, string? userId, CancellationToken ct)
     {
         var ip = RequestMetadata.ClientIp(HttpContext);
         var data = RequestMetadata.Device(HttpContext);
-        data["account"] = account.Trim().ToLowerInvariant(); data["userId"] = userId ?? ""; data["device"] = device; data["result"] = result; data["reason"] = reason; data["ip"] = ip; data["address"] = RequestMetadata.Address(ip);
-        return repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        data["account"] = account.Trim().ToLowerInvariant(); data["userId"] = userId ?? ""; data["device"] = device; data["result"] = result; data["reason"] = reason; data["ip"] = ip; data["address"] = await geoIp.ResolveAddressAsync(ip, ct);
+        return await repository.UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = "account.login-logs", Name = result == "success" ? "登录成功" : result == "pending" ? "等待二次验证" : "登录失败", Status = result, Data = data
         }, ct);

@@ -12,7 +12,8 @@ public sealed class AdminModulesController(
     IChatRepository repository,
     PasswordHasher<UserAccount> passwordHasher,
     IMediaStorage mediaStorage,
-    IHubContext<ChatHub> hub) : ControllerBase
+    IHubContext<ChatHub> hub,
+    GeoIpService geoIp) : ControllerBase
 {
     private static readonly HashSet<string> EditableModules = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -270,7 +271,8 @@ public sealed class AdminModulesController(
 
     private async Task AuditAsync(string action, string targetType, string targetId, string detail, CancellationToken ct)
     {
-        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Trim(detail, 300), IpAddress = RequestMetadata.ClientIp(HttpContext), Address = RequestMetadata.Address(RequestMetadata.ClientIp(HttpContext)) }, ct);
+        var ip = RequestMetadata.ClientIp(HttpContext);
+        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = User.UserId(), AdminAccount = User.Identity?.Name ?? "admin", Action = action, TargetType = targetType, TargetId = targetId, Detail = Trim(detail, 300), IpAddress = ip, Address = await geoIp.ResolveAddressAsync(ip, ct) }, ct);
     }
 
     private static Dictionary<string, string> SanitizeData(Dictionary<string, string>? data) => (data ?? []).Take(30).ToDictionary(x => Trim(x.Key, 50), x => Trim(x.Value, 1000));
