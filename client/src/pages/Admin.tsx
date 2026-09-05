@@ -629,7 +629,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.5.2
+                ADMIN 0.5.3
               </div>
             </div>
           </a>
@@ -952,6 +952,7 @@ function UsersPanel({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [menuId, setMenuId] = useState<string>();
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [statusMenuId, setStatusMenuId] = useState<string>();
   const [operation, setOperation] = useState<{
     user: AdminUser;
@@ -981,6 +982,63 @@ function UsersPanel({
     pageSize: 20,
     totalPages: 1,
   });
+
+  useEffect(() => {
+    if (!menuId) return;
+    const close = () => {
+      setMenuId(undefined);
+      setStatusMenuId(undefined);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-user-menu-root]"))
+        return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuId]);
+
+  const toggleUserMenu = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    userId: string
+  ) => {
+    if (menuId === userId) {
+      setMenuId(undefined);
+      setStatusMenuId(undefined);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const gap = 8;
+    const margin = 8;
+    const menuWidth = 176;
+    const menuHeight = 235;
+    let left = rect.right + gap;
+    if (left + menuWidth > window.innerWidth - margin)
+      left = rect.left - menuWidth - gap;
+    left = Math.max(
+      margin,
+      Math.min(left, window.innerWidth - menuWidth - margin)
+    );
+    const top = Math.max(
+      margin,
+      Math.min(rect.top, window.innerHeight - menuHeight - margin)
+    );
+    setMenuPosition({ top, left });
+    setMenuId(userId);
+    setStatusMenuId(undefined);
+  };
 
   async function exportUsers() {
     const response = await authorizedFetch(
@@ -1381,21 +1439,23 @@ function UsersPanel({
                     <td
                       className={`sticky left-0 ${menuId === user.id ? "z-40" : "z-10"} border-r border-slate-200 p-2 ${user.redFlagged ? "bg-rose-50" : "bg-white"}`}
                     >
-                      <div className="relative">
+                      <div className="relative" data-user-menu-root>
                         <button
-                          onClick={() => {
-                            setMenuId(value =>
-                              value === user.id ? undefined : user.id
-                            );
-                            setStatusMenuId(undefined);
-                          }}
+                          onClick={event => toggleUserMenu(event, user.id)}
+                          aria-haspopup="menu"
+                          aria-expanded={menuId === user.id}
                           className="flex items-center gap-1 bg-sky-600 px-3 py-1.5 font-medium text-white"
                         >
                           <MoreHorizontal size={14} />
                           操作
                         </button>
                         {menuId === user.id && (
-                          <div className="user-action-menu absolute left-0 top-9 z-50 w-44 border border-slate-200 bg-white py-1 text-sm shadow-xl">
+                          <div
+                            className="user-action-menu z-50 w-44 border border-slate-200 bg-white py-1 text-sm shadow-xl"
+                            style={menuPosition}
+                            role="menu"
+                            data-user-menu-root
+                          >
                             <button
                               onClick={() => openOperation(user, "sameIp")}
                             >

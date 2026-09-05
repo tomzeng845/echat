@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.5.2" || overview.metrics.users < 1)
+if (overview.version !== "0.5.3" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -502,12 +502,14 @@ try {
   }));
   if (!menuCoverage.rows || menuCoverage.rows !== menuCoverage.operationButtons)
     throw new Error("not every account has an operation menu");
-  const openFirstOperation = () =>
-    page.evaluate(() =>
+  const openFirstOperation = async () => {
+    await page.evaluate(() =>
       [...document.querySelectorAll("tbody button")]
         .find(item => item.textContent?.trim() === "操作")
         ?.click()
     );
+    await page.waitForSelector(".user-action-menu");
+  };
   await openFirstOperation();
   await page.waitForFunction(
     () =>
@@ -517,44 +519,78 @@ try {
       document.body.innerText.includes("登录密码"),
     { timeout: 5000 }
   );
+  const anchoredMenu = await page.evaluate(() => {
+    const button = [...document.querySelectorAll("tbody button")].find(
+      item => item.textContent?.trim() === "操作"
+    );
+    const menu = document.querySelector(".user-action-menu");
+    if (!button || !menu) return null;
+    const buttonRect = button.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    return {
+      verticalGap: Math.abs(menuRect.top - buttonRect.top),
+      horizontalGap: Math.min(
+        Math.abs(menuRect.left - buttonRect.right),
+        Math.abs(buttonRect.left - menuRect.right)
+      ),
+    };
+  });
+  if (
+    !anchoredMenu ||
+    anchoredMenu.verticalGap > 12 ||
+    anchoredMenu.horizontalGap > 12
+  )
+    throw new Error("operation menu is not anchored beside its button");
+  await page.mouse.click(1000, 75);
+  await page.waitForFunction(
+    () => !document.querySelector(".user-action-menu"),
+    { timeout: 3000 }
+  );
+  await openFirstOperation();
   await page.evaluate(() =>
     [...document.querySelectorAll(".user-action-menu button")]
       .find(item => item.textContent?.trim() === "状态变更")
       ?.click()
   );
-  await page.waitForFunction(
-    () =>
-      document.body.innerText.includes("强制下线") &&
-      document.body.innerText.includes("账户锁定") &&
-      document.body.innerText.includes("登录锁定") &&
-      document.body.innerText.includes("银行卡锁定") &&
-      document.body.innerText.includes("注销开启") &&
-      document.body.innerText.includes("设置红号") &&
-      (() => {
-        const menu = document.querySelector(".user-status-submenu");
-        if (!menu) return false;
-        const rect = menu.getBoundingClientRect();
-        const style = getComputedStyle(menu);
-        const exposed = [...menu.querySelectorAll("button")].every(button => {
-          const buttonRect = button.getBoundingClientRect();
-          const top = document.elementFromPoint(
-            buttonRect.left + buttonRect.width / 2,
-            buttonRect.top + buttonRect.height / 2
-          );
-          return top === button || button.contains(top);
-        });
-        return (
-          rect.width > 100 &&
-          rect.height > 150 &&
-          style.visibility !== "hidden" &&
-          exposed
-        );
-      })(),
-    { timeout: 5000 }
-  );
+  await page.waitForSelector(".user-status-submenu", { timeout: 5000 });
   await new Promise(resolve => setTimeout(resolve, 120));
+  const statusMenu = await page.evaluate(() => {
+    const menu = document.querySelector(".user-status-submenu");
+    if (!menu) return null;
+    const rect = menu.getBoundingClientRect();
+    const buttons = [...menu.querySelectorAll("button")];
+    return {
+      labels: buttons.map(button => button.textContent?.trim()),
+      width: rect.width,
+      height: rect.height,
+      exposed: buttons.map(button => {
+        const buttonRect = button.getBoundingClientRect();
+        const top = document.elementFromPoint(
+          buttonRect.left + buttonRect.width / 2,
+          buttonRect.top + buttonRect.height / 2
+        );
+        return top === button || button.contains(top);
+      }),
+    };
+  });
+  const expectedStatusItems = [
+    "强制下线",
+    "账户锁定",
+    "登录锁定",
+    "银行卡锁定",
+    "注销开启",
+    "设置红号",
+  ];
+  if (
+    !statusMenu ||
+    statusMenu.width < 100 ||
+    statusMenu.height < 150 ||
+    !expectedStatusItems.every(label => statusMenu.labels.includes(label)) ||
+    statusMenu.exposed.some(value => !value)
+  )
+    throw new Error(`status menu invalid: ${JSON.stringify(statusMenu)}`);
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.5.2.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-menu-0.5.3.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -576,7 +612,7 @@ try {
   );
   await page.waitForSelector('[data-user-operation-dialog="inviteSource"]');
   await page.screenshot({
-    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.5.2.png",
+    path: "/home/ubuntu/screenshots/echat-admin-user-operation-dialog-0.5.3.png",
     fullPage: false,
   });
   await page.evaluate(() =>
@@ -764,5 +800,5 @@ try {
 }
 
 console.log(
-  `ADMIN_052_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 account_menus=all viewports=1440x900,390x844`
+  `ADMIN_053_OK modules=${moduleCases.length} pages=30 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );
