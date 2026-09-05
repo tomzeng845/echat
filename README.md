@@ -9,14 +9,14 @@
 | 账号 | 邀请码注册、密码登录、渐进式登录限制、JWT、刷新令牌轮换、服务端会话撤销 | 已完成 P1 |
 | 二维码 | 两分钟一次性扫码登录、已登录设备确认、七天个人名片、摄像头/图片/粘贴扫码 | 已完成 P1 |
 | 设备管理 | 登录设备列表、设备标识、单设备退出、退出其他设备 | 已完成 P1 |
-| 管理登录 | 管理员密码后追加 Google Authenticator 兼容 TOTP 验证 | 已完成后端链路 |
+| 管理登录 | 独立 `/admin` 登录、Admin 角色保护；开发预览密码登录，生产强制 Google Authenticator TOTP | 已完成 |
 | 联系人 | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单 | 已完成 P1 |
 | 会话 | 单聊、群聊、会话列表、会话成员权限 | 已完成 MVP |
 | 消息 | SignalR 实时事件、增量补拉、幂等、进入会话立即清零、实时已读回执、旧响应竞态保护、2 分钟撤回 | 已完成 P1 |
 | 富媒体 | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应 | 已完成基础版本 |
 | 端到端加密 | 浏览器生成 RSA-OAEP 身份密钥；文字及聊天附件使用会话 AES-GCM-256 密钥加密；服务器保存密文和成员密钥信封 | 已完成 MVP |
 | 响应式界面 | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏 | 已完成 |
-| 管理 API | 服务概览、用户查询与限制接口、角色保护 | 基础版本 |
+| 管理后台 | HTML5 响应式运营概览、用户治理、设备退出、举报处置、邀请码和审计日志 | 已完成 P1 |
 | 音视频通话 | 单聊与群聊入口、来电、接听、拒接、结束、静音、摄像头控制、持久化通话记录、动态 ICE 配置、SignalR 信令 | 已完成 P1 应用层 |
 | 朋友圈 | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报 | 已完成 P1 |
 
@@ -30,6 +30,7 @@
 | `Api/Controllers/` | 账号、用户公钥、联系人、会话、媒体、朋友圈和管理接口 |
 | `Api.Tests/` | xUnit 核心业务测试 |
 | `client/` | React HTML5 响应式客户端 |
+| `client/src/pages/Admin.tsx` | 独立 HTML5 响应式管理后台，按路由懒加载 |
 | `client/src/lib/echat-crypto.ts` | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密 |
 | `client/src/lib/echat-media.ts` | 富媒体二进制加密、上传、下载和解密 |
 | `client/src/components/chat/CallManager.tsx` | WebRTC 音视频通话和 SignalR 信令控制 |
@@ -40,6 +41,7 @@
 | `scripts/contact-realtime-smoke.mjs` | 双账号好友申请、申请人资料和联系人双端实时更新测试 |
 | `scripts/mobile-friend-chat-smoke.mjs` | 390×844 手机视口好友接受、进入聊天和发送消息测试 |
 | `scripts/unread-clear-smoke.mjs` | 390×844 手机与 1280×720 桌面双栏的未读角标、进入清零和实时已读测试 |
+| `scripts/admin-smoke.mjs` | 管理员种子、角色隔离、用户治理、邀请码、举报、审计及桌面/手机后台测试 |
 | `Dockerfile` | Node 构建前端、.NET 发布后端的多阶段生产镜像 |
 
 ## 本地运行
@@ -51,7 +53,7 @@ pnpm install
 pnpm dev
 ```
 
-浏览器访问 `http://localhost:2099`。如需更换本地端口，可设置 `ECHAT_PORT`。
+浏览器访问 `http://localhost:2099`，管理后台位于 `http://localhost:2099/admin`。开发模式会创建默认管理账号 `E_Admin`（实际标准化为 `e_admin`），初始密码为 `Heibai@99`。该默认值只用于开发预览，正式部署必须通过安全环境变量更换。如需更换本地端口，可设置 `ECHAT_PORT`。
 
 ## MongoDB 配置
 
@@ -73,7 +75,7 @@ MongoDB 初始化会创建账号唯一索引、发送者与客户端消息号唯
 
 ## 安全配置
 
-生产环境必须设置 `JWT_SECRET` 和 `ADMIN_TOTP_SECRET`。`ADMIN_TOTP_SECRET` 使用 Base32 编码，可直接录入 Google Authenticator。普通用户登录不要求 TOTP；角色为 `Admin` 的账号完成密码验证后，必须再提交 6 位动态验证码。
+生产环境必须设置 `JWT_SECRET`、`ADMIN_BOOTSTRAP_PASSWORD` 和 `ADMIN_TOTP_SECRET`，可选用 `ADMIN_BOOTSTRAP_ACCOUNT` 修改管理账号。`ADMIN_TOTP_SECRET` 使用 Base32 编码，可直接录入 Google Authenticator。普通用户登录不要求 TOTP；生产环境中角色为 `Admin` 的账号完成密码验证后，必须再提交 6 位动态验证码。生产模式不会使用代码中的开发默认密码，也不会在管理员已存在时自动重置密码。
 
 浏览器私钥以不可导出的 `CryptoKey` 保存到 IndexedDB。会话正文及聊天附件在浏览器使用 AES-GCM-256 加密后再发送。每个会话密钥通过成员 RSA-OAEP 公钥分别封装。服务端只保存密文、随机数、算法标识、媒体资产编号与成员密钥信封。
 
@@ -93,9 +95,10 @@ node scripts/p1-qr-smoke.mjs http://127.0.0.1:2099
 node scripts/contact-realtime-smoke.mjs http://127.0.0.1:2099
 node scripts/mobile-friend-chat-smoke.mjs http://127.0.0.1:2099
 node scripts/unread-clear-smoke.mjs http://127.0.0.1:2099
+node scripts/admin-smoke.mjs http://127.0.0.1:2099
 ```
 
-`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒接、ICE/SDP、结束、记录和 RTC 配置。
+`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、富媒体、四种朋友圈可见范围与举报；二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒接、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证默认管理员、普通用户 403 隔离、停用/恢复、邀请码、举报处置和审计日志。
 
 ## 生产部署
 
@@ -140,6 +143,12 @@ node scripts/unread-clear-smoke.mjs http://127.0.0.1:2099
 | GET | `/api/calls` | 通话记录 |
 | GET | `/api/rtc/config` | STUN/TURN 与媒体拓扑配置 |
 | GET | `/api/p1/capabilities` | P1 能力和外部依赖状态 |
+| GET | `/api/admin/overview` | 管理后台运营与安全概览 |
+| GET/POST | `/api/admin/users`、`/api/admin/users/{account}/status` | 用户查询与状态治理 |
+| POST | `/api/admin/users/{account}/sessions/revoke` | 强制退出目标用户全部设备 |
+| GET/POST | `/api/admin/invites` | 查询和维护邀请码 |
+| GET/POST | `/api/admin/reports`、`/api/admin/reports/{id}/decision` | 举报队列与处置 |
+| GET | `/api/admin/audit` | 管理操作审计日志 |
 | WebSocket | `/hubs/chat` | 消息、回执、朋友圈更新与 WebRTC 信令 |
 | GET | `/api/health` | 健康检查 |
 

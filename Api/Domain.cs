@@ -222,6 +222,19 @@ public sealed class CallRecord
     public string EndReason { get; set; } = "";
 }
 
+public sealed class AdminAuditLog
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string AdminUserId { get; set; } = "";
+    public string AdminAccount { get; set; } = "";
+    public string Action { get; set; } = "";
+    public string TargetType { get; set; } = "";
+    public string TargetId { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string IpAddress { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web", string? DeviceId = null);
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web", string? DeviceId = null);
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
@@ -255,3 +268,7 @@ public sealed record DeviceSessionView(string Id, string DeviceId, string Device
 public sealed record LogoutRequest(string? RefreshToken = null);
 public sealed record MomentReportRequest(string Reason, string Detail = "");
 public sealed record CallRecordView(string Id, string ConversationId, string ConversationName, string CallerId, string Mode, CallRecordStatus Status, DateTime StartedAtUtc, DateTime? AnsweredAtUtc, DateTime? EndedAtUtc, string EndReason);
+public sealed record AdminUserView(string Id, string Account, string DisplayName, UserRole Role, UserStatus Status, DateTime CreatedAtUtc, DateTime LastSeenAtUtc, int ActiveSessions, DateTime? LockoutUntilUtc);
+public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
+public sealed record AdminInviteRequest(string Code, int MaxUses = 1, DateTime? ExpiresAtUtc = null, bool IsActive = true);
+public sealed record AdminReportDecisionRequest(MomentReportStatus Status, string Note = "");

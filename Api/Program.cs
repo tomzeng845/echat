@@ -14,6 +14,7 @@ builder.Services.AddSingleton<PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<TotpService>();
 builder.Services.AddSingleton<SessionService>();
+builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
@@ -55,6 +56,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 await app.Services.GetRequiredService<IChatRepository>().EnsureSeedDataAsync();
+await app.Services.GetRequiredService<AdminBootstrapService>().EnsureAsync();
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
@@ -81,7 +83,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.3.3", status = "healthy", utcNow = DateTime.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new { name = "E聊 API", version = "0.4.0", status = "healthy", utcNow = DateTime.UtcNow }));
 app.MapFallbackToFile("index.html");
 
 await app.StartAsync();

@@ -1,7 +1,9 @@
 using EChat.Api;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace EChat.Api.Tests;
@@ -120,6 +122,32 @@ public sealed class CoreTests
         call!.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow;
         await repository.UpsertCallAsync(call);
         Assert.Equal(CallRecordStatus.Ended, (await repository.GetCallsAsync("u2")).Single().Status);
+    }
+
+    [Fact]
+    public async Task AdminBootstrap_IsIdempotent_Hashed_AndQueryable()
+    {
+        var repository = new InMemoryChatRepository();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Admin:BootstrapAccount"] = "E_Admin",
+            ["Admin:BootstrapPassword"] = "Heibai@99"
+        }).Build();
+        var hasher = new PasswordHasher<UserAccount>();
+        var service = new AdminBootstrapService(repository, hasher, configuration, new TestHostEnvironment(), NullLogger<AdminBootstrapService>.Instance);
+
+        await service.EnsureAsync();
+        await service.EnsureAsync();
+
+        var admin = await repository.GetUserByAccountAsync("e_admin");
+        Assert.NotNull(admin);
+        Assert.Equal(UserRole.Admin, admin!.Role);
+        Assert.NotEqual("Heibai@99", admin.PasswordHash);
+        Assert.NotEqual(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(admin, admin.PasswordHash, "Heibai@99"));
+        Assert.Equal(1, await repository.CountUsersAsync());
+
+        await repository.AddAdminAuditAsync(new AdminAuditLog { AdminUserId = admin.Id, AdminAccount = admin.Account, Action = "test", TargetType = "user", TargetId = admin.Id });
+        Assert.Single(await repository.GetAdminAuditsAsync(20));
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

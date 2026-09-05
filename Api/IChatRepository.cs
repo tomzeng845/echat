@@ -6,12 +6,17 @@ public interface IChatRepository
     Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default);
     Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default);
     Task<bool> TryConsumeInviteAsync(string code, CancellationToken ct = default);
+    Task<InviteCode> UpsertInviteAsync(InviteCode invite, CancellationToken ct = default);
+    Task<IReadOnlyList<InviteCode>> GetInvitesAsync(int limit, CancellationToken ct = default);
     Task AddUserAsync(UserAccount user, CancellationToken ct = default);
     Task UpdateUserAsync(UserAccount user, CancellationToken ct = default);
+    Task<IReadOnlyList<UserAccount>> GetUsersAsync(string? search, UserStatus? status, int limit, CancellationToken ct = default);
+    Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default);
     Task AddSessionAsync(RefreshSession session, CancellationToken ct = default);
     Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default);
     Task RevokeSessionAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default);
+    Task<long> CountActiveSessionsAsync(CancellationToken ct = default);
     Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default);
     Task AddQrLoginAsync(QrLoginChallenge challenge, CancellationToken ct = default);
     Task<QrLoginChallenge?> GetQrLoginAsync(string id, CancellationToken ct = default);
@@ -51,7 +56,15 @@ public interface IChatRepository
     Task<IReadOnlyList<MomentComment>> GetMomentCommentsAsync(IEnumerable<string> momentIds, CancellationToken ct = default);
     Task<MomentReport> AddMomentReportAsync(MomentReport report, CancellationToken ct = default);
     Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default);
+    Task<IReadOnlyList<MomentReport>> GetAllMomentReportsAsync(MomentReportStatus? status, int limit, CancellationToken ct = default);
+    Task<MomentReport?> GetMomentReportAsync(string id, CancellationToken ct = default);
+    Task UpdateMomentReportAsync(MomentReport report, CancellationToken ct = default);
+    Task<long> CountMomentReportsAsync(MomentReportStatus? status = null, CancellationToken ct = default);
     Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default);
     Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default);
+    Task<long> CountConversationsAsync(CancellationToken ct = default);
+    Task<long> CountMessagesAsync(CancellationToken ct = default);
+    Task AddAdminAuditAsync(AdminAuditLog audit, CancellationToken ct = default);
+    Task<IReadOnlyList<AdminAuditLog>> GetAdminAuditsAsync(int limit, CancellationToken ct = default);
 }

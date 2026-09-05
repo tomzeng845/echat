@@ -19,6 +19,7 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<MomentComment> _momentComments;
     private readonly IMongoCollection<MomentReport> _momentReports;
     private readonly IMongoCollection<CallRecord> _calls;
+    private readonly IMongoCollection<AdminAuditLog> _adminAudits;
 
     public MongoChatRepository(IConfiguration configuration)
     {
@@ -40,6 +41,7 @@ public sealed class MongoChatRepository : IChatRepository
         _momentComments = db.GetCollection<MomentComment>("momentComments");
         _momentReports = db.GetCollection<MomentReport>("momentReports");
         _calls = db.GetCollection<CallRecord>("calls");
+        _adminAudits = db.GetCollection<AdminAuditLog>("adminAudits");
     }
 
     public async Task EnsureSeedDataAsync(CancellationToken ct = default)
@@ -55,6 +57,7 @@ public sealed class MongoChatRepository : IChatRepository
         await _contactQrs.Indexes.CreateOneAsync(new CreateIndexModel<ContactQrToken>(Builders<ContactQrToken>.IndexKeys.Ascending(x => x.TokenHash), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentReports.Indexes.CreateOneAsync(new CreateIndexModel<MomentReport>(Builders<MomentReport>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.ReporterId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _calls.Indexes.CreateOneAsync(new CreateIndexModel<CallRecord>(Builders<CallRecord>.IndexKeys.Descending(x => x.StartedAtUtc)), cancellationToken: ct);
+        await _adminAudits.Indexes.CreateOneAsync(new CreateIndexModel<AdminAuditLog>(Builders<AdminAuditLog>.IndexKeys.Descending(x => x.CreatedAtUtc)), cancellationToken: ct);
         var seedCode = Environment.GetEnvironmentVariable("SEED_INVITE_CODE");
         if (!string.IsNullOrWhiteSpace(seedCode))
             await _invites.ReplaceOneAsync(x => x.Code == seedCode, new InviteCode { Code = seedCode, MaxUses = 1000 }, new ReplaceOptions { IsUpsert = true }, ct);
@@ -69,12 +72,23 @@ public sealed class MongoChatRepository : IChatRepository
         var updated = await _invites.FindOneAndUpdateAsync(filter, Builders<InviteCode>.Update.Inc(x => x.UsedCount, 1), new FindOneAndUpdateOptions<InviteCode> { ReturnDocument = ReturnDocument.After }, ct);
         return updated is not null;
     }
+    public async Task<InviteCode> UpsertInviteAsync(InviteCode invite, CancellationToken ct = default) { await _invites.ReplaceOneAsync(x => x.Code == invite.Code, invite, new ReplaceOptions { IsUpsert = true }, ct); return invite; }
+    public async Task<IReadOnlyList<InviteCode>> GetInvitesAsync(int limit, CancellationToken ct = default) => await _invites.Find(FilterDefinition<InviteCode>.Empty).SortByDescending(x => x.IsActive).ThenBy(x => x.Code).Limit(limit).ToListAsync(ct);
     public Task AddUserAsync(UserAccount user, CancellationToken ct = default) => _users.InsertOneAsync(user, cancellationToken: ct);
     public Task UpdateUserAsync(UserAccount user, CancellationToken ct = default) => _users.ReplaceOneAsync(x => x.Id == user.Id, user, cancellationToken: ct);
+    public async Task<IReadOnlyList<UserAccount>> GetUsersAsync(string? search, UserStatus? status, int limit, CancellationToken ct = default)
+    {
+        var filter = FilterDefinition<UserAccount>.Empty;
+        if (!string.IsNullOrWhiteSpace(search)) filter &= Builders<UserAccount>.Filter.Regex(x => x.Account, new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search), "i")) | Builders<UserAccount>.Filter.Regex(x => x.DisplayName, new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search), "i"));
+        if (status.HasValue) filter &= Builders<UserAccount>.Filter.Eq(x => x.Status, status.Value);
+        return await _users.Find(filter).SortByDescending(x => x.CreatedAtUtc).Limit(limit).ToListAsync(ct);
+    }
+    public Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default) => _users.CountDocumentsAsync(status.HasValue ? Builders<UserAccount>.Filter.Eq(x => x.Status, status.Value) : FilterDefinition<UserAccount>.Empty, cancellationToken: ct);
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) => _sessions.InsertOneAsync(session, cancellationToken: ct);
     public async Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => await _sessions.Find(x => x.TokenHash == hash && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).FirstOrDefaultAsync(ct);
     public Task RevokeSessionAsync(string id, CancellationToken ct = default) => _sessions.UpdateOneAsync(x => x.Id == id, Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, DateTime.UtcNow), cancellationToken: ct);
     public async Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default) => await _sessions.Find(x => x.UserId == userId && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).SortByDescending(x => x.LastSeenAtUtc).ToListAsync(ct);
+    public Task<long> CountActiveSessionsAsync(CancellationToken ct = default) => _sessions.CountDocumentsAsync(x => x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow, cancellationToken: ct);
     public Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default)
     {
         var filter = Builders<RefreshSession>.Filter.Eq(x => x.UserId, userId) & Builders<RefreshSession>.Filter.Eq(x => x.RevokedAtUtc, null);
@@ -154,7 +168,15 @@ public sealed class MongoChatRepository : IChatRepository
         return await _momentReports.FindOneAndUpdateAsync(x => x.MomentId == report.MomentId && x.ReporterId == report.ReporterId, Builders<MomentReport>.Update.SetOnInsert(x => x.Id, report.Id).SetOnInsert(x => x.Reason, report.Reason).SetOnInsert(x => x.Detail, report.Detail).SetOnInsert(x => x.Status, report.Status).SetOnInsert(x => x.CreatedAtUtc, report.CreatedAtUtc), new FindOneAndUpdateOptions<MomentReport> { IsUpsert = true, ReturnDocument = ReturnDocument.After }, ct);
     }
     public async Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default) => await _momentReports.Find(x => x.ReporterId == reporterId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<IReadOnlyList<MomentReport>> GetAllMomentReportsAsync(MomentReportStatus? status, int limit, CancellationToken ct = default) => await _momentReports.Find(status.HasValue ? Builders<MomentReport>.Filter.Eq(x => x.Status, status.Value) : FilterDefinition<MomentReport>.Empty).SortByDescending(x => x.CreatedAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<MomentReport?> GetMomentReportAsync(string id, CancellationToken ct = default) => await _momentReports.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+    public Task UpdateMomentReportAsync(MomentReport report, CancellationToken ct = default) => _momentReports.ReplaceOneAsync(x => x.Id == report.Id, report, cancellationToken: ct);
+    public Task<long> CountMomentReportsAsync(MomentReportStatus? status = null, CancellationToken ct = default) => _momentReports.CountDocumentsAsync(status.HasValue ? Builders<MomentReport>.Filter.Eq(x => x.Status, status.Value) : FilterDefinition<MomentReport>.Empty, cancellationToken: ct);
     public async Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default) { await _calls.ReplaceOneAsync(x => x.Id == call.Id, call, new ReplaceOptions { IsUpsert = true }, ct); return call; }
     public async Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default) => await _calls.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default) => await _calls.Find(x => x.ParticipantIds.Contains(userId)).SortByDescending(x => x.StartedAtUtc).Limit(100).ToListAsync(ct);
+    public Task<long> CountConversationsAsync(CancellationToken ct = default) => _conversations.CountDocumentsAsync(x => !x.IsDissolved, cancellationToken: ct);
+    public Task<long> CountMessagesAsync(CancellationToken ct = default) => _messages.CountDocumentsAsync(FilterDefinition<ChatMessage>.Empty, cancellationToken: ct);
+    public Task AddAdminAuditAsync(AdminAuditLog audit, CancellationToken ct = default) => _adminAudits.InsertOneAsync(audit, cancellationToken: ct);
+    public async Task<IReadOnlyList<AdminAuditLog>> GetAdminAuditsAsync(int limit, CancellationToken ct = default) => await _adminAudits.Find(FilterDefinition<AdminAuditLog>.Empty).SortByDescending(x => x.CreatedAtUtc).Limit(limit).ToListAsync(ct);
 }

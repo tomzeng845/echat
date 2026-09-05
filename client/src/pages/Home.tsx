@@ -182,6 +182,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthRespon
               </button>
             </form>
             {mode === "login" && !pendingToken && <button type="button" onClick={() => setShowQrLogin(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.05] py-3 text-sm text-teal-200 transition hover:bg-white/10"><QrCode size={17} />使用二维码登录</button>}
+            {mode === "login" && !pendingToken && <a href="/admin" className="mt-4 block text-center text-xs text-slate-500 transition hover:text-teal-300">进入管理后台</a>}
             {mode === "register" && !pendingToken && <p className="mt-5 text-center text-xs text-slate-500">本地预览邀请码：<span className="font-mono text-slate-300">ECHAT2026</span></p>}
           </div>
           <div className="mt-6 flex items-center justify-center gap-4 text-[11px] text-slate-500"><span>ASP.NET Core 8</span><span className="h-1 w-1 rounded-full bg-slate-700" /><span>SignalR</span><span className="h-1 w-1 rounded-full bg-slate-700" /><span>MongoDB Ready</span></div>

@@ -19,6 +19,7 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, MomentComment> _momentComments = new();
     private readonly ConcurrentDictionary<string, MomentReport> _momentReports = new();
     private readonly ConcurrentDictionary<string, CallRecord> _calls = new();
+    private readonly ConcurrentDictionary<string, AdminAuditLog> _adminAudits = new();
     private readonly ConcurrentDictionary<string, string> _messageIdempotency = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _conversationLocks = new();
 
@@ -44,6 +45,8 @@ public sealed class InMemoryChatRepository : IChatRepository
             return Task.FromResult(true);
         }
     }
+    public Task<InviteCode> UpsertInviteAsync(InviteCode invite, CancellationToken ct = default) { _invites[invite.Code] = invite; return Task.FromResult(invite); }
+    public Task<IReadOnlyList<InviteCode>> GetInvitesAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<InviteCode>>(_invites.Values.OrderByDescending(x => x.IsActive).ThenBy(x => x.Code).Take(limit).ToList());
 
     public Task AddUserAsync(UserAccount user, CancellationToken ct = default)
     {
@@ -53,10 +56,19 @@ public sealed class InMemoryChatRepository : IChatRepository
     }
 
     public Task UpdateUserAsync(UserAccount user, CancellationToken ct = default) { _users[user.Id] = user; return Task.CompletedTask; }
+    public Task<IReadOnlyList<UserAccount>> GetUsersAsync(string? search, UserStatus? status, int limit, CancellationToken ct = default)
+    {
+        var query = _users.Values.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Account.Contains(search, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase));
+        if (status.HasValue) query = query.Where(x => x.Status == status.Value);
+        return Task.FromResult<IReadOnlyList<UserAccount>>(query.OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
+    }
+    public Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default) => Task.FromResult((long)_users.Values.Count(x => !status.HasValue || x.Status == status.Value));
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) { _sessions[session.Id] = session; return Task.CompletedTask; }
     public Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => Task.FromResult(_sessions.Values.FirstOrDefault(x => x.TokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow));
     public Task RevokeSessionAsync(string id, CancellationToken ct = default) { if (_sessions.TryGetValue(id, out var item)) item.RevokedAtUtc = DateTime.UtcNow; return Task.CompletedTask; }
     public Task<IReadOnlyList<RefreshSession>> GetSessionsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RefreshSession>>(_sessions.Values.Where(x => x.UserId == userId && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow).OrderByDescending(x => x.LastSeenAtUtc).ToList());
+    public Task<long> CountActiveSessionsAsync(CancellationToken ct = default) => Task.FromResult((long)_sessions.Values.Count(x => x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow));
     public Task RevokeSessionsAsync(string userId, string? exceptSessionId, string reason, CancellationToken ct = default)
     {
         foreach (var item in _sessions.Values.Where(x => x.UserId == userId && x.Id != exceptSessionId && x.RevokedAtUtc is null)) { item.RevokedAtUtc = DateTime.UtcNow; item.RevokedReason = reason; }
@@ -177,7 +189,15 @@ public sealed class InMemoryChatRepository : IChatRepository
         _momentReports[report.Id] = report; return Task.FromResult(report);
     }
     public Task<IReadOnlyList<MomentReport>> GetMomentReportsAsync(string reporterId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<MomentReport>>(_momentReports.Values.Where(x => x.ReporterId == reporterId).OrderByDescending(x => x.CreatedAtUtc).ToList());
+    public Task<IReadOnlyList<MomentReport>> GetAllMomentReportsAsync(MomentReportStatus? status, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<MomentReport>>(_momentReports.Values.Where(x => !status.HasValue || x.Status == status.Value).OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
+    public Task<MomentReport?> GetMomentReportAsync(string id, CancellationToken ct = default) => Task.FromResult(_momentReports.TryGetValue(id, out var item) ? item : null);
+    public Task UpdateMomentReportAsync(MomentReport report, CancellationToken ct = default) { _momentReports[report.Id] = report; return Task.CompletedTask; }
+    public Task<long> CountMomentReportsAsync(MomentReportStatus? status = null, CancellationToken ct = default) => Task.FromResult((long)_momentReports.Values.Count(x => !status.HasValue || x.Status == status.Value));
     public Task<CallRecord> UpsertCallAsync(CallRecord call, CancellationToken ct = default) { _calls[call.Id] = call; return Task.FromResult(call); }
     public Task<CallRecord?> GetCallAsync(string id, CancellationToken ct = default) => Task.FromResult(_calls.TryGetValue(id, out var item) ? item : null);
     public Task<IReadOnlyList<CallRecord>> GetCallsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CallRecord>>(_calls.Values.Where(x => x.ParticipantIds.Contains(userId)).OrderByDescending(x => x.StartedAtUtc).Take(100).ToList());
+    public Task<long> CountConversationsAsync(CancellationToken ct = default) => Task.FromResult((long)_conversations.Values.Count(x => !x.IsDissolved));
+    public Task<long> CountMessagesAsync(CancellationToken ct = default) => Task.FromResult((long)_messages.Count);
+    public Task AddAdminAuditAsync(AdminAuditLog audit, CancellationToken ct = default) { _adminAudits[audit.Id] = audit; return Task.CompletedTask; }
+    public Task<IReadOnlyList<AdminAuditLog>> GetAdminAuditsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AdminAuditLog>>(_adminAudits.Values.OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
 }
