@@ -342,3 +342,25 @@ Gradle release 签名只读取 `ECHAT_ANDROID_KEYSTORE`、`ECHAT_ANDROID_STORE_P
 `EChat-0.9.0-release.apk` 的 SHA-256 为 `0120960097b1dfb46a30e711ef28742f4295866b85cd8851193f81ca26004e5c`；APK Signature Scheme v2 和 v3 均通过，16 KB zipalign 通过。`EChat-0.9.0-release.aab` 的 SHA-256 为 `6e9c9fd103fcf6c7c23b15023bead603a8a77bc9e3cd48431601d50080320302`；AAB JAR 签名通过，并确认与 APK 使用同一证书。Google 官方 bundletool 1.18.1 `validate` 成功，并从 AAB 生成可验证的通用 APK。两个产物均为 `versionName=0.9.0`、`versionCode=18`、最低 API 24、目标 API 36，并连接 `https://echatapp-favrlscm.manus.space`。
 
 此前 debug APK 使用 Android SDK 调试证书，不能被本次正式证书直接覆盖。设备首次切换正式版时必须先卸载 debug 版；从本次正式版开始，后续构建必须永久复用本轮发布密钥并递增 `versionCode`。正式签名不自动启用 Firebase；当前构建仍未包含项目方 `google-services.json`，系统进程被完全终止后的可靠普通消息推送仍需后续配置 FCM。
+
+## 2026-09-06 iOS 0.9.0、APNs、PushKit/CallKit 与 TestFlight 准备
+
+Capacitor 8 iOS 工程已生成并同步最新 React 客户端，Bundle ID 为 `com.echat.app`，marketing version 为 0.9.0，build 为 18，deployment target 为 iOS 15。`SceneDelegate` 与 Storyboard 均加载 `MyViewController`，确保自定义 `MediaPermissionsPlugin` 实例实际注册。AppDelegate 已转发普通 APNs token，PushKit 获取独立 VoIP token，CallKit 使用服务端 UUID `callId` 报告系统来电，并处理系统接听、拒接、远端接听及挂断。服务端的结束 VoIP push 会清理同一账号其他 iPhone 上仍显示的系统来电。
+
+服务端 APNs 实现使用 HTTP/2 与 P-256 ES256 provider token；普通通知 topic 为 Bundle ID，VoIP topic 为 `{BundleId}.voip`，VoIP push 使用 priority 10、即时过期和 `callId` collapse ID。Android、iOS alert 与 iOS VoIP token 可在同一设备上共存；删除设备会停用全部平台；410、BadDeviceToken 与 Unregistered 会停用对应 token。MongoDB 旧 user/device 唯一索引会迁移到 user/device/platform，并修复了迁移时修改不可变 `_id` 的风险。
+
+Apple 隐私清单不再错误声明“未收集数据”。当前声明 E聊发送到服务端并保留的账号/昵称、可选手机号、好友社交图、消息、照片/视频、语音、其他用户内容、反馈、用户/设备标识、活跃/登录诊断和由 IP 推断的粗略地区；全部与账号关联、用于 App Functionality、不用于跨应用跟踪。UserDefaults Required Reason 为 `CA92.1`。账号持有人仍须在 App Store Connect 按最终生产部署确认隐私营养标签、隐私政策和出口合规。
+
+### 自动化结果
+
+`pnpm check`、`pnpm test` 和 `pnpm build` 全部通过。Vitest 为 15/15，其中 iOS 专项覆盖普通 APNs 与 PushKit token 分平台上传、CallKit `answerRequested` Web 事件和 iOS 不调度 Android 本地通知；xUnit 为 25/25，其中 APNs 专项覆盖 JWT、payload、production VoIP endpoint、topic、push type、即时过期、collapse ID、主叫资料、多平台 token 共存与停用。ASP.NET Core 编译为 0 warning、0 error，React/Vite 和 .NET Release publish 成功。
+
+`pnpm ios:sync` 成功，Capacitor 检出 App、Local Notifications 与 Push Notifications 三个 iOS 插件，且同步前后的 AppDelegate、SceneDelegate、entitlement 和隐私清单哈希一致。`scripts/validate-ios-project.py` 返回 `IOS_STATIC_OK bundle=com.echat.app version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready`，验证 plist、PBX 资源引用、APNs Debug/Release 环境、版本、图标、PCM 铃声、隐私数据类型和仓库中无 Apple 私钥。
+
+Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返回 `BUILD SUCCESSFUL`。推送 API 分别返回 `ANDROID_PUSH_OK ... registered=1 disabled=1` 和 `IOS_PUSH_API_OK ... registered=2 platforms=ios,ios-voip disabled=2 ios_enabled=false`；`ios_enabled=false` 是因为当前服务端没有注入 Apple Key，属于安全降级预期。健康接口保持版本 0.9.0，并新增 `androidEnabled=false` 与 `iosEnabled=false`。
+
+业务回归最终返回 `E2E_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`P1_QR_OK`、`PLAINTEXT_MESSAGES_OK`、`LEGACY_E2EE_COMPAT_OK`、`CALL_SIGNAL_OK`、`ANDROID_CALL_LISTENER_OK`、`ANDROID_CALL_AUDIO_OK`、`ANDROID_SAFE_AREA_OK`、`ADMIN_REQUIREMENTS_090_OK`、`ADMIN_090_OK` 和 `GEOIP_OK`。后台 UI 脚本依赖后台需求脚本创建的明文会话验收数据，按 `admin-requirements-smoke` 后执行即通过全部 24 页、菜单锚定、空白关闭与 1440×900/390×844 布局检查。
+
+### 尚未验证的 Apple 侧边界
+
+当前 Linux 环境没有 `xcodebuild` 或 Swift 编译器，也没有 Apple Developer/App Store Connect 凭据和 macOS runner。`scripts/ios-testflight.sh` 的 shell 语法、输入门控和 Linux 安全阻断已验证，但 Xcode Archive、Apple 签名、IPA、`altool` 上传、App Store Connect 处理、TestFlight 安装、真实 APNs/PushKit/CallKit 和 iPhone 相机/麦克风仍未执行。只有在用户提供 Apple Team/App ID、APNs Key、上传 API Key、安全的 macOS Xcode 26 构建机和测试员后，才能完成并宣称“通过 TestFlight 测试”。

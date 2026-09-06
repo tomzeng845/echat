@@ -126,3 +126,12 @@ releases/*.aab
 releases/*.7z
 releases/*.pem
 releases/*password*.txt
+
+# Apple signing, App Store Connect credentials and exported builds
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+releases/*.ipa
+releases/*.ipa.sha256
+releases/*-testflight.json

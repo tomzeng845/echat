@@ -1,7 +1,14 @@
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace EChat.Api;
-
+public static class PushPlatforms
+{
+    public const string Android = "android";
+    public const string Ios = "ios";
+    public const string IosVoip = "ios-voip";
+    public static string Normalize(string? platform) => platform?.Trim().ToLowerInvariant() switch { Ios => Ios, IosVoip => IosVoip, _ => Android };
+    public static bool IsSupported(string? platform) => platform?.Trim().ToLowerInvariant() is Android or Ios or IosVoip;
+}
 public enum UserRole { User, Reviewer, Operator, Admin }
 public enum UserStatus { Active, Restricted, Disabled, PendingDeletion }
 public enum RelationStatus { Friend, Blocked, Deleted }

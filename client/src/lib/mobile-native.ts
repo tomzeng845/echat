@@ -52,10 +52,15 @@ export type NativeCallInvite = {
   callerId: string;
   callerName: string;
   callerAvatarUrl: string;
+  answerRequested?: boolean;
 };
 
 type MediaPermissionsPlugin = {
-  getCapabilities(): Promise<{ firebaseConfigured: boolean }>;
+  getCapabilities(): Promise<{
+    firebaseConfigured: boolean;
+    apnsAvailable?: boolean;
+    voipAvailable?: boolean;
+  }>;
   getBackgroundCallSupport(): Promise<NativeBackgroundCallSupport>;
   requestBackgroundCallExemption(options?: {
     force?: boolean;
@@ -77,13 +82,23 @@ type MediaPermissionsPlugin = {
   stopCallListener(): Promise<void>;
   clearCallListenerAlert(options: { callId: string }): Promise<void>;
   getPendingCall(): Promise<Partial<NativeCallInvite> & { available: boolean }>;
+  getVoipToken(): Promise<{ token: string; available: boolean }>;
   addListener(
     eventName: "callListenerIncoming",
     listener: (invite: NativeCallInvite) => void
   ): Promise<PluginListenerHandle>;
   addListener(
     eventName: "callListenerCleared",
-    listener: (event: { callId: string }) => void
+    listener: (event: {
+      callId: string;
+      conversationId?: string;
+      callerId?: string;
+      reason?: string;
+    }) => void
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "voipToken",
+    listener: (event: { token: string }) => void
   ): Promise<PluginListenerHandle>;
   requestPermissions(options: {
     camera: boolean;
@@ -105,10 +120,19 @@ let localNotificationsStarted = false;
 let callListenerStarted = false;
 let callListenerRefreshedAt = 0;
 let nativeAppActive = true;
+let nativeServerPushEnabled = false;
 const recentAlerts = new Map<string, number>();
 
 export function isNativeAndroid() {
   return Capacitor.getPlatform() === "android";
+}
+
+export function isNativeIos() {
+  return Capacitor.getPlatform() === "ios";
+}
+
+export function isNativeMobile() {
+  return isNativeAndroid() || isNativeIos();
 }
 
 export function getNativePushState() {
@@ -199,11 +223,15 @@ async function ensureCallListenerEvents() {
         new CustomEvent("echat-native-call-cleared", { detail: event })
       );
     }),
+    await MediaPermissions.addListener("voipToken", event => {
+      savePushTokenValue(event.token, "ios-voip").catch(() => undefined);
+    }),
   ];
 }
 
 export async function startNativeCallListener(force = false) {
-  if (!isNativeAndroid()) return false;
+  if (!isNativeMobile()) return false;
+  await ensureNativeAppState();
   if (
     !force &&
     callListenerStarted &&
@@ -211,6 +239,29 @@ export async function startNativeCallListener(force = false) {
   )
     return true;
   await ensureCallListenerEvents();
+  if (isNativeIos()) {
+    const result = await MediaPermissions.startCallListener({
+      hubUrl: "",
+      token: "",
+      userId: "",
+    });
+    updateCallListenerState(result.running);
+    callListenerRefreshedAt = Date.now();
+    const voip = await MediaPermissions.getVoipToken().catch(() => null);
+    if (voip?.available && voip.token)
+      await savePushTokenValue(voip.token, "ios-voip").catch(() => undefined);
+    const pending = await MediaPermissions.getPendingCall().catch(() => null);
+    if (
+      pending?.available &&
+      pending.callId &&
+      pending.conversationId &&
+      pending.mode &&
+      pending.callerId &&
+      pending.callerName !== undefined
+    )
+      dispatchNativeCall(pending as NativeCallInvite);
+    return callListenerStarted;
+  }
   const listener = await api<{
     token: string;
     expiresAtUtc: string;
@@ -256,7 +307,7 @@ function notificationId(eventId: string) {
 }
 
 async function ensureNativeAppState() {
-  if (!isNativeAndroid() || appListener) return;
+  if (!isNativeMobile() || appListener) return;
   nativeAppActive = (await App.getState().catch(() => ({ isActive: true })))
     .isActive;
   appListener = await App.addListener("appStateChange", ({ isActive }) => {
@@ -327,7 +378,7 @@ async function playIncomingAlertNow(kind: AlertSoundKind, eventId?: string) {
         detail: { kind, eventId: eventId || "" },
       })
     );
-  if (!isNativeAndroid()) return true;
+  if (!isNativeMobile()) return true;
   return MediaPermissions.playAlertSound({ kind })
     .then(result => result.playing)
     .catch(() => false);
@@ -341,8 +392,9 @@ export async function notifyIncomingEvent(options: {
   target: NativeNotificationTarget;
 }) {
   if (!reserveIncomingEvent(options.kind, options.eventId)) return false;
-  if (!isNativeAndroid() || nativeAppActive)
+  if (!isNativeMobile() || nativeAppActive)
     return playIncomingAlertNow(options.kind, options.eventId);
+  if (isNativeIos()) return true;
   if (options.kind !== "message" && callListenerStarted) return true;
   if (pushState === "registered") return true;
   if (!(await registerLocalNotificationFallback())) return false;
@@ -402,14 +454,14 @@ export async function playOutgoingCallAlert(eventId: string) {
 export async function stopIncomingCallAlert() {
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("echat-alert-sound-stopped"));
-  if (!isNativeAndroid()) return;
+  if (!isNativeMobile()) return;
   await MediaPermissions.stopAlertSound({ kind: "call" }).catch(
     () => undefined
   );
 }
 
 export async function clearNativeCallListenerAlert(callId: string) {
-  if (!isNativeAndroid() || !callId) return;
+  if (!isNativeMobile() || !callId) return;
   clearPendingNativeCall(callId);
   await MediaPermissions.clearCallListenerAlert({ callId }).catch(
     () => undefined
@@ -417,19 +469,19 @@ export async function clearNativeCallListenerAlert(callId: string) {
 }
 
 export async function getNativeBackgroundCallSupport() {
-  if (!isNativeAndroid()) return null;
+  if (!isNativeMobile()) return null;
   return MediaPermissions.getBackgroundCallSupport().catch(() => null);
 }
 
 export async function requestNativeBackgroundCallExemption(force = false) {
-  if (!isNativeAndroid()) return null;
+  if (!isNativeMobile()) return null;
   return MediaPermissions.requestBackgroundCallExemption({ force }).catch(
     () => null
   );
 }
 
 export async function openNativeBackgroundCallSettings() {
-  if (!isNativeAndroid()) return false;
+  if (!isNativeMobile()) return false;
   return MediaPermissions.openBackgroundCallSettings()
     .then(result => result.opened)
     .catch(() => false);
@@ -448,39 +500,63 @@ export function consumePendingNotification(): NativeNotificationTarget | null {
   }
 }
 
-async function savePushToken(token: Token) {
+async function savePushTokenValue(
+  token: string,
+  platform: "android" | "ios" | "ios-voip"
+) {
   await api("/api/push/devices", {
     method: "POST",
     body: JSON.stringify({
       deviceId: getDeviceId(),
-      token: token.value,
-      platform: "android",
+      token,
+      platform,
       appVersion: "0.9.0",
     }),
   });
-  updatePushState("registered");
+  if (platform !== "ios-voip")
+    updatePushState(nativeServerPushEnabled ? "registered" : "unavailable");
+}
+
+async function savePushToken(token: Token) {
+  await savePushTokenValue(token.value, isNativeIos() ? "ios" : "android");
 }
 
 export async function registerNativePush() {
-  if (!isNativeAndroid()) return "web" as const;
+  if (!isNativeMobile()) return "web" as const;
   await startNativeCallListener().catch(() => undefined);
   await requestNativeBackgroundCallExemption().catch(() => undefined);
-  const localNotificationsAvailable =
-    await registerLocalNotificationFallback().catch(() => false);
-  const serverStatus = await api<{ enabled: boolean }>(
-    "/api/push/status"
-  ).catch(() => ({ enabled: false }));
-  if (!serverStatus.enabled) {
+  const localNotificationsAvailable = isNativeAndroid()
+    ? await registerLocalNotificationFallback().catch(() => false)
+    : false;
+  const serverStatus = await api<{
+    enabled: boolean;
+    androidEnabled?: boolean;
+    iosEnabled?: boolean;
+  }>("/api/push/status").catch(
+    (): {
+      enabled: boolean;
+      androidEnabled?: boolean;
+      iosEnabled?: boolean;
+    } => ({ enabled: false })
+  );
+  nativeServerPushEnabled = isNativeIos()
+    ? Boolean(serverStatus.iosEnabled)
+    : Boolean(serverStatus.androidEnabled ?? serverStatus.enabled);
+  if (isNativeAndroid() && !nativeServerPushEnabled) {
     const nextState = localNotificationsAvailable ? "local" : "denied";
     updatePushState(nextState);
     return nextState;
   }
   const nativeCapabilities = await MediaPermissions.getCapabilities().catch(
-    () => ({ firebaseConfigured: false })
+    () =>
+      isNativeIos()
+        ? { firebaseConfigured: true, apnsAvailable: true, voipAvailable: true }
+        : { firebaseConfigured: false }
   );
   if (
+    isNativeAndroid() &&
     !canInitializeNativePush(
-      serverStatus.enabled,
+      nativeServerPushEnabled,
       nativeCapabilities.firebaseConfigured
     )
   ) {
@@ -519,26 +595,27 @@ export async function registerNativePush() {
     return "denied" as const;
   }
   try {
-    await Promise.all([
-      PushNotifications.createChannel({
-        id: "messages-v2",
-        name: "聊天消息",
-        description: "新消息与好友申请",
-        importance: 4,
-        visibility: 1,
-        vibration: true,
-        sound: "echat_message.wav",
-      }),
-      PushNotifications.createChannel({
-        id: "calls-v2",
-        name: "音视频通话",
-        description: "E聊语音与视频来电",
-        importance: 5,
-        visibility: 1,
-        vibration: true,
-        sound: "echat_call.wav",
-      }),
-    ]);
+    if (isNativeAndroid())
+      await Promise.all([
+        PushNotifications.createChannel({
+          id: "messages-v2",
+          name: "聊天消息",
+          description: "新消息与好友申请",
+          importance: 4,
+          visibility: 1,
+          vibration: true,
+          sound: "echat_message.wav",
+        }),
+        PushNotifications.createChannel({
+          id: "calls-v2",
+          name: "音视频通话",
+          description: "E聊语音与视频来电",
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          sound: "echat_call.wav",
+        }),
+      ]);
     await PushNotifications.register();
   } catch {
     updatePushState("unavailable");
@@ -548,7 +625,7 @@ export async function registerNativePush() {
 }
 
 export async function unregisterNativePush() {
-  if (!isNativeAndroid()) return;
+  if (!isNativeMobile()) return;
   await MediaPermissions.stopCallListener().catch(() => undefined);
   await api(`/api/push/devices/${encodeURIComponent(getDeviceId())}`, {
     method: "DELETE",
@@ -567,6 +644,7 @@ export async function unregisterNativePush() {
   updateCallListenerState(false);
   callListenerRefreshedAt = 0;
   nativeAppActive = true;
+  nativeServerPushEnabled = false;
   updatePushState("prompt");
 }
 
@@ -574,7 +652,7 @@ export async function ensureNativeMediaPermissions(options: {
   camera?: boolean;
   microphone?: boolean;
 }) {
-  if (!isNativeAndroid()) return;
+  if (!isNativeMobile()) return;
   const result = await MediaPermissions.requestPermissions({
     camera: Boolean(options.camera),
     microphone: Boolean(options.microphone),
@@ -586,13 +664,13 @@ export async function ensureNativeMediaPermissions(options: {
 }
 
 export async function setNativeCallAudioRoute(speaker: boolean) {
-  if (!isNativeAndroid()) return speaker;
+  if (!isNativeMobile()) return speaker;
   const result = await MediaPermissions.setCallAudioRoute({ speaker });
   if (!result.applied) throw new Error("当前设备无法切换音频输出");
   return result.speaker;
 }
 
 export async function endNativeCallAudioSession() {
-  if (!isNativeAndroid()) return;
+  if (!isNativeMobile()) return;
   await MediaPermissions.endCallAudioSession();
 }

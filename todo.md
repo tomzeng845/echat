@@ -1,5 +1,28 @@
 # E聊开发跟踪
 
+## iOS 0.9.0 与 TestFlight
+
+- [x] 安装 `@capacitor/ios` 并生成 Bundle ID `com.echat.app` 的 Capacitor 8 Xcode 工程
+- [x] 设置 iOS 15、版本 `0.9.0`、build 18、AppIcon、启动图和三类提示音
+- [x] 接入 APNs 普通通知 token 注册、点击路由和个人中心状态
+- [x] 接入 PushKit `ios-voip` token、CallKit 系统来电、接听/拒接/结束桥接
+- [x] 接听、拒接或挂断后按 `callId` 向其他 iOS 设备发送结束 VoIP push
+- [x] 接入相机、麦克风、AVAudioSession 听筒/扬声器与后台音频能力
+- [x] 添加 APNs entitlement、权限用途说明、Background Modes 和出口合规键
+- [x] 按实际账号、好友、消息、媒体、反馈、标识、使用/诊断和粗略地区数据修正 Apple 隐私清单
+- [x] 服务端实现 APNs HTTP/2、ES256 JWT、alert/VoIP topic、失效 token 停用和安全降级
+- [x] MongoDB/内存仓库支持 Android、iOS alert 与 iOS VoIP token 共存和整设备停用
+- [x] 新增 `pnpm ios:sync`、`pnpm ios:open`、`pnpm ios:testflight` 与静态检查脚本
+- [x] Vitest 15 项、xUnit 25 项、生产构建、iOS sync、Android Gradle 和全量业务回归通过
+- [x] 确认当前 Linux 环境无 Xcode、Apple 凭据或 macOS runner，未误报为已上传 TestFlight
+- [ ] 确认 Apple Developer Team 是否拥有 `com.echat.app`；不可用时统一更换 Bundle ID
+- [ ] 在 Apple Developer 开启 Push Notifications，创建 provisioning profile 与 APNs Key
+- [ ] 在 App Store Connect 创建应用记录、上传 API Key、隐私信息、隐私政策和 Beta 元数据
+- [ ] 在 macOS Xcode 26 编译签名并以真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风
+- [ ] 执行 `pnpm ios:testflight`，等待 Apple 处理并分配内部测试员
+- [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收
+- [ ] 如需外部测试，提交首次 Beta App Review
+
 ## Android 0.9.0 正式签名发布
 
 - [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥

@@ -18,6 +18,8 @@ public sealed class PushController(IChatRepository repository, PushNotificationS
         {
             enabled = push.Enabled,
             provider = push.Provider,
+            androidEnabled = push.AndroidEnabled,
+            iosEnabled = push.IosEnabled,
             registeredDevices = devices.Count,
             devices = devices.Select(View).ToList()
         });
@@ -30,15 +32,15 @@ public sealed class PushController(IChatRepository repository, PushNotificationS
         var token = request.Token.Trim();
         if (!SafeIdentifier.IsMatch(deviceId) || token.Length is < 32 or > 4096)
             return BadRequest(new { error = "推送设备信息无效" });
-        if (!request.Platform.Equals("android", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "当前只支持 Android 推送设备" });
+        if (!PushPlatforms.IsSupported(request.Platform))
+            return BadRequest(new { error = "当前支持 Android、iOS 和 iOS VoIP 推送设备" });
 
         var device = await repository.UpsertPushDeviceAsync(new PushDevice
         {
             UserId = User.UserId(),
             DeviceId = deviceId,
             Token = token,
-            Platform = "android",
+            Platform = PushPlatforms.Normalize(request.Platform),
             AppVersion = request.AppVersion.Trim()[..Math.Min(request.AppVersion.Trim().Length, 40)]
         }, ct);
         return Ok(View(device));
@@ -55,7 +57,7 @@ public sealed class PushController(IChatRepository repository, PushNotificationS
     [HttpPost("test")]
     public async Task<ActionResult> Test(CancellationToken ct)
     {
-        if (!push.Enabled) return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "FCM 服务端凭据尚未配置" });
+        if (!push.Enabled) return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "推送服务端凭据尚未配置" });
         await push.SendTestAsync(User.UserId(), ct);
         return Accepted(new { queued = true });
     }

@@ -91,14 +91,15 @@ public sealed class InMemoryChatRepository : IChatRepository
     }
     public Task<PushDevice> UpsertPushDeviceAsync(PushDevice device, CancellationToken ct = default)
     {
-        var key = $"{device.UserId}:{device.DeviceId}";
+        device.Platform = PushPlatforms.Normalize(device.Platform);
+        var key = $"{device.UserId}:{device.DeviceId}:{device.Platform}";
         var createdAt = _pushDevices.TryGetValue(key, out var existing) ? existing.CreatedAtUtc : device.CreatedAtUtc;
         device.Id = key;
         device.CreatedAtUtc = createdAt;
         device.Enabled = true;
         device.DisabledAtUtc = null;
         device.LastSeenAtUtc = DateTime.UtcNow;
-        foreach (var duplicate in _pushDevices.Where(x => x.Key != key && x.Value.Token == device.Token).ToList()) _pushDevices.TryRemove(duplicate.Key, out _);
+        foreach (var duplicate in _pushDevices.Where(x => x.Key != key && x.Value.Token == device.Token && x.Value.Platform == device.Platform).ToList()) _pushDevices.TryRemove(duplicate.Key, out _);
         _pushDevices[key] = device;
         return Task.FromResult(device);
     }
@@ -109,7 +110,7 @@ public sealed class InMemoryChatRepository : IChatRepository
     }
     public Task DisablePushDeviceAsync(string userId, string deviceId, CancellationToken ct = default)
     {
-        if (_pushDevices.TryGetValue($"{userId}:{deviceId}", out var device)) { device.Enabled = false; device.DisabledAtUtc = DateTime.UtcNow; }
+        foreach (var device in _pushDevices.Values.Where(x => x.UserId == userId && x.DeviceId == deviceId)) { device.Enabled = false; device.DisabledAtUtc = DateTime.UtcNow; }
         return Task.CompletedTask;
     }
     public Task DisablePushTokenAsync(string token, CancellationToken ct = default)

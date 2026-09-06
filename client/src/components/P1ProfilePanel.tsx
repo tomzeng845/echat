@@ -25,6 +25,8 @@ import {
   getNativeCallListenerState,
   getNativePushState,
   isNativeAndroid,
+  isNativeIos,
+  isNativeMobile,
   openNativeBackgroundCallSettings,
   registerNativePush,
   requestNativeBackgroundCallExemption,
@@ -120,27 +122,37 @@ export default function P1ProfilePanel({
   }
 
   async function enablePush() {
-    if (!isNativeAndroid())
-      return toast.info("请在 E聊 Android APP 中使用系统消息推送");
+    if (!isNativeMobile())
+      return toast.info("请在 E聊 Android 或 iOS APP 中使用系统消息推送");
     try {
       const state = await registerNativePush();
       if (state === "denied")
-        toast.warning("通知权限已关闭，请在 Android 系统设置中允许通知");
+        toast.warning("通知权限已关闭，请在系统设置中允许 E聊通知");
       else if (state === "unavailable")
-        toast.warning("Android 客户端尚未配置 Firebase，请联系管理员");
-      else toast.success("Android 后台通知与来电服务已开启");
+        toast.warning(
+          isNativeIos()
+            ? "APNs 尚未配置，请联系管理员"
+            : "Android 客户端尚未配置 Firebase，请联系管理员"
+        );
+      else toast.success("系统消息推送与后台来电已开启");
     } catch {
-      toast.error("暂时无法启用 Android 消息推送");
+      toast.error("暂时无法启用系统消息推送");
     }
   }
 
   async function configureBackgroundCalls() {
-    if (!isNativeAndroid())
-      return toast.info("请在 E聊 Android / 鸿蒙兼容版 APP 中使用后台来电");
+    if (!isNativeMobile())
+      return toast.info(
+        "请在 E聊 Android、鸿蒙兼容版或 iOS APP 中使用后台来电"
+      );
     try {
       await registerNativePush();
       const support = await getNativeBackgroundCallSupport();
       setBackgroundSupport(support);
+      if (isNativeIos()) {
+        toast.success("iOS PushKit 与 CallKit 后台来电已开启");
+        return;
+      }
       if (!support?.batteryOptimizationIgnored) {
         await requestNativeBackgroundCallExemption(true);
         toast.info("请允许 E聊忽略电池优化，以持续接收后台来电");
@@ -157,7 +169,11 @@ export default function P1ProfilePanel({
     }
   }
 
-  const pushLabel = pushStatusLabel(isNativeAndroid(), pushState);
+  const pushLabel = pushStatusLabel(
+    isNativeMobile(),
+    pushState,
+    isNativeIos() ? "ios" : "android"
+  );
 
   if (section === "devices")
     return (
@@ -282,13 +298,17 @@ export default function P1ProfilePanel({
         icon={Phone}
         title="后台来电"
         value={
-          isNativeAndroid()
-            ? !backgroundSupport?.batteryOptimizationIgnored
-              ? "待允许后台运行"
-              : callListenerRunning
-                ? "常驻服务运行中"
-                : "点击重新连接"
-            : "仅 Android APP"
+          isNativeIos()
+            ? callListenerRunning
+              ? "PushKit / CallKit 已开启"
+              : "点击重新连接"
+            : isNativeAndroid()
+              ? !backgroundSupport?.batteryOptimizationIgnored
+                ? "待允许后台运行"
+                : callListenerRunning
+                  ? "常驻服务运行中"
+                  : "点击重新连接"
+              : "仅移动 APP"
         }
         onClick={configureBackgroundCalls}
       />

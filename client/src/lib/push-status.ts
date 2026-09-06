@@ -8,13 +8,15 @@ export function canInitializeNativePush(
 }
 
 export function pushStatusLabel(
-  nativeAndroid: boolean,
-  state: NativePushState
+  nativeMobile: boolean,
+  state: NativePushState,
+  platform: "android" | "ios" = "android"
 ) {
-  if (!nativeAndroid) return "仅 Android APP";
+  if (!nativeMobile) return "仅移动 APP";
   if (state === "registered") return "已开启";
   if (state === "local") return "后台通知已开启";
   if (state === "denied") return "权限已关闭";
-  if (state === "unavailable") return "待配置 FCM";
+  if (state === "unavailable")
+    return platform === "ios" ? "待配置 APNs" : "待配置 FCM";
   return "正在连接";
 }

@@ -96,6 +96,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.accepted", new { conversationId, callId, userId = user.Id, displayName = user.DisplayName, avatarUrl = user.AvatarUrl });
         await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
     public async Task CallPrepareAnswer(string conversationId, string callId)
@@ -122,6 +123,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Ringing) { call.Status = CallRecordStatus.Rejected; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = reason; await repository.UpsertCallAsync(call); }
         await Clients.User(callerId).SendAsync("call.rejected", new { conversationId, callId, userId = Context.User!.UserId(), reason });
         await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
     public async Task CallSignal(string conversationId, string callId, string targetUserId, string signalType, string payload)
@@ -142,6 +144,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         if (call.Status is CallRecordStatus.Ringing or CallRecordStatus.Active) { call.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = "ended"; await repository.UpsertCallAsync(call); }
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.ended", new { conversationId, callId, userId = Context.User!.UserId() });
         await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
     private async Task NotifyCallListenersClearedAsync(IEnumerable<string> participantIds, string callId)

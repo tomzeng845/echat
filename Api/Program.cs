@@ -20,7 +20,9 @@ builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddHttpClient("apns", client => { client.Timeout = TimeSpan.FromSeconds(8); client.DefaultRequestVersion = new Version(2, 0); client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher; });
 builder.Services.AddSingleton<GeoIpService>();
+builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
@@ -136,7 +138,7 @@ app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment enviro
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },
-    push = new { enabled = push.Enabled, provider = push.Provider },
+    push = new { enabled = push.Enabled, provider = push.Provider, androidEnabled = push.AndroidEnabled, iosEnabled = push.IosEnabled },
     utcNow = DateTime.UtcNow
 }));
 app.MapFallbackToFile("index.html");

@@ -10,7 +10,8 @@ describe("Android push status label", () => {
     expect(pushStatusLabel(true, "registered")).toBe("已开启");
     expect(pushStatusLabel(true, "local")).toBe("后台通知已开启");
     expect(pushStatusLabel(true, "denied")).toBe("权限已关闭");
-    expect(pushStatusLabel(false, "unavailable")).toBe("仅 Android APP");
+    expect(pushStatusLabel(false, "unavailable")).toBe("仅移动 APP");
+    expect(pushStatusLabel(true, "unavailable", "ios")).toBe("待配置 APNs");
   });
 
   it("does not initialize Firebase unless both client and server are configured", () => {

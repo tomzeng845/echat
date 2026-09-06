@@ -446,21 +446,49 @@ const CallManager = forwardRef<
     connection.on("call.ended", ended);
     const nativeInvited = (event: Event) => {
       consumePendingNativeCall();
-      invited((event as CustomEvent<CallInvite>).detail);
+      const invite = (
+        event as CustomEvent<CallInvite & { answerRequested?: boolean }>
+      ).detail;
+      invited(invite);
+      if (invite.answerRequested)
+        window.setTimeout(() => accept().catch(() => undefined), 0);
     };
     const nativeCleared = (event: Event) => {
-      const callId = (event as CustomEvent<{ callId: string }>).detail.callId;
+      const detail = (
+        event as CustomEvent<{
+          callId: string;
+          conversationId?: string;
+          callerId?: string;
+          reason?: string;
+        }>
+      ).detail;
+      const callId = detail.callId;
       const active = callRef.current;
       if (
         active?.callId === callId &&
         shouldCloseCallFromNativeClear(active.status)
-      )
+      ) {
+        if (detail.reason === "declined")
+          connection
+            .invoke(
+              "CallReject",
+              detail.conversationId || active.conversationId,
+              callId,
+              detail.callerId || active.callerId,
+              "declined"
+            )
+            .catch(() => undefined);
         finish(false);
+      }
     };
     window.addEventListener("echat-native-call", nativeInvited);
     window.addEventListener("echat-native-call-cleared", nativeCleared);
     const pendingNativeCall = consumePendingNativeCall();
-    if (pendingNativeCall) invited(pendingNativeCall);
+    if (pendingNativeCall) {
+      invited(pendingNativeCall);
+      if (pendingNativeCall.answerRequested)
+        window.setTimeout(() => accept().catch(() => undefined), 0);
+    }
     return () => {
       connection.off("call.invited", invited);
       connection.off("call.accepted", accepted);
