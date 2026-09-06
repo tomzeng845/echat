@@ -28,13 +28,13 @@
 - [x] 创建 APNs Production Team Scoped Key `35STBCJUCJ`，并验证用户上传的 p8 可被 OpenSSL/APNs 服务导入
 - [x] 将新 APNs p8 安全注入正式服务；重启后健康测试确认 `iosEnabled=true`、Apple APNs provider
 - [x] 创建 Developer 角色 App Store Connect Team API Key，并加入 GitHub `ios-production` Environment Secrets
-- [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据
+- [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据（Apple Developer/App Store Connect 会话已过期，当前无法进入；登录恢复后继续）
 - [x] 由账号持有人确认标准加密算法并声明当前不在法国分发，完成 Build 181 出口合规问卷
 - [x] 在 GitHub-hosted macOS 26 / Xcode 26 完成 Manual archive、export、codesign、profile、Bundle ID、版本与资源验证
-- [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风
+- [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风（待确认 APNs Key `5FLA6SLK3N` 为 Production，并重新注册 TestFlight token）
 - [x] 执行 GitHub workflow `34028293524`，Apple Delivery `f1b7e7d8-a6e1-4a56-8363-da16ba37cc18` 上传成功
 - [x] Apple 已处理 `0.9.0 (181)`；创建自动分发的“E聊内部测试”组并邀请账号持有人
-- [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收
+- [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收（依赖 Apple 登录和可用真机）
 - [ ] 如需外部测试，提交首次 Beta App Review
 
 ## Android 0.9.0 正式签名发布
