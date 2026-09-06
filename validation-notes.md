@@ -437,3 +437,14 @@ AppDelegate 已在启动时创建 `PKPushRegistry` 并声明 `.voIP`，VoIP push
 Apple Developer 后续会话已过期，无法重新核对 Key `5FLA6SLK3N` 的环境标签；页面此前显示其环境仍需确认。下一步必须确认该 Key 为 Production，然后让 TestFlight 设备重新登录 E聊并上传新的 `ios-voip` token，再测试锁屏语音和视频来电。若仍失败，检查 `/api/push/status` 是否存在同一设备的 `ios` 与 `ios-voip` 记录，以及服务日志中的 APNs 状态码，但不得记录 token 或私钥。
 
 当前结论：服务端 Bundle ID/topic 已修正、APNs 健康检查通过；真实锁屏来电仍待 Apple Key 环境确认和 iPhone 真机验收。
+
+
+## 2026-09-07 新 Production APNs Key 已生效
+
+重新登录 Apple Developer 后确认原 Key `5FLA6SLK3N`（`EChat APNs Production 2026 v2`）实际为 **Sandbox**，不能用于 TestFlight production 推送。第一次创建候选 Key 时虽在界面上选择 Production，但因浏览器选择事件未真正提交，生成的 `XYL3YLUA27` 仍显示为 Sandbox；该 Key 未注入正式服务，本轮未撤销，待账号持有人确认后清理。
+
+随后通过真实下拉框聚焦并使用键盘 `ArrowDown` 从 Sandbox 切换到 Production，创建新 Key `35Z9TC62QQ`（`EChat APNs Production 2026 v4`，Team Scoped / All Topics），Apple Developer 页面确认其为 Production 配置。用户上传匹配的 p8 后，已将 `APNS_KEY_ID=35Z9TC62QQ` 和 `APNS_PRIVATE_KEY` 安全更新到正式 WebDev Secret；私钥未写入仓库或日志。
+
+验证结果：p8 为有效 EC P-256 PKCS#8 私钥；正式部署测试 `ECHAT_HEALTH_URL=https://echatapp-favrlscm.manus.space/api/health APNS_BUNDLE_ID=com.tomzeng845.echat pnpm exec vitest run server/apns-production-secret.test.ts` 通过（1 file、1 test）；健康接口确认 `iosEnabled=true`、provider 为 Apple Push Notification service。正式服务 topic 为 `com.tomzeng845.echat`，VoIP topic 为 `com.tomzeng845.echat.voip`，使用 production endpoint。
+
+仍需真机闭环：在 TestFlight iPhone 上完全退出并重新登录 E聊以重新注册普通 APNs 与 `ios-voip` token，然后由另一账号拨打语音和视频电话，分别在前台、后台和锁屏验证系统来电、接听、拒接、挂断、双向音视频。测试期间检查 `/api/push/status` 的 `ios` 与 `ios-voip` 设备记录以及正式服务 APNs 状态码；不得记录 token 或私钥。
