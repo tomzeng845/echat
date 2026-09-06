@@ -161,25 +161,23 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         }
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? request.Content ?? "" : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
-        var recipientIds = conversation.Members
-            .Where(member => member.LeftAtSequence is null && !member.Muted && member.UserId != message.SenderId)
+        var memberUserIds = conversation.Members
+            .Where(member => member.LeftAtSequence is null)
             .Select(member => member.UserId)
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        _ = BroadcastMessageAsync(id, view, recipientIds);
+        _ = BroadcastMessageAsync(id, view, memberUserIds);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         return Ok(view);
     }
 
-    private async Task BroadcastMessageAsync(string conversationId, MessageView view, IReadOnlyList<string> recipientIds)
+    private async Task BroadcastMessageAsync(string conversationId, MessageView view, IReadOnlyList<string> memberUserIds)
     {
         try
         {
-            await hub.Clients.Group($"conversation:{conversationId}")
-                .SendAsync("message.created", view, CancellationToken.None);
-            await Task.WhenAll(recipientIds.Select(recipientId =>
-                hub.Clients.Group($"user:{recipientId}")
-                    .SendAsync("message.available", view, CancellationToken.None)));
+            await Task.WhenAll(memberUserIds.Select(memberUserId =>
+                hub.Clients.Group($"user:{memberUserId}")
+                    .SendAsync("message.created", view, CancellationToken.None)));
         }
         catch (Exception exception)
         {
