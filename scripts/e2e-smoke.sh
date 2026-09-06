@@ -47,6 +47,11 @@ curl -fsS -X POST "$base/api/conversations/$conversation_id/read/1" -H "Authoriz
 read_sequence="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$conversation_id" '.[] | select(.id == $id) | .readSequence')"
 [[ "$read_sequence" == "1" ]]
 
+emoji_kind="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"clientMessageId\":\"emoji-$suffix\",\"kind\":\"Emoji\",\"ciphertext\":\"encrypted-emoji\",\"nonce\":\"nonce\",\"algorithm\":\"AES-GCM-256\"}" | jq -r .kind)"
+[[ "$emoji_kind" == "Emoji" ]]
+emoji_preview="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$conversation_id" '.[] | select(.id == $id) | .lastMessagePreview')"
+[[ "$emoji_preview" == "[表情]" ]]
+
 group_id="$(curl -fsS "$base/api/conversations/groups" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"name\":\"Smoke Group\",\"memberAccounts\":[\"$bob\",\"$charlie\"],\"keyEnvelopes\":{\"$alice_id\":\"alice-envelope\",\"$bob_id\":\"bob-envelope\",\"$charlie_id\":\"charlie-envelope\"}}" | jq -r .id)"
 group_count="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $charlie_token" | jq -r --arg id "$group_id" '[.[] | select(.id == $id)] | length')"
 [[ "$group_count" == "1" ]]
@@ -82,4 +87,4 @@ excluded_id="$(curl -fsS "$base/api/moments" -H "Authorization: Bearer $alice_to
 report_status="$(curl -fsS "$base/api/moments/$moment_id/reports" -H "Authorization: Bearer $bob_token" -H 'Content-Type: application/json' -d '{"reason":"垃圾广告","detail":"smoke"}' | jq -r .status)"
 [[ "$report_status" == "Submitted" ]]
 
-printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s media=%s moment=%s social=%s privacy=private:selected:excluded report=%s idempotent_message=%s read=%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$chat_asset" "$moment_id" "$moment_social" "$report_status" "$first_id" "$read_sequence"
+printf 'E2E_OK accounts=%s,%s,%s direct=%s group=%s media=%s moment=%s social=%s privacy=private:selected:excluded report=%s idempotent_message=%s read=%s emoji=%s:%s\n' "$alice" "$bob" "$charlie" "$conversation_id" "$group_id" "$chat_asset" "$moment_id" "$moment_social" "$report_status" "$first_id" "$read_sequence" "$emoji_kind" "$emoji_preview"

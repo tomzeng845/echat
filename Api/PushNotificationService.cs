@@ -42,6 +42,7 @@ public sealed class PushNotificationService(
             .ToList();
         var body = message.Kind switch
         {
+            MessageKind.Emoji => "发来一个表情",
             MessageKind.Image => "发来一张图片",
             MessageKind.Voice => "发来一条语音",
             MessageKind.Video => "发来一段视频",

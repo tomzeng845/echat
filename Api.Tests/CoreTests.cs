@@ -42,6 +42,30 @@ public sealed class CoreTests
     }
 
     [Fact]
+    public async Task EmojiMessage_UsesDedicatedKindAndConversationPreview()
+    {
+        var repository = new InMemoryChatRepository();
+        var conversation = await repository.AddConversationAsync(new Conversation
+        {
+            Type = ConversationType.Direct,
+            Members = [new() { UserId = "u1" }, new() { UserId = "u2" }]
+        });
+
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage
+        {
+            ClientMessageId = "emoji-1",
+            ConversationId = conversation.Id,
+            SenderId = "u1",
+            Kind = MessageKind.Emoji,
+            Ciphertext = "encrypted-emoji",
+            Nonce = "nonce"
+        });
+
+        Assert.Equal(MessageKind.Emoji, message.Kind);
+        Assert.Equal("[表情]", conversation.LastMessagePreview);
+    }
+
+    [Fact]
     public void Totp_VerifiesCurrentCode_AndRejectsMalformedCode()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Admin:TotpSecret"] = "JBSWY3DPEHPK3PXP" }).Build();

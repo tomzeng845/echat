@@ -193,7 +193,17 @@ public sealed class MongoChatRepository : IChatRepository
     {
         var existing = await _messages.Find(x => x.SenderId == message.SenderId && x.ClientMessageId == message.ClientMessageId).FirstOrDefaultAsync(ct);
         if (existing is not null) return existing;
-        var conversation = await _conversations.FindOneAndUpdateAsync(x => x.Id == message.ConversationId, Builders<Conversation>.Update.Inc(x => x.LastSequence, 1).Set(x => x.LastMessageAtUtc, message.SentAtUtc).Set(x => x.LastMessagePreview, message.Kind == MessageKind.Text ? "加密消息" : $"[{message.Kind}]"), new FindOneAndUpdateOptions<Conversation> { ReturnDocument = ReturnDocument.After }, ct) ?? throw new InvalidOperationException("CONVERSATION_NOT_FOUND");
+        var preview = message.Kind switch
+        {
+            MessageKind.Text => "加密消息",
+            MessageKind.Emoji => "[表情]",
+            MessageKind.Image => "[图片]",
+            MessageKind.Voice => "[语音]",
+            MessageKind.Video => "[视频]",
+            MessageKind.File => "[文件]",
+            _ => $"[{message.Kind}]"
+        };
+        var conversation = await _conversations.FindOneAndUpdateAsync(x => x.Id == message.ConversationId, Builders<Conversation>.Update.Inc(x => x.LastSequence, 1).Set(x => x.LastMessageAtUtc, message.SentAtUtc).Set(x => x.LastMessagePreview, preview), new FindOneAndUpdateOptions<Conversation> { ReturnDocument = ReturnDocument.After }, ct) ?? throw new InvalidOperationException("CONVERSATION_NOT_FOUND");
         message.Sequence = conversation.LastSequence;
         try { await _messages.InsertOneAsync(message, cancellationToken: ct); return message; }
         catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)

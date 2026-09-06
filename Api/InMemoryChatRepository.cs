@@ -193,7 +193,7 @@ public sealed class InMemoryChatRepository : IChatRepository
             if (_messageIdempotency.TryGetValue(key, out existingId)) return _messages[existingId];
             if (!_conversations.TryGetValue(message.ConversationId, out var conversation)) throw new InvalidOperationException("CONVERSATION_NOT_FOUND");
             message.Sequence = ++conversation.LastSequence;
-            conversation.LastMessagePreview = message.Kind switch { MessageKind.Text => "加密消息", MessageKind.Image => "[图片]", MessageKind.Voice => "[语音]", MessageKind.Video => "[视频]", MessageKind.File => "[文件]", _ => $"[{message.Kind}]" };
+            conversation.LastMessagePreview = message.Kind switch { MessageKind.Text => "加密消息", MessageKind.Emoji => "[表情]", MessageKind.Image => "[图片]", MessageKind.Voice => "[语音]", MessageKind.Video => "[视频]", MessageKind.File => "[文件]", _ => $"[{message.Kind}]" };
             conversation.LastMessageAtUtc = message.SentAtUtc;
             _messages[message.Id] = message;
             _messageIdempotency[key] = message.Id;

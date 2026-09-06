@@ -171,6 +171,76 @@ try {
     () => document.body.innerText.includes("手机端发送按钮正常"),
     { timeout: 8000 }
   );
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="打开表情面板"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.click('button[aria-label="打开表情面板"]');
+  await page.waitForSelector('[role="dialog"][aria-label="选择表情"]', {
+    visible: true,
+    timeout: 4000,
+  });
+  const emojiPanelLayout = await page.evaluate(() => {
+    const panel = document.querySelector(
+      '[role="dialog"][aria-label="选择表情"]'
+    );
+    if (!panel) return { valid: false };
+    const rect = panel.getBoundingClientRect();
+    return {
+      valid:
+        rect.left >= 0 &&
+        rect.right <= innerWidth &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight,
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+      },
+    };
+  });
+  if (!emojiPanelLayout.valid)
+    throw new Error(
+      `emoji panel outside viewport: ${JSON.stringify(emojiPanelLayout)}`
+    );
+  await page.type('input[aria-label="搜索表情"]', "爱心");
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("button")).some(button =>
+      button.getAttribute("aria-label")?.includes("发送表情 ❤️")
+    )
+  );
+  await page.screenshot({
+    path: "/home/ubuntu/screenshots/echat-emoji-panel-mobile.png",
+    fullPage: false,
+  });
+  await page.evaluate(() =>
+    Array.from(document.querySelectorAll("button"))
+      .find(button =>
+        button.getAttribute("aria-label")?.includes("发送表情 ❤️")
+      )
+      ?.click()
+  );
+  await page.waitForSelector('[role="dialog"][aria-label="选择表情"]', {
+    hidden: true,
+    timeout: 4000,
+  });
+  await page.waitForFunction(() => document.body.innerText.includes("❤️"), {
+    timeout: 8000,
+  });
+  const directConversation = (
+    await request("/api/conversations", recipient.accessToken)
+  ).find(item => item.type === "Direct" && item.name === "移动好友");
+  if (!directConversation || directConversation.lastMessagePreview !== "[表情]")
+    throw new Error(
+      `emoji preview missing: ${JSON.stringify(directConversation)}`
+    );
+  const emojiMessages = await request(
+    `/api/conversations/${directConversation.id}/messages?after=0&limit=100`,
+    recipient.accessToken
+  );
+  if (!emojiMessages.some(message => message.kind === "Emoji"))
+    throw new Error("dedicated Emoji message was not persisted");
   console.log(
     "MEDIA_PROBE",
     await page.evaluate(async () => {
@@ -226,7 +296,7 @@ try {
     fullPage: false,
   });
   console.log(
-    `MOBILE_CHAT_OK request=${peerAccount} button=${layout.button.left},${layout.button.top}-${layout.button.right},${layout.button.bottom} textarea=${layout.textareaWidth} viewport=${layout.viewport.width}x${layout.viewport.height} speaker=toggle`
+    `MOBILE_CHAT_OK request=${peerAccount} button=${layout.button.left},${layout.button.top}-${layout.button.right},${layout.button.bottom} textarea=${layout.textareaWidth} viewport=${layout.viewport.width}x${layout.viewport.height} emoji=searched:sent:preview speaker=toggle`
   );
 } finally {
   await browser.close();

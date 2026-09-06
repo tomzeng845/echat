@@ -308,3 +308,15 @@ APK 后台收到邀请时使用 `CATEGORY_CALL` 高优先级通知和循环 `ech
 最终 APK 的合并 Manifest 保留 `android:process=":calls"` 与 `foregroundServiceType=remoteMessaging`，包内包含来电铃声与呼出等待铃声。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=16`、`versionName=0.8.8`、最低 API 24、目标 API 36。文件 `EChat-0.8.8-debug.apk` 的 SHA-256 为 `889d240114c1397033b4cdf07ec520cab05fc4f9dba48348946b6bb7ef8e2096`。
 
 沙箱没有可用 Android/鸿蒙真机或 KVM，因此自动化验证覆盖协议、浏览器双端 WebRTC、Android Java 编译、Manifest 和 APK 产物；仍需在目标鸿蒙设备允许 E聊忽略电池优化，并在系统应用启动管理中开启自启动、关联启动和后台运行。Android“强制停止”会禁用所有后台组件，必须重新打开 APP。
+
+## 2026-09-06 Android APP 0.8.9 加密表情消息
+
+聊天输入栏原有“后续开放”表情按钮已替换为真实响应式面板。面板包含最近使用以及笑脸、手势、动物、食物、活动、旅行、物品、符号九类入口，支持中文和英文关键词搜索；最近使用在设备本地去重保存，最多 24 个。触摸设备打开面板不会自动唤起软键盘，390×844 真机等效视口检查确认面板四边均位于可视区域内。
+
+选择表情后，客户端使用当前会话 `keyVersion` 的 AES-GCM 密钥加密 Unicode 字符并以独立 `MessageKind.Emoji` 发送。服务端只持久化密文、随机数、算法和类型；消息解密后显示为大号无底色气泡并沿用两分钟撤回。内存仓库与 MongoDB 的会话预览统一为“[表情]”，FCM 与本地后台通知只显示“发来一个表情”，不把实际表情字符写入服务端预览或通知载荷。
+
+Vitest 新增分类、中文/英文搜索、最近使用去重和本地持久化覆盖，最终 13 项通过；xUnit 新增 `Emoji` 类型和“[表情]”预览覆盖，最终 20 项通过。API 冒烟输出 `E2E_OK ... emoji=Emoji:[表情]`；390×844 真实 React 页面完成打开面板、搜索“爱心”、发送 `❤️`、检查独立消息类型与会话预览，输出 `MOBILE_CHAT_OK ... emoji=searched:sent:preview`。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告，`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_089_OK`、`ADMIN_089_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
+
+最终 APK 包含表情搜索文案和生产 API 地址。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=17`、`versionName=0.8.9`、最低 API 24、目标 API 36。文件 `EChat-0.8.9-debug.apk` 的 SHA-256 为 `d174ae6814447b8f2c2972956bd598ebde0ec1b0173c32de1857ee77a2fd53e4`。

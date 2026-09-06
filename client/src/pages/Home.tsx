@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CallManager, {
   type CallManagerHandle,
 } from "@/components/chat/CallManager";
+import EmojiPicker from "@/components/chat/EmojiPicker";
 import RichMessageContent from "@/components/chat/RichMessageContent";
 import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
 import MomentsPanel from "@/components/MomentsPanel";
@@ -67,7 +68,6 @@ import {
   SendHorizontal,
   Settings,
   ShieldCheck,
-  SmilePlus,
   Sparkles,
   UserPlus,
   Users,
@@ -1132,6 +1132,49 @@ function Messenger({
     }
   }
 
+  async function sendEmoji(emoji: string) {
+    if (!emoji || !selectedId || !selected || busy) return;
+    const conversationId = selectedId;
+    const keyVersion = selected.keyVersion || 1;
+    setBusy(true);
+    try {
+      const key = await resolveConversationKey(
+        conversationId,
+        keyVersion,
+        true
+      );
+      if (!key) throw new Error("本设备缺少会话密钥");
+      const encrypted = await encryptMessage(key, emoji);
+      const created = await api<Message>(
+        `/api/conversations/${conversationId}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            clientMessageId: crypto.randomUUID(),
+            kind: "Emoji",
+            keyVersion,
+            ...encrypted,
+          }),
+        }
+      );
+      const value = { ...created, plaintext: emoji };
+      setMessages(current =>
+        current.some(item => item.id === value.id)
+          ? current.map(item => (item.id === value.id ? value : item))
+          : [...current, value]
+      );
+      await api<void>(
+        `/api/conversations/${conversationId}/read/${created.sequence}`,
+        { method: "POST" }
+      );
+      await loadData();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "表情发送失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendMedia(
     file: File | Blob,
     kind: ChatMediaKind,
@@ -1610,7 +1653,7 @@ function Messenger({
               <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
                 <div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
                   <div className="flex items-center gap-1 px-1 pb-1">
-                    <ComposerAction icon={SmilePlus} label="表情" />
+                    <EmojiPicker disabled={busy} onSelect={sendEmoji} />
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -1838,23 +1881,6 @@ function HeaderAction({
     </button>
   );
 }
-function ComposerAction({
-  icon: Icon,
-  label,
-}: {
-  icon: typeof Phone;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={() => toast.info(`${label}消息将在后续迭代开放`)}
-      title={label}
-      className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
-    >
-      <Icon size={17} />
-    </button>
-  );
-}
 function MessageBubble({
   message,
   mine,
@@ -1869,6 +1895,7 @@ function MessageBubble({
     message.kind === "Voice" ||
     message.kind === "Video" ||
     message.kind === "File";
+  const emoji = message.kind === "Emoji" && message.state === "Accepted";
   return (
     <div
       className={`group mb-4 flex ${mine ? "justify-end" : "justify-start"}`}
@@ -1877,7 +1904,7 @@ function MessageBubble({
         className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}
       >
         <div
-          className={`rounded-[20px] text-sm leading-6 shadow-sm ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}
+          className={`rounded-[20px] shadow-sm ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
         >
           <RichMessageContent message={message} />
         </div>
