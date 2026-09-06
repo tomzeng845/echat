@@ -25,7 +25,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new
         {
             service = "E聊 API",
-            version = "0.8.9",
+            version = "0.9.0",
             status = "healthy",
             storage = Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "in-memory-preview" : "mongodb",
             utcNow = DateTime.UtcNow,
@@ -45,7 +45,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
                 totpConfigured = totp.IsConfigured,
                 developmentPasswordLogin = RuntimeMode.IsEphemeralPreview(configuration, environment),
                 transport = "TLS required in production",
-                messagePayload = "client-side AES-GCM ciphertext",
+                messagePayload = "plaintext for new messages; legacy AES-GCM compatible",
                 geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries }
             }
         });

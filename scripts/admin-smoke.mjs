@@ -36,7 +36,7 @@ await fetchApi(
   {
     method: "POST",
     body: JSON.stringify({
-      account: "unknown-admin-test",
+      account: "unknown-user-test",
       password: "wrong-pass",
       deviceName: "Failure smoke",
     }),
@@ -55,7 +55,7 @@ if (!admin.accessToken || admin.user?.role !== "Admin" || admin.requiresTotp)
   throw new Error("preview admin login failed");
 const token = admin.accessToken;
 const overview = await fetchApi("/api/admin/overview", token);
-if (overview.version !== "0.8.9" || overview.metrics.users < 1)
+if (overview.version !== "0.9.0" || overview.metrics.users < 1)
   throw new Error("admin overview invalid");
 
 const managedAccount = `managed${suffix}`;
@@ -300,7 +300,6 @@ if (!(await fetchApi("/api/admin/conversations", token)).length)
 await fetchApi("/api/admin/contacts", token, {}, 410);
 
 const moduleCases = [
-  ["system.roles", "自动角色", "permissions", "users:read"],
   ["system.announcements", "自动公告", "content", "E聊后台自动化公告"],
   ["chat.customer-service", "自动客服", "account", normalAccount],
   ["chat.group-speech", "群发言规则", "content", "E聊群发言测试"],
@@ -317,6 +316,17 @@ for (const [module, name, field, value] of moduleCases) {
   if (!list.some(item => item.id === record.id))
     throw new Error(`module ${module} save failed`);
 }
+const fixedRoles = await fetchApi("/api/admin/modules/system.roles", token);
+if (fixedRoles.length !== 5) throw new Error("fixed five roles missing");
+const operationRole = fixedRoles.find(item => item.name === "运营管理员");
+await fetchApi(`/api/admin/modules/system.roles/${operationRole.id}`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    name: "运营管理员",
+    status: "Active",
+    data: { permissions: "users:read,users:write,logs:read" },
+  }),
+});
 await fetchApi(
   "/api/admin/modules/system.roles",
   token,
@@ -767,6 +777,87 @@ try {
         { timeout: 5000 },
         label
       );
+      if (group === "账户系统" && label === "登录日志") {
+        const tableText = await page.$eval(
+          "tbody",
+          element => element.textContent || ""
+        );
+        if (tableText.toLowerCase().includes("e_admin"))
+          throw new Error("account login page leaked admin login records");
+        await page.screenshot({
+          path: "/home/ubuntu/screenshots/echat-admin-user-login-log-0.9.0.png",
+          fullPage: false,
+        });
+      }
+      if (group === "账户系统" && label === "意见反馈") {
+        await page.evaluate(() =>
+          [...document.querySelectorAll("button")]
+            .find(item => item.textContent?.trim() === "新增")
+            ?.click()
+        );
+        await page.waitForFunction(
+          () =>
+            Boolean(document.querySelector('[role="dialog"] textarea')) &&
+            Boolean(
+              document.querySelector(
+                '[role="dialog"] input[type="file"][multiple]'
+              )
+            ),
+          { timeout: 5000 }
+        );
+        await page.screenshot({
+          path: "/home/ubuntu/screenshots/echat-admin-feedback-0.9.0.png",
+          fullPage: false,
+        });
+        await page.evaluate(() =>
+          [...document.querySelectorAll('[role="dialog"] button')]
+            .find(item => item.textContent?.trim() === "取消")
+            ?.click()
+        );
+      }
+      if (group === "管理系统" && label === "角色管理") {
+        const roleState = await page.evaluate(() => ({
+          text: document.body.innerText,
+          options: [...document.querySelectorAll("select option")].map(
+            option => option.textContent?.trim() || ""
+          ),
+          hasDelete: [...document.querySelectorAll("button")].some(
+            button => button.textContent?.trim() === "删除"
+          ),
+        }));
+        if (
+          ["超级管理员", "运营管理员", "财务管理员", "审计员", "客服"].some(
+            name => !roleState.text.includes(name)
+          ) ||
+          !roleState.options.includes("查看用户") ||
+          roleState.hasDelete
+        )
+          throw new Error("fixed Chinese role permission page invalid");
+        await page.screenshot({
+          path: "/home/ubuntu/screenshots/echat-admin-fixed-roles-0.9.0.png",
+          fullPage: false,
+        });
+      }
+      if (group === "聊天系统" && label === "会话管理") {
+        await page.evaluate(() => {
+          const row = [...document.querySelectorAll("tbody tr")].find(item =>
+            item.textContent?.includes("后台加密群已更新")
+          );
+          [...(row?.querySelectorAll("button") || [])]
+            .find(button => button.textContent?.trim() === "聊天记录")
+            ?.click();
+        });
+        await page.waitForFunction(
+          () =>
+            document.body.innerText.includes("后台可直接查看的明文验收消息"),
+          { timeout: 5000 }
+        );
+        await page.screenshot({
+          path: "/home/ubuntu/screenshots/echat-admin-plaintext-message-0.9.0.png",
+          fullPage: false,
+        });
+        await page.click('[role="dialog"] button[aria-label="关闭"]');
+      }
     }
   }
   await page.evaluate(() =>
@@ -841,5 +932,5 @@ try {
 }
 
 console.log(
-  `ADMIN_089_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
+  `ADMIN_090_OK modules=${moduleCases.length} pages=24 users=${users.total} audits=${audits.length} roles=fixed-five role_guard=403 menu_anchor=button outside_click=closed viewports=1440x900,390x844`
 );

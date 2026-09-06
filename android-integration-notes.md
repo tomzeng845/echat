@@ -1,4 +1,12 @@
-# E聊 Android 0.8.9 集成说明
+# E聊 Android 0.9.0 集成说明
+
+## 0.9.0 明文消息与后台文档改造
+
+按本轮后台需求文档，新发送的文字和表情改为在消息记录中保存 `content` 明文；图片、文件、语音和视频按原文件上传到受鉴权媒体存储。客户端不再为新会话生成密钥信封，也不再以本地会话密钥阻塞新消息发送。后台会话详情直接显示新消息内容，方便运营按授权查看。
+
+协议切换前的 AES-GCM 消息和加密附件不迁移、不批量解密，Android/浏览器仍保留不可导出设备私钥及历史会话密钥的兼容读取路径。消息响应以 `content` 是否存在区分新明文与历史密文；旧客户端请求仍可被服务端兼容接收，但 0.9.0 客户端只发送新协议。通知继续只包含通用摘要，不直接携带正文。
+
+后台同步完成四项页面改造：意见反馈支持管理员新增文字与最多 6 张图片；角色固定为超级管理员、运营管理员、财务管理员、审计员、客服，权限值以中文下拉回显；账户登录日志排除所有后台角色；聊天记录详情显示新明文并标识历史密文。由于新消息不再具备端到端加密，生产环境必须依赖 TLS、会话成员鉴权、最小权限后台角色、媒体访问控制及审计日志。
 
 ## 0.8.9 端到端加密表情消息
 
@@ -62,7 +70,7 @@ Android 原生桥使用 `MediaPlayer` 播放 `res/raw/echat_message.wav` 与 `re
 
 ## 技术路线
 
-E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应用，保留 ASP.NET Core 8、SignalR、端到端加密、富媒体和 WebRTC 链路。Android 应用打包本地 Web 资源，并通过 `VITE_ECHAT_API_BASE_URL` 连接 HTTPS API。
+E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应用，保留 ASP.NET Core 8、SignalR、富媒体、历史密文兼容和 WebRTC 链路。Android 应用打包本地 Web 资源，并通过 `VITE_ECHAT_API_BASE_URL` 连接 HTTPS API。
 
 ## 官方依据
 
@@ -88,7 +96,7 @@ E聊使用 Capacitor 8 将现有 React 19 HTML5 客户端封装为 Android 应�
 
 ## 安全与运行边界
 
-FCM 客户端文件 `google-services.json` 不包含服务端私钥，但按工程配置文件管理且不提交本仓库。`FCM_SERVICE_ACCOUNT_JSON` 或 `GOOGLE_APPLICATION_CREDENTIALS` 属于服务端秘密，只通过部署平台秘密变量注入。通知载荷不包含消息明文，只包含“加密消息/表情/图片/语音/视频/文件”等摘要、会话编号和消息编号；用户点击通知后由客户端从 API 拉取密文并在设备上解密。
+FCM 客户端文件 `google-services.json` 不包含服务端私钥，但按工程配置文件管理且不提交本仓库。`FCM_SERVICE_ACCOUNT_JSON` 或 `GOOGLE_APPLICATION_CREDENTIALS` 属于服务端秘密，只通过部署平台秘密变量注入。通知载荷不包含消息正文，只包含“消息/表情/图片/语音/视频/文件”等摘要、会话编号和消息编号；用户点击通知后由客户端从鉴权 API 拉取内容。
 
 应用通过精确允许的 `https://localhost` / `capacitor://localhost` Origin 访问生产 API，不开放任意生产跨域来源。所有 REST 与 SignalR 地址必须使用 HTTPS/WSS；Android Manifest 禁止明文 HTTP。摄像头和麦克风仅在用户执行扫码、录音或通话操作时请求，并可由用户在系统设置中撤销。
 

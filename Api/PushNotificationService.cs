@@ -47,7 +47,7 @@ public sealed class PushNotificationService(
             MessageKind.Voice => "发来一条语音",
             MessageKind.Video => "发来一段视频",
             MessageKind.File => "发来一个文件",
-            _ => "发来一条加密消息"
+            _ => "发来一条消息"
         };
         await SendToUsersAsync(recipients, sender.DisplayName, body, new Dictionary<string, string>
         {

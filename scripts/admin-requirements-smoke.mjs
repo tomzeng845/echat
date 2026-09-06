@@ -152,6 +152,17 @@ const loginSearch = await call(
   token
 );
 if (!loginSearch.items.length) throw new Error("paged login logs missing");
+const hiddenAdminLogin = await call(
+  "/api/admin/login-logs/search?account=E_Admin",
+  token
+);
+if (hiddenAdminLogin.total !== 0)
+  throw new Error("account login log leaked admin records");
+const adminLogin = await call(
+  "/api/admin/login-logs/search?scope=admin&account=E_Admin",
+  token
+);
+if (!adminLogin.total) throw new Error("admin login log scope missing");
 const failureIps = await call("/api/admin/login-failure-ips", token);
 if (!failureIps.items.length) throw new Error("failure IP aggregation missing");
 await call(
@@ -292,6 +303,27 @@ await call(`/api/admin/chat/groups/${managedGroup.id}`, token, {
   method: "PUT",
   body: JSON.stringify({ name: "后台加密群已更新" }),
 });
+const plainMessage = await call(
+  `/api/conversations/${managedGroup.id}/messages`,
+  user.accessToken,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      clientMessageId: `plain-${suffix}`,
+      kind: "Text",
+      content: "后台可直接查看的明文验收消息",
+      ciphertext: "",
+      nonce: "",
+      algorithm: "PLAINTEXT",
+      keyVersion: 0,
+    }),
+  }
+);
+if (
+  plainMessage.algorithm !== "PLAINTEXT" ||
+  plainMessage.content !== "后台可直接查看的明文验收消息"
+)
+  throw new Error("plaintext message protocol missing");
 const speech = await call("/api/admin/modules/chat.group-speech", token, {
   method: "POST",
   body: JSON.stringify({
@@ -324,11 +356,82 @@ await call("/api/group-invites/redeem", user.accessToken, {
 });
 
 const messageView = await call(
-  `/api/admin/conversations/${conversations[0].id}/messages`,
+  `/api/admin/conversations/${managedGroup.id}/messages`,
   token
 );
-if (messageView.messages.some(x => x.plaintextAvailable !== false))
-  throw new Error("E2EE admin boundary broken");
+const adminPlain = messageView.messages.find(x => x.id === plainMessage.id);
+if (
+  !adminPlain?.plaintextAvailable ||
+  adminPlain.content !== "后台可直接查看的明文验收消息"
+)
+  throw new Error("admin plaintext message view missing");
+const feedbackForm = new FormData();
+feedbackForm.append("content", "后台新增的文字与图片反馈");
+feedbackForm.append("contact", "feedback@example.com");
+feedbackForm.append(
+  "images",
+  new Blob(
+    [
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      ),
+    ],
+    { type: "image/png" }
+  ),
+  "feedback.png"
+);
+const feedback = await call("/api/admin/feedback", token, {
+  method: "POST",
+  body: feedbackForm,
+});
+if (
+  feedback.data.content !== "后台新增的文字与图片反馈" ||
+  !feedback.data.imageAssetIds
+)
+  throw new Error("admin feedback text/image creation missing");
+await call(`/api/media/${feedback.data.imageAssetIds}/content`, token);
+
+const roles = await call("/api/admin/modules/system.roles", token);
+const expectedRoles = [
+  "超级管理员",
+  "运营管理员",
+  "财务管理员",
+  "审计员",
+  "客服",
+];
+if (
+  roles.length !== 5 ||
+  expectedRoles.some(name => !roles.some(role => role.name === name))
+)
+  throw new Error(`fixed roles missing: ${JSON.stringify(roles)}`);
+const financeRole = roles.find(role => role.name === "财务管理员");
+await call(`/api/admin/modules/system.roles/${financeRole.id}`, token, {
+  method: "PUT",
+  body: JSON.stringify({
+    name: "财务管理员",
+    status: "Active",
+    data: { permissions: "funds:read,funds:write" },
+  }),
+});
+await call(
+  "/api/admin/modules/system.roles",
+  token,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      name: "第六角色",
+      data: { permissions: "users:read" },
+    }),
+  },
+  400
+);
+await call(
+  `/api/admin/modules/system.roles/${financeRole.id}`,
+  token,
+  { method: "DELETE" },
+  400
+);
 await call("/api/admin/contacts", token, {}, 410);
 
 for (const retired of [
@@ -342,5 +445,5 @@ for (const retired of [
 await call("/api/admin/tasks/retired/run", token, { method: "POST" }, 410);
 
 console.log(
-  `ADMIN_REQUIREMENTS_089_OK verification=approved invite=${generated.code} login_logs=${loginSearch.total} failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=paged group_speech=sent group_invite=${groupInvite.data.code} e2ee=protected retired_modules=5`
+  `ADMIN_REQUIREMENTS_090_OK verification=approved invite=${generated.code} login_logs=user-only admin_logs=isolated failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=plaintext feedback=text+image roles=fixed-five group_speech=sent group_invite=${groupInvite.data.code} retired_modules=5`
 );

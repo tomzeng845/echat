@@ -30,14 +30,16 @@ curl -fsS "$base/api/contacts/requests" -H "Authorization: Bearer $alice_token" 
 charlie_request_id="$(curl -fsS "$base/api/contacts/requests" -H "Authorization: Bearer $charlie_token" | jq -r '.[0].id')"
 curl -fsS -X POST "$base/api/contacts/requests/$charlie_request_id/accept" -H "Authorization: Bearer $charlie_token" >/dev/null
 
-conversation_json="$(curl -fsS "$base/api/conversations/direct" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"peerAccount\":\"$bob\",\"keyEnvelopes\":{\"$alice_id\":\"alice-envelope\",\"$bob_id\":\"bob-envelope\"}}")"
+conversation_json="$(curl -fsS "$base/api/conversations/direct" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"peerAccount\":\"$bob\"}")"
 conversation_id="$(printf '%s' "$conversation_json" | jq -r .id)"
-message_body="{\"clientMessageId\":\"same-$suffix\",\"kind\":\"Text\",\"ciphertext\":\"ciphertext\",\"nonce\":\"nonce\",\"algorithm\":\"AES-GCM-256\"}"
+message_body="{\"clientMessageId\":\"same-$suffix\",\"kind\":\"Text\",\"content\":\"明文冒烟消息\",\"ciphertext\":\"\",\"nonce\":\"\",\"algorithm\":\"PLAINTEXT\",\"keyVersion\":0}"
 first="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "$message_body")"
 second="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "$message_body")"
 first_id="$(printf '%s' "$first" | jq -r .id)"
 second_id="$(printf '%s' "$second" | jq -r .id)"
 [[ "$first_id" == "$second_id" ]]
+[[ "$(printf '%s' "$first" | jq -r .content)" == "明文冒烟消息" ]]
+[[ "$(printf '%s' "$first" | jq -r .algorithm)" == "PLAINTEXT" ]]
 count="$(curl -fsS "$base/api/conversations/$conversation_id/messages?after=0&limit=100" -H "Authorization: Bearer $bob_token" | jq length)"
 [[ "$count" == "1" ]]
 curl -fsS -X POST "$base/api/conversations/$conversation_id/messages/$first_id/recall" -H "Authorization: Bearer $alice_token" >/dev/null
@@ -47,21 +49,23 @@ curl -fsS -X POST "$base/api/conversations/$conversation_id/read/1" -H "Authoriz
 read_sequence="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$conversation_id" '.[] | select(.id == $id) | .readSequence')"
 [[ "$read_sequence" == "1" ]]
 
-emoji_kind="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"clientMessageId\":\"emoji-$suffix\",\"kind\":\"Emoji\",\"ciphertext\":\"encrypted-emoji\",\"nonce\":\"nonce\",\"algorithm\":\"AES-GCM-256\"}" | jq -r .kind)"
+emoji_kind="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"clientMessageId\":\"emoji-$suffix\",\"kind\":\"Emoji\",\"content\":\"❤️\",\"ciphertext\":\"\",\"nonce\":\"\",\"algorithm\":\"PLAINTEXT\",\"keyVersion\":0}" | jq -r .kind)"
 [[ "$emoji_kind" == "Emoji" ]]
 emoji_preview="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $bob_token" | jq -r --arg id "$conversation_id" '.[] | select(.id == $id) | .lastMessagePreview')"
 [[ "$emoji_preview" == "[表情]" ]]
 
-group_id="$(curl -fsS "$base/api/conversations/groups" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"name\":\"Smoke Group\",\"memberAccounts\":[\"$bob\",\"$charlie\"],\"keyEnvelopes\":{\"$alice_id\":\"alice-envelope\",\"$bob_id\":\"bob-envelope\",\"$charlie_id\":\"charlie-envelope\"}}" | jq -r .id)"
+group_id="$(curl -fsS "$base/api/conversations/groups" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"name\":\"Smoke Group\",\"memberAccounts\":[\"$bob\",\"$charlie\"]}" | jq -r .id)"
 group_count="$(curl -fsS "$base/api/conversations" -H "Authorization: Bearer $charlie_token" | jq -r --arg id "$group_id" '[.[] | select(.id == $id)] | length')"
 [[ "$group_count" == "1" ]]
 
 media_source="$(mktemp)"
 media_download="$(mktemp)"
 trap 'rm -f "$media_source" "$media_download"' EXIT
-printf 'encrypted-media-smoke-%s' "$suffix" >"$media_source"
-chat_asset="$(curl -fsS "$base/api/media" -H "Authorization: Bearer $alice_token" -F "file=@$media_source;filename=photo.e2ee;type=application/octet-stream" -F purpose=Chat -F "conversationId=$conversation_id" | jq -r .id)"
-media_message="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "{\"clientMessageId\":\"media-$suffix\",\"kind\":\"Image\",\"ciphertext\":\"encrypted-payload\",\"nonce\":\"nonce\",\"algorithm\":\"AES-GCM-256\",\"metadata\":{\"assetId\":\"$chat_asset\"}}" | jq -r .kind)"
+printf 'plain-media-smoke-%s' "$suffix" >"$media_source"
+chat_asset="$(curl -fsS "$base/api/media" -H "Authorization: Bearer $alice_token" -F "file=@$media_source;filename=photo.png;type=image/png" -F purpose=Chat -F "conversationId=$conversation_id" | jq -r .id)"
+media_payload="$(jq -nc --arg asset "$chat_asset" --arg name 'photo.png' --arg mime 'image/png' --argjson size "$(wc -c <"$media_source")" '{assetId:$asset,fileName:$name,mimeType:$mime,size:$size}|tojson')"
+media_request="$(jq -nc --arg client "media-$suffix" --arg content "$media_payload" --arg asset "$chat_asset" '{clientMessageId:$client,kind:"Image",content:$content,ciphertext:"",nonce:"",algorithm:"PLAINTEXT",keyVersion:0,metadata:{assetId:$asset}}')"
+media_message="$(curl -fsS "$base/api/conversations/$conversation_id/messages" -H "Authorization: Bearer $alice_token" -H 'Content-Type: application/json' -d "$media_request" | jq -r .kind)"
 [[ "$media_message" == "Image" ]]
 curl -fsSL "$base/api/media/$chat_asset/content" -H "Authorization: Bearer $bob_token" -o "$media_download"
 cmp "$media_source" "$media_download"

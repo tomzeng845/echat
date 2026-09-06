@@ -22,9 +22,18 @@ public sealed class AdminModulesController(
     };
     private static readonly HashSet<string> RolePermissions = new(StringComparer.OrdinalIgnoreCase)
     {
+        "*",
         "users:read", "users:write", "logs:read", "funds:read", "funds:write", "operators:read",
         "operators:write", "announcements:write", "errors:read", "conversations:read", "groups:write",
         "robots:write", "audit:read"
+    };
+    private static readonly Dictionary<string, string> FixedRoles = new(StringComparer.Ordinal)
+    {
+        ["超级管理员"] = "seed-role-admin",
+        ["运营管理员"] = "seed-role-operation",
+        ["财务管理员"] = "seed-role-finance",
+        ["审计员"] = "seed-role-auditor",
+        ["客服"] = "seed-role-service"
     };
 
     [HttpGet("modules/{module}")]
@@ -42,6 +51,18 @@ public sealed class AdminModulesController(
         if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest(new { error = "名称不能为空" });
         var data = SanitizeData(request.Data);
         if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase) && !ValidPermissions(data)) return BadRequest(new { error = "包含未授权的角色权限" });
+        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase))
+        {
+            var name = request.Name.Trim();
+            if (!FixedRoles.TryGetValue(name, out var fixedId)) return BadRequest(new { error = "角色固定为超级管理员、运营管理员、财务管理员、审计员和客服" });
+            var existing = (await repository.GetAdminRecordsAsync(module, 20, ct)).FirstOrDefault(x => x.Name == name);
+            var fixedRecord = existing ?? new AdminModuleRecord { Id = fixedId, Module = module, Name = name };
+            fixedRecord.Status = "Active";
+            fixedRecord.Data = data;
+            var saved = await repository.UpsertAdminRecordAsync(fixedRecord, ct);
+            await AuditAsync("role.permissions.update", module, saved.Id, saved.Name, ct);
+            return Ok(saved);
+        }
         var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord
         {
             Module = module,
@@ -59,10 +80,17 @@ public sealed class AdminModulesController(
         if (!EditableModules.Contains(module)) return BadRequest(new { error = "此模块不允许通用编辑" });
         var record = await repository.GetAdminRecordAsync(id, ct);
         if (record is null || !record.Module.Equals(module, StringComparison.OrdinalIgnoreCase)) return NotFound(new { error = "记录不存在" });
+        var originalName = record.Name;
         record.Name = string.IsNullOrWhiteSpace(request.Name) ? record.Name : request.Name.Trim()[..Math.Min(request.Name.Trim().Length, 100)];
         record.Status = NormalizeStatus(request.Status);
         record.Data = SanitizeData(request.Data);
-        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase) && !ValidPermissions(record.Data)) return BadRequest(new { error = "包含未授权的角色权限" });
+        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!FixedRoles.ContainsKey(originalName) || !string.Equals(record.Name, originalName, StringComparison.Ordinal)) return BadRequest(new { error = "固定角色名称不允许修改" });
+            record.Name = originalName;
+            if (!ValidPermissions(record.Data)) return BadRequest(new { error = "包含未授权的角色权限" });
+            record.Status = "Active";
+        }
         await repository.UpsertAdminRecordAsync(record, ct);
         await AuditAsync("module.update", module, id, record.Name, ct);
         return Ok(record);
@@ -72,6 +100,7 @@ public sealed class AdminModulesController(
     public async Task<ActionResult> DeleteModuleRecord(string module, string id, CancellationToken ct)
     {
         if (!EditableModules.Contains(module)) return BadRequest(new { error = "此模块不允许删除" });
+        if (module.Equals("system.roles", StringComparison.OrdinalIgnoreCase)) return BadRequest(new { error = "五个系统角色不允许删除" });
         var record = await repository.GetAdminRecordAsync(id, ct);
         if (record is null || record.Module != module) return NotFound(new { error = "记录不存在" });
         await repository.DeleteAdminRecordAsync(id, ct);
@@ -88,6 +117,13 @@ public sealed class AdminModulesController(
         {
             var adminIds = (await repository.GetUsersAsync(null, null, 500, ct)).Where(x => x.Role != UserRole.User).Select(x => x.Id).ToHashSet();
             result = result.Where(x => adminIds.Contains(x.Data.GetValueOrDefault("userId", "")));
+        }
+        else
+        {
+            var admins = (await repository.GetUsersAsync(null, null, 500, ct)).Where(x => x.Role != UserRole.User).ToList();
+            var adminIds = admins.Select(x => x.Id).ToHashSet();
+            var adminAccounts = admins.Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            result = result.Where(x => !adminIds.Contains(x.Data.GetValueOrDefault("userId", "")) && !adminAccounts.Contains(x.Data.GetValueOrDefault("account", "")));
         }
         return Ok(result);
     }
@@ -131,6 +167,42 @@ public sealed class AdminModulesController(
         }
         await AuditAsync("feedback.seen", "feedback", "batch", $"updated={updated}", ct);
         return Ok(new { updated });
+    }
+
+    [HttpPost("feedback")]
+    [RequestSizeLimit(32 * 1024 * 1024)]
+    public async Task<ActionResult> CreateFeedback([FromForm] string content, [FromForm] string? contact, [FromForm] List<IFormFile>? images, CancellationToken ct)
+    {
+        content = Trim(content, 2000);
+        if (string.IsNullOrWhiteSpace(content)) return BadRequest(new { error = "反馈内容不能为空" });
+        images ??= [];
+        if (images.Count > 6) return BadRequest(new { error = "反馈图片最多选择 6 张" });
+        var assetIds = new List<string>();
+        foreach (var image in images)
+        {
+            if (image.Length is <= 0 or > 5 * 1024 * 1024 || !image.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) || image.ContentType.Contains("svg", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { error = "仅支持单张 5 MB 以内的 PNG、JPEG、GIF 或 WebP 图片" });
+            var extension = Path.GetExtension(Path.GetFileName(image.FileName)).ToLowerInvariant();
+            var key = $"echat/feedback/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+            await using var stream = image.OpenReadStream();
+            var stored = await mediaStorage.StoreAsync(key, stream, image.ContentType, ct);
+            var asset = await repository.AddMediaAssetAsync(new MediaAsset { OwnerId = User.UserId(), Purpose = MediaPurpose.Feedback, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath, FileName = Path.GetFileName(image.FileName), ContentType = image.ContentType, Size = image.Length }, ct);
+            assetIds.Add(asset.Id);
+        }
+        var summary = content.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (summary.Length > 100) summary = summary[..100];
+        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Module = "account.feedback", Name = summary, Status = "Submitted",
+            Data = new Dictionary<string, string>
+            {
+                ["content"] = content, ["contact"] = Trim(contact, 120), ["userId"] = User.UserId(),
+                ["account"] = User.Identity?.Name ?? "admin", ["source"] = "Admin", ["seen"] = "false",
+                ["imageAssetIds"] = string.Join(',', assetIds)
+            }
+        }, ct);
+        await AuditAsync("feedback.create", "feedback", record.Id, $"images={assetIds.Count}", ct);
+        return Ok(record);
     }
 
     [HttpPost("wallet/adjust")]

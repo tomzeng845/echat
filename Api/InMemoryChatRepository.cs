@@ -34,6 +34,10 @@ public sealed class InMemoryChatRepository : IChatRepository
         Seed("seed-fund-debit", "fund.subjects", "人工扣减", "code", "MANUAL_DEBIT");
         _adminRecords["seed-fund-debit"].Data["direction"] = "Decrease";
         Seed("seed-role-admin", "system.roles", "超级管理员", "permissions", "*");
+        Seed("seed-role-operation", "system.roles", "运营管理员", "permissions", "users:read,users:write,logs:read,announcements:write,conversations:read,groups:write,robots:write");
+        Seed("seed-role-finance", "system.roles", "财务管理员", "permissions", "funds:read,funds:write");
+        Seed("seed-role-auditor", "system.roles", "审计员", "permissions", "logs:read,errors:read,conversations:read,audit:read");
+        Seed("seed-role-service", "system.roles", "客服", "permissions", "users:read,logs:read,conversations:read");
         Seed("seed-customer-service", "chat.customer-service", "系统客服", "account", "service");
         return Task.CompletedTask;
     }
@@ -193,7 +197,9 @@ public sealed class InMemoryChatRepository : IChatRepository
             if (_messageIdempotency.TryGetValue(key, out existingId)) return _messages[existingId];
             if (!_conversations.TryGetValue(message.ConversationId, out var conversation)) throw new InvalidOperationException("CONVERSATION_NOT_FOUND");
             message.Sequence = ++conversation.LastSequence;
-            conversation.LastMessagePreview = message.Kind switch { MessageKind.Text => "加密消息", MessageKind.Emoji => "[表情]", MessageKind.Image => "[图片]", MessageKind.Voice => "[语音]", MessageKind.Video => "[视频]", MessageKind.File => "[文件]", _ => $"[{message.Kind}]" };
+            var plainPreview = (message.Content ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (plainPreview.Length > 60) plainPreview = plainPreview[..60] + "…";
+            conversation.LastMessagePreview = message.Kind switch { MessageKind.Text => string.Equals(message.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase) ? plainPreview : "[历史加密消息]", MessageKind.Emoji => "[表情]", MessageKind.Image => "[图片]", MessageKind.Voice => "[语音]", MessageKind.Video => "[视频]", MessageKind.File => "[文件]", _ => $"[{message.Kind}]" };
             conversation.LastMessageAtUtc = message.SentAtUtc;
             _messages[message.Id] = message;
             _messageIdempotency[key] = message.Id;

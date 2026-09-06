@@ -24,10 +24,9 @@ import {
   type ConversationMember,
   type FriendRequest,
   type Message,
-  type PublicKeyBundle,
   type User,
 } from "@/lib/echat-api";
-import { sendEncryptedMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
 import {
   createConversationKey,
   decryptMessage,
@@ -54,7 +53,6 @@ import {
   Compass,
   FileText,
   Image,
-  LockKeyhole,
   MessageCircleMore,
   Mic,
   MonitorSmartphone,
@@ -222,25 +220,25 @@ function AuthScreen({
             <img src={LOGO} alt="E聊" className="h-11 w-11 object-contain" />
             <span className="text-2xl font-semibold tracking-tight">E聊</span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-teal-200">
-              端到端加密
+              明文消息
             </span>
           </div>
           <p className="mb-5 text-sm font-medium tracking-[.22em] text-teal-300">
-            PRIVATE · FAST · YOURS
+            CONNECTED · FAST · YOURS
           </p>
           <h1 className="max-w-2xl text-6xl font-semibold leading-[1.08] tracking-[-.045em]">
             让每一句话，
             <br />
             <span className="bg-gradient-to-r from-teal-300 to-emerald-400 bg-clip-text text-transparent">
-              都只属于彼此。
+              都能及时抵达。
             </span>
           </h1>
           <p className="mt-8 max-w-xl text-lg leading-8 text-slate-300">
-            为重要关系而设计的即时通信空间。消息在你的设备上加密，服务器只负责可靠送达密文。
+            为重要关系而设计的即时通信空间。消息实时同步，获得授权的运营后台可按需查看。
           </p>
           <div className="mt-12 grid max-w-xl grid-cols-3 gap-4">
             {[
-              [ShieldCheck, "AES-GCM", "消息级加密"],
+              [ShieldCheck, "权限控制", "鉴权访问"],
               [MonitorSmartphone, "多端同步", "断线自动补拉"],
               [MessageCircleMore, "实时送达", "SignalR 长连接"],
             ].map(([Icon, title, desc]) => (
@@ -279,7 +277,7 @@ function AuthScreen({
                 {pendingToken
                   ? "请输入 Google Authenticator 中的 6 位动态验证码。"
                   : mode === "login"
-                    ? "登录后继续你的加密会话。"
+                    ? "登录后继续你的实时会话。"
                     : "需要有效邀请码才能加入 E聊。"}
               </p>
             </div>
@@ -384,7 +382,7 @@ function AuthScreen({
                       />
                       <span>
                         我已阅读并同意《服务协议》和《隐私政策》，理解 E聊
-                        将在本设备生成加密密钥。
+                        会在服务端保存新消息内容。
                       </span>
                     </label>
                   )}
@@ -541,6 +539,8 @@ function Messenger({
     async (message: Message): Promise<DecryptedMessage> => {
       if (message.state === "Recalled")
         return { ...message, plaintext: "这条消息已被撤回" };
+      if (message.algorithm === "PLAINTEXT")
+        return { ...message, plaintext: message.content || "" };
       try {
         const version = message.keyVersion || 1;
         const key = await resolveConversationKey(
@@ -818,7 +818,7 @@ function Messenger({
             item => item.id === message.conversationId
           );
           const labels: Record<Message["kind"], string> = {
-            Text: "加密消息",
+            Text: "新消息",
             Emoji: "表情消息",
             Image: "图片消息",
             Voice: "语音消息",
@@ -994,42 +994,19 @@ function Messenger({
         setMobileDetail(true);
         return;
       }
-      const [self, peer] = await Promise.all([
-        api<PublicKeyBundle>(`/api/users/${user.account}/public-key`),
-        api<PublicKeyBundle>(`/api/users/${contact.user.account}/public-key`),
-      ]);
-      const key = await createConversationKey();
-      const keyEnvelopes: Record<string, string> = {};
-      await sealKeyForDevices(
-        key,
-        self.id,
-        self.encryptionDevices,
-        keyEnvelopes
-      );
-      await sealKeyForDevices(
-        key,
-        peer.id,
-        peer.encryptionDevices,
-        keyEnvelopes
-      );
       const conversation = await api<Conversation>(
         "/api/conversations/direct",
         {
           method: "POST",
-          body: JSON.stringify({ peerAccount: peer.account, keyEnvelopes }),
+          body: JSON.stringify({ peerAccount: contact.user.account }),
         }
-      );
-      await storeConversationKey(
-        conversation.id,
-        key,
-        conversation.keyVersion || 1
       );
       await loadData();
       setSelectedId(conversation.id);
       setNav("chats");
       setMobileDetail(true);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "无法创建加密会话");
+      toast.error(cause instanceof Error ? cause.message : "无法创建会话");
     } finally {
       setBusy(false);
     }
@@ -1043,21 +1020,6 @@ function Messenger({
       const selectedContacts = contacts.filter(contact =>
         groupMembers.includes(contact.user.id)
       );
-      const key = await createConversationKey();
-      const keyEnvelopes: Record<string, string> = {};
-      const bundles = await Promise.all([
-        api<PublicKeyBundle>(`/api/users/${user.account}/public-key`),
-        ...selectedContacts.map(contact =>
-          api<PublicKeyBundle>(`/api/users/${contact.user.account}/public-key`)
-        ),
-      ]);
-      for (const bundle of bundles)
-        await sealKeyForDevices(
-          key,
-          bundle.id,
-          bundle.encryptionDevices,
-          keyEnvelopes
-        );
       const conversation = await api<Conversation>(
         "/api/conversations/groups",
         {
@@ -1067,14 +1029,8 @@ function Messenger({
             memberAccounts: selectedContacts.map(
               contact => contact.user.account
             ),
-            keyEnvelopes,
           }),
         }
-      );
-      await storeConversationKey(
-        conversation.id,
-        key,
-        conversation.keyVersion || 1
       );
       setShowGroup(false);
       setGroupName("");
@@ -1083,7 +1039,7 @@ function Messenger({
       setSelectedId(conversation.id);
       setNav("chats");
       setMobileDetail(true);
-      toast.success("加密群聊已创建");
+      toast.success("群聊已创建");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "创建群聊失败");
     } finally {
@@ -1097,10 +1053,6 @@ function Messenger({
     setBusy(true);
     setDraft("");
     try {
-      const keyVersion = selected.keyVersion || 1;
-      const key = await resolveConversationKey(selectedId, keyVersion, true);
-      if (!key) throw new Error("本设备缺少会话密钥");
-      const encrypted = await encryptMessage(key, text);
       const created = await api<Message>(
         `/api/conversations/${selectedId}/messages`,
         {
@@ -1108,8 +1060,11 @@ function Messenger({
           body: JSON.stringify({
             clientMessageId: crypto.randomUUID(),
             kind: "Text",
-            keyVersion,
-            ...encrypted,
+            keyVersion: 0,
+            algorithm: "PLAINTEXT",
+            content: text,
+            ciphertext: "",
+            nonce: "",
           }),
         }
       );
@@ -1135,16 +1090,8 @@ function Messenger({
   async function sendEmoji(emoji: string) {
     if (!emoji || !selectedId || !selected || busy) return;
     const conversationId = selectedId;
-    const keyVersion = selected.keyVersion || 1;
     setBusy(true);
     try {
-      const key = await resolveConversationKey(
-        conversationId,
-        keyVersion,
-        true
-      );
-      if (!key) throw new Error("本设备缺少会话密钥");
-      const encrypted = await encryptMessage(key, emoji);
       const created = await api<Message>(
         `/api/conversations/${conversationId}/messages`,
         {
@@ -1152,8 +1099,11 @@ function Messenger({
           body: JSON.stringify({
             clientMessageId: crypto.randomUUID(),
             kind: "Emoji",
-            keyVersion,
-            ...encrypted,
+            keyVersion: 0,
+            algorithm: "PLAINTEXT",
+            content: emoji,
+            ciphertext: "",
+            nonce: "",
           }),
         }
       );
@@ -1183,23 +1133,14 @@ function Messenger({
     if (!selectedId || !selected || busy) return;
     setBusy(true);
     try {
-      const keyVersion = selected.keyVersion || 1;
-      if (!(await resolveConversationKey(selectedId, keyVersion, true)))
-        throw new Error("本设备缺少会话密钥");
-      const created = await sendEncryptedMedia(
-        selectedId,
-        keyVersion,
-        file,
-        kind,
-        {
-          fileName:
-            file instanceof File
-              ? file.name
-              : `语音-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}.webm`,
-          mimeType: file.type,
-          duration,
-        }
-      );
+      const created = await sendChatMedia(selectedId, file, kind, {
+        fileName:
+          file instanceof File
+            ? file.name
+            : `语音-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}.webm`,
+        mimeType: file.type,
+        duration,
+      });
       const value = await decrypt(created);
       setMessages(current =>
         current.some(x => x.id === value.id)
@@ -1418,7 +1359,7 @@ function Messenger({
                 <EmptyState
                   icon={MessageCircleMore}
                   title="还没有会话"
-                  text="添加好友后即可发起端到端加密聊天。"
+                  text="添加好友后即可发起实时聊天。"
                 />
               ))}
 
@@ -1592,8 +1533,8 @@ function Messenger({
                     {selected.name}
                   </h2>
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600">
-                    <LockKeyhole size={11} />
-                    端到端加密 ·{" "}
+                    <MessageCircleMore size={11} />
+                    明文消息 ·{" "}
                     {selected.type === "Group"
                       ? `${selected.memberCount} 位成员`
                       : "在线"}
@@ -1625,7 +1566,7 @@ function Messenger({
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   <div className="mb-5 flex items-center justify-center">
                     <span className="rounded-full bg-slate-200/70 px-3 py-1 text-[11px] text-slate-500">
-                      消息已使用 AES-GCM-256 加密
+                      新消息以明文保存；历史密文仍保持兼容读取
                     </span>
                   </div>
                   {messages.length ? (
@@ -1640,9 +1581,9 @@ function Messenger({
                   ) : (
                     <div className="my-auto text-center">
                       <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white shadow-sm">
-                        <LockKeyhole className="text-teal-500" />
+                        <MessageCircleMore className="text-teal-500" />
                       </div>
-                      <p className="mt-4 text-sm font-medium">加密会话已建立</p>
+                      <p className="mt-4 text-sm font-medium">会话已建立</p>
                       <p className="mt-1 text-xs text-slate-500">
                         从一声问候开始吧
                       </p>
@@ -1698,7 +1639,7 @@ function Messenger({
                     />
                     {busy && (
                       <span className="ml-2 text-[10px] text-teal-600">
-                        正在加密上传…
+                        正在上传…
                       </span>
                     )}
                   </div>
@@ -1758,9 +1699,9 @@ function Messenger({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[.16em] text-teal-600">
-                  New encrypted group
+                  New group
                 </p>
-                <h2 className="mt-2 text-xl font-semibold">创建加密群聊</h2>
+                <h2 className="mt-2 text-xl font-semibold">创建群聊</h2>
               </div>
               <button
                 onClick={() => setShowGroup(false)}
@@ -1829,7 +1770,7 @@ function Messenger({
               onClick={createGroup}
               className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
             >
-              创建并分发群组密钥
+              创建群聊
             </button>
           </div>
         </div>
@@ -1967,11 +1908,11 @@ function EmptyChat() {
           选择一个会话
         </h2>
         <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-          E聊在你的设备上加密消息内容，服务器只保存无法直接阅读的密文。
+          新消息可实时同步，并可由获得授权的运营后台查看。
         </p>
         <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-emerald-600 shadow-sm">
           <ShieldCheck size={14} />
-          隐私连接已就绪
+          会话连接已就绪
         </div>
       </div>
     </div>
@@ -2000,14 +1941,14 @@ function ProfilePanel({
           </div>
         </div>
         <div className="mt-5 flex items-center gap-2 rounded-xl bg-white/[.06] px-3 py-2 text-xs text-teal-200">
-          <LockKeyhole size={14} />
-          本设备密钥已安全保存
+          <ShieldCheck size={14} />
+          账号与传输连接已受保护
         </div>
       </div>
       {[
         [Bell, "消息通知", "已开启"],
         [MonitorSmartphone, "登录设备", "当前浏览器"],
-        [ShieldCheck, "隐私与安全", "端到端加密"],
+        [ShieldCheck, "隐私与安全", "传输鉴权"],
         [FileText, "服务协议", "2026-09"],
       ].map(([Icon, title, value]) => (
         <button
@@ -2051,7 +1992,7 @@ function AdminPanel({
         {[
           ["API 状态", overview ? "正常" : "加载中"],
           ["数据存储", String(overview?.storage ?? "—")],
-          ["消息加密", "AES-GCM"],
+          ["消息存储", "明文"],
           ["管理认证", "TOTP"],
         ].map(([title, value]) => (
           <div
@@ -2064,7 +2005,7 @@ function AdminPanel({
         ))}
       </div>
       <p className="px-2 text-xs leading-5 text-slate-400">
-        用户治理、举报工单、群组管理与审计日志接口将在后续管理端迭代中接入。
+        用户治理、反馈工单、群组管理与审计日志已在独立后台管理页面对接。
       </p>
     </div>
   );

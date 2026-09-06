@@ -320,3 +320,15 @@ Vitest 新增分类、中文/英文搜索、最近使用去重和本地持久化
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告，`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_089_OK`、`ADMIN_089_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
 
 最终 APK 包含表情搜索文案和生产 API 地址。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=17`、`versionName=0.8.9`、最低 API 24、目标 API 36。文件 `EChat-0.8.9-debug.apk` 的 SHA-256 为 `d174ae6814447b8f2c2972956bd598ebde0ec1b0173c32de1857ee77a2fd53e4`。
+
+## 2026-09-06 E聊 0.9.0 后台文档功能改造
+
+本轮按《后台管理的功能需求对接-3》完成四项页面/API 改造。意见反馈页加入管理员“新增”入口，可提交完整文字、联系方式和最多 6 张图片；图片使用独立 `AdminFeedback` 媒体用途，管理员通过鉴权地址预览。角色管理固定为超级管理员、运营管理员、财务管理员、审计员、客服五类，角色和权限全部中文回显；禁止新增、删除或改名，允许更新状态与权限。MongoDB 启动迁移会补齐固定角色并删除旧动态角色，同时保留固定角色已调整的权限数据。账户系统登录日志排除全部后台角色，管理系统登录日志只显示后台账号。
+
+按文档要求，新发送的文字和表情使用 `content` 明文保存；图片、文件、语音和视频按原文件上传到受鉴权媒体存储。会话列表直接生成文字预览，APP 聊天气泡直接显示内容，后台会话详情可读取明文。协议切换前的 AES-GCM 消息、版本化设备信封和加密附件没有批量迁移或改写，仍可由原设备兼容读取；新客户端不再把新消息宣传为端到端加密，登录页、注册告知、聊天状态和个人资料页均已同步为明文消息说明。
+
+专项 API 回归返回 `PLAINTEXT_MESSAGES_OK ... text=visible emoji=visible media=original admin=readable`；后台需求回归返回 `ADMIN_REQUIREMENTS_090_OK ... login_logs=user-only admin_logs=isolated conversations=plaintext feedback=text+image roles=fixed-five`。后台 1440×900 浏览器回归确认：新增反馈弹窗完整显示文字、联系方式和多图片控件；角色页仅有五个固定中文角色、权限字段和下拉选项均为中文且无删除按钮；账户登录日志不显示 E_Admin；聊天记录弹窗显示“后台可直接查看的明文验收消息”并标识历史密文。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 13 项、xUnit 21 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。15 组遇错即停回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_090_OK`、`ADMIN_090_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`PLAINTEXT_MESSAGES_OK`、`LEGACY_E2EE_COMPAT_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
+
+最终 APK 内置生产 API `https://echatapp-favrlscm.manus.space`。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=18`、`versionName=0.9.0`、最低 API 24、目标 API 36。文件 `EChat-0.9.0-debug.apk` 的 SHA-256 为 `5cb6916233d20074247c62ead3af9916749a315063c7c9f7d9980878049c9356`。

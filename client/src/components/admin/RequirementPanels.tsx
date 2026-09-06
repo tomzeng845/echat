@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import AuthenticatedMedia from "@/components/AuthenticatedMedia";
 import { api } from "@/lib/echat-api";
 
 type ModuleRecord = {
@@ -722,6 +723,9 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
   const [checked, setChecked] = useState<string[]>([]);
   const [selected, setSelected] = useState<ModuleRecord>();
   const [reply, setReply] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ content: "", contact: "" });
+  const [images, setImages] = useState<File[]>([]);
   const { data, reload } = useLoad<Page<ModuleRecord>>(
     `/api/admin/feedback/search?status=${status}&page=${page}&pageSize=20`,
     { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 },
@@ -747,6 +751,20 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
     reload();
     toast.success(`已标记 ${ids.length} 条反馈为已查看`);
   }
+  async function createFeedback() {
+    if (!createForm.content.trim()) return toast.error("请输入反馈内容");
+    const body = new FormData();
+    body.append("content", createForm.content.trim());
+    body.append("contact", createForm.contact.trim());
+    images.forEach(image => body.append("images", image));
+    await api("/api/admin/feedback", { method: "POST", body });
+    setCreating(false);
+    setCreateForm({ content: "", contact: "" });
+    setImages([]);
+    setPage(1);
+    reload();
+    toast.success("反馈已新增");
+  }
   return (
     <div>
       <Title
@@ -754,6 +772,13 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
         description="筛选、查看反馈详情并记录处理回复。"
         action={
           <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setCreating(true)}
+              className="admin-primary !w-auto"
+            >
+              <Plus size={15} />
+              新增
+            </button>
             <select
               value={status}
               onChange={e => {
@@ -825,8 +850,13 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
                   />
                 </td>
                 <td>{time(x.createdAtUtc)}</td>
-                <td>{x.name}</td>
-                <td>{x.data.userId || "—"}</td>
+                <td
+                  className="max-w-md truncate"
+                  title={x.data.content || x.name}
+                >
+                  {x.data.content || x.name}
+                </td>
+                <td>{x.data.account || x.data.userId || "—"}</td>
                 <td>{x.data.contact || "—"}</td>
                 <td>{badge(x.status)}</td>
                 <td>{badge(x.data.seen === "true" ? "已查看" : "未查看")}</td>
@@ -856,7 +886,28 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
       </Box>
       {selected && (
         <Modal title="反馈详情" onClose={() => setSelected(undefined)}>
-          <p className="rounded-xl bg-slate-50 p-4 text-sm">{selected.name}</p>
+          <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm">
+            {selected.data.content || selected.name}
+          </p>
+          {selected.data.imageAssetIds && (
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {selected.data.imageAssetIds
+                .split(",")
+                .filter(Boolean)
+                .map(id => (
+                  <div
+                    key={id}
+                    className="aspect-square overflow-hidden rounded-xl"
+                  >
+                    <AuthenticatedMedia
+                      src={`/api/media/${id}/content`}
+                      type="image"
+                      alt="反馈图片"
+                    />
+                  </div>
+                ))}
+            </div>
+          )}
           <textarea
             value={reply}
             onChange={e => setReply(e.target.value)}
@@ -878,6 +929,72 @@ export function FeedbackPanel({ refresh }: { refresh: number }) {
               className="admin-primary !w-auto"
             >
               解决
+            </button>
+          </div>
+        </Modal>
+      )}
+      {creating && (
+        <Modal title="新增意见反馈" onClose={() => setCreating(false)}>
+          <textarea
+            value={createForm.content}
+            onChange={event =>
+              setCreateForm(value => ({
+                ...value,
+                content: event.target.value,
+              }))
+            }
+            placeholder="请输入反馈文字（最多 2000 字）"
+            maxLength={2000}
+            className="admin-input min-h-36"
+          />
+          <input
+            value={createForm.contact}
+            onChange={event =>
+              setCreateForm(value => ({
+                ...value,
+                contact: event.target.value,
+              }))
+            }
+            placeholder="联系方式（选填）"
+            className="admin-input mt-3"
+          />
+          <label className="mt-3 block rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+            上传图片（最多 6 张，单张不超过 5 MB）
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              className="mt-2 block w-full text-xs"
+              onChange={event => {
+                const selectedFiles = Array.from(event.target.files || []);
+                if (selectedFiles.length > 6) {
+                  toast.error("最多选择 6 张图片");
+                  event.currentTarget.value = "";
+                  return;
+                }
+                setImages(selectedFiles);
+              }}
+            />
+          </label>
+          {images.length > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              已选择 {images.length} 张：
+              {images.map(file => file.name).join("、")}
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={() => setCreating(false)}
+              className="admin-secondary"
+            >
+              取消
+            </button>
+            <button
+              onClick={createFeedback}
+              disabled={!createForm.content.trim()}
+              className="admin-primary !w-auto"
+            >
+              提交反馈
             </button>
           </div>
         </Modal>
@@ -1800,6 +1917,7 @@ export function GenericManagedPanel({
   module,
   fields,
   runnable = false,
+  fixedNames,
 }: {
   refresh: number;
   title: string;
@@ -1810,8 +1928,10 @@ export function GenericManagedPanel({
     label: string;
     multiline?: boolean;
     options?: string[];
+    optionLabels?: Record<string, string>;
   }[];
   runnable?: boolean;
+  fixedNames?: string[];
 }) {
   const { data, reload } = useLoad<ModuleRecord[]>(
     `/api/admin/modules/${module}`,
@@ -1864,15 +1984,36 @@ export function GenericManagedPanel({
     <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
       <Box>
         <Title
-          title={`${editingId ? "编辑" : "新增"}${title}`}
+          title={`${editingId ? "编辑" : fixedNames ? "选择" : "新增"}${title}`}
           description={description}
         />
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder={`${title}名称`}
-          className="admin-input"
-        />
+        {fixedNames ? (
+          <select
+            value={name}
+            onChange={event => {
+              const selectedName = event.target.value;
+              const existing = data.find(item => item.name === selectedName);
+              setName(selectedName);
+              setEditingId(existing?.id);
+              setValues(existing?.data || {});
+            }}
+            className="admin-input"
+          >
+            <option value="">请选择固定角色</option>
+            {fixedNames.map(fixedName => (
+              <option key={fixedName} value={fixedName}>
+                {fixedName}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={`${title}名称`}
+            className="admin-input"
+          />
+        )}
         {fields.map(f =>
           f.options ? (
             <label key={f.key} className="mt-3 block text-sm text-slate-600">
@@ -1892,7 +2033,7 @@ export function GenericManagedPanel({
               >
                 {f.options.map(option => (
                   <option key={option} value={option}>
-                    {option}
+                    {f.optionLabels?.[option] || option}
                   </option>
                 ))}
               </select>
@@ -1976,8 +2117,20 @@ export function GenericManagedPanel({
                     key={k}
                     className="mt-1 max-w-3xl break-all text-sm text-slate-500"
                   >
-                    <span className="font-medium text-slate-700">{k}：</span>
-                    {v}
+                    <span className="font-medium text-slate-700">
+                      {fields.find(field => field.key === k)?.label || k}：
+                    </span>
+                    {fields.find(field => field.key === k)?.optionLabels
+                      ? v
+                          .split(",")
+                          .filter(Boolean)
+                          .map(
+                            value =>
+                              fields.find(field => field.key === k)
+                                ?.optionLabels?.[value] || value
+                          )
+                          .join("、")
+                      : v}
                   </p>
                 ))}
               </div>
@@ -2001,9 +2154,11 @@ export function GenericManagedPanel({
                     人工触发
                   </button>
                 )}
-                <button onClick={() => remove(x.id)} className="admin-danger">
-                  删除
-                </button>
+                {!fixedNames && (
+                  <button onClick={() => remove(x.id)} className="admin-danger">
+                    删除
+                  </button>
+                )}
               </div>
             </div>
           </Box>
@@ -2060,7 +2215,7 @@ export function ConversationsPanel({
         description={
           groupsOnly
             ? "查看群主、人数、消息数量和运行状态。"
-            : "分页查看会话元数据，并审计密文消息时间线。"
+            : "分页查看会话元数据，并审计新明文与历史密文消息时间线。"
         }
       />
       <Box className="overflow-x-auto p-0">
@@ -2115,8 +2270,9 @@ export function ConversationsPanel({
           onClose={() => setDetails(undefined)}
           wide
         >
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            端到端加密边界：后台只能审计发送者、时间、类型、算法、状态和密文，不绕过客户端密钥读取明文。
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+            新消息按需求以明文保存并可在后台查看；协议切换前的 AES-GCM
+            历史消息仍只显示密文。
           </div>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto">
             {details.messages.map((m: any) => (
@@ -2128,9 +2284,10 @@ export function ConversationsPanel({
                   </span>
                   <span>{time(m.sentAtUtc)}</span>
                 </div>
-                <p className="mt-2 break-all font-mono text-xs text-slate-600">
-                  {m.ciphertext.slice(0, 240)}
-                  {m.ciphertext.length > 240 ? "…" : ""}
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                  {m.plaintextAvailable
+                    ? m.content || "（空消息）"
+                    : `历史加密消息：${m.ciphertext.slice(0, 240)}${m.ciphertext.length > 240 ? "…" : ""}`}
                 </p>
               </div>
             ))}
@@ -2349,8 +2506,9 @@ export function ConversationSearchPanel({
           onClose={() => setDetails(undefined)}
           wide
         >
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            端到端加密边界：后台仅显示发送者、时间、类型、算法、状态和密文。
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+            新消息按需求以明文保存并可在后台查看；协议切换前的 AES-GCM
+            历史消息仍只显示密文。
           </div>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto">
             {details.messages.map((message: any) => (
@@ -2362,9 +2520,10 @@ export function ConversationSearchPanel({
                   </span>
                   <span>{time(message.sentAtUtc)}</span>
                 </div>
-                <p className="mt-2 break-all font-mono text-xs text-slate-600">
-                  {message.ciphertext.slice(0, 240)}
-                  {message.ciphertext.length > 240 ? "…" : ""}
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                  {message.plaintextAvailable
+                    ? message.content || "（空消息）"
+                    : `历史加密消息：${message.ciphertext.slice(0, 240)}${message.ciphertext.length > 240 ? "…" : ""}`}
                 </p>
               </div>
             ))}

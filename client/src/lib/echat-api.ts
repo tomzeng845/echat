@@ -53,6 +53,7 @@ export type Message = {
   ciphertext: string;
   nonce: string;
   algorithm: string;
+  content: string;
   keyVersion: number;
   replyToMessageId?: string;
   metadata: Record<string, string>;
@@ -102,7 +103,7 @@ export type MediaAsset = {
   fileName: string;
   contentType: string;
   size: number;
-  purpose: "Chat" | "Moment";
+  purpose: "Chat" | "Moment" | "Feedback";
   contentUrl: string;
 };
 export type MomentLike = {

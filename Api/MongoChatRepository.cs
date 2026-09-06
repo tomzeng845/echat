@@ -78,10 +78,21 @@ public sealed class MongoChatRepository : IChatRepository
             new AdminModuleRecord { Id = "seed-fund-credit", Module = "fund.subjects", Name = "人工增加", Data = new() { ["code"] = "MANUAL_CREDIT", ["direction"] = "Increase" } },
             new AdminModuleRecord { Id = "seed-fund-debit", Module = "fund.subjects", Name = "人工扣减", Data = new() { ["code"] = "MANUAL_DEBIT", ["direction"] = "Decrease" } },
             new AdminModuleRecord { Id = "seed-role-admin", Module = "system.roles", Name = "超级管理员", Data = new() { ["permissions"] = "*" } },
+            new AdminModuleRecord { Id = "seed-role-operation", Module = "system.roles", Name = "运营管理员", Data = new() { ["permissions"] = "users:read,users:write,logs:read,announcements:write,conversations:read,groups:write,robots:write" } },
+            new AdminModuleRecord { Id = "seed-role-finance", Module = "system.roles", Name = "财务管理员", Data = new() { ["permissions"] = "funds:read,funds:write" } },
+            new AdminModuleRecord { Id = "seed-role-auditor", Module = "system.roles", Name = "审计员", Data = new() { ["permissions"] = "logs:read,errors:read,conversations:read,audit:read" } },
+            new AdminModuleRecord { Id = "seed-role-service", Module = "system.roles", Name = "客服", Data = new() { ["permissions"] = "users:read,logs:read,conversations:read" } },
             new AdminModuleRecord { Id = "seed-customer-service", Module = "chat.customer-service", Name = "系统客服", Data = new() { ["account"] = "service" } },
         };
         foreach (var seed in moduleSeeds)
             await _adminRecords.UpdateOneAsync(x => x.Id == seed.Id, Builders<AdminModuleRecord>.Update.SetOnInsert(x => x.Id, seed.Id).SetOnInsert(x => x.Module, seed.Module).SetOnInsert(x => x.Name, seed.Name).SetOnInsert(x => x.Status, seed.Status).SetOnInsert(x => x.Data, seed.Data).SetOnInsert(x => x.CreatedAtUtc, seed.CreatedAtUtc).SetOnInsert(x => x.UpdatedAtUtc, seed.UpdatedAtUtc), new UpdateOptions { IsUpsert = true }, ct);
+        var fixedRoles = moduleSeeds.Where(x => x.Module == "system.roles").ToArray();
+        foreach (var role in fixedRoles)
+            await _adminRecords.UpdateOneAsync(x => x.Id == role.Id, Builders<AdminModuleRecord>.Update.Set(x => x.Module, role.Module).Set(x => x.Name, role.Name), cancellationToken: ct);
+        await _adminRecords.DeleteManyAsync(
+            Builders<AdminModuleRecord>.Filter.Eq(x => x.Module, "system.roles") &
+            Builders<AdminModuleRecord>.Filter.Nin(x => x.Id, fixedRoles.Select(x => x.Id)),
+            ct);
     }
 
     public async Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) => await _users.Find(x => x.Account == account.ToLowerInvariant()).FirstOrDefaultAsync(ct);
@@ -193,9 +204,11 @@ public sealed class MongoChatRepository : IChatRepository
     {
         var existing = await _messages.Find(x => x.SenderId == message.SenderId && x.ClientMessageId == message.ClientMessageId).FirstOrDefaultAsync(ct);
         if (existing is not null) return existing;
+        var plainPreview = (message.Content ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (plainPreview.Length > 60) plainPreview = plainPreview[..60] + "…";
         var preview = message.Kind switch
         {
-            MessageKind.Text => "加密消息",
+            MessageKind.Text => string.Equals(message.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase) ? plainPreview : "[历史加密消息]",
             MessageKind.Emoji => "[表情]",
             MessageKind.Image => "[图片]",
             MessageKind.Voice => "[语音]",

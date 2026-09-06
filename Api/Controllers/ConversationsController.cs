@@ -138,16 +138,23 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult<MessageView>> Send(string id, SendMessageRequest request, CancellationToken ct)
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
-        if (string.IsNullOrWhiteSpace(request.ClientMessageId) || string.IsNullOrWhiteSpace(request.Ciphertext) || request.Ciphertext.Length > 50_000) return BadRequest(new { error = "消息格式无效或内容过大" });
-        var keyVersion = Math.Max(1, request.KeyVersion);
-        if (keyVersion != conversation.KeyVersion) return Conflict(new { error = "会话密钥已更新，请刷新后重试" });
+        var plaintext = string.Equals(request.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(request.ClientMessageId)) return BadRequest(new { error = "消息编号不能为空" });
+        if (plaintext)
+        {
+            if (string.IsNullOrWhiteSpace(request.Content) || request.Content.Length > 50_000) return BadRequest(new { error = "消息内容为空或过大" });
+        }
+        else if (string.IsNullOrWhiteSpace(request.Ciphertext) || request.Ciphertext.Length > 50_000)
+            return BadRequest(new { error = "历史加密消息格式无效或内容过大" });
+        var keyVersion = plaintext ? 0 : Math.Max(1, request.KeyVersion);
+        if (!plaintext && keyVersion != conversation.KeyVersion) return Conflict(new { error = "会话密钥已更新，请刷新后重试" });
         if (request.Kind is MessageKind.Image or MessageKind.Voice or MessageKind.Video or MessageKind.File)
         {
             if (request.Metadata is null || !request.Metadata.TryGetValue("assetId", out var assetId)) return BadRequest(new { error = "富媒体消息缺少媒体资产" });
             var asset = await repository.GetMediaAssetAsync(assetId, ct);
             if (asset is null || asset.OwnerId != User.UserId() || asset.Purpose != MediaPurpose.Chat || asset.ConversationId != id) return BadRequest(new { error = "媒体资产无效" });
         }
-        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Ciphertext = request.Ciphertext, Nonce = request.Nonce, Algorithm = request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? request.Content ?? "" : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
@@ -161,7 +168,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var message = await repository.GetMessageAsync(messageId, ct);
         if (message is null || message.ConversationId != id || message.SenderId != User.UserId()) return NotFound();
         if (DateTime.UtcNow - message.SentAtUtc > TimeSpan.FromMinutes(2)) return BadRequest(new { error = "已超过 2 分钟撤回时限" });
-        message.State = MessageState.Recalled; message.RecalledAtUtc = DateTime.UtcNow; message.Ciphertext = ""; message.Nonce = "";
+        message.State = MessageState.Recalled; message.RecalledAtUtc = DateTime.UtcNow; message.Content = ""; message.Ciphertext = ""; message.Nonce = "";
         await repository.UpdateMessageAsync(message, ct);
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.updated", View(message), ct);
         return NoContent();
@@ -197,5 +204,5 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         return keyEnvelopes.TryGetValue(userId, out var legacyEnvelope) ? legacyEnvelope : null;
     }
 
-    private static MessageView View(ChatMessage m) => new(m.Id, m.ClientMessageId, m.ConversationId, m.Sequence, m.SenderId, m.Kind, m.Ciphertext, m.Nonce, m.Algorithm, Math.Max(1, m.KeyVersion), m.ReplyToMessageId, m.Metadata, m.State, m.SentAtUtc, m.RecalledAtUtc);
+    private static MessageView View(ChatMessage m) => new(m.Id, m.ClientMessageId, m.ConversationId, m.Sequence, m.SenderId, m.Kind, m.Ciphertext, m.Nonce, m.Algorithm, string.Equals(m.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase) ? 0 : Math.Max(1, m.KeyVersion), m.ReplyToMessageId, m.Metadata, m.State, m.SentAtUtc, m.RecalledAtUtc, m.Content ?? "");
 }

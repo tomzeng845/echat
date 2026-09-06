@@ -25,7 +25,7 @@ const auth = await request("/api/auth/register", {
     inviteCode: "ECHAT2026",
     displayName: "Android 推送测试",
     agreementAccepted: true,
-    deviceName: "E聊 Android 0.8.9",
+    deviceName: "E聊 Android 0.9.0",
     deviceId: `android-${suffix}`,
   },
 });
@@ -35,7 +35,7 @@ const token = `fake-fcm-token-${suffix}-${"x".repeat(48)}`;
 await request("/api/push/devices", {
   token: auth.accessToken,
   method: "POST",
-  body: { deviceId, token, platform: "android", appVersion: "0.8.9" },
+  body: { deviceId, token, platform: "android", appVersion: "0.9.0" },
 });
 const registered = await request("/api/push/status", {
   token: auth.accessToken,
@@ -56,7 +56,7 @@ if (disabled.registeredDevices !== 0)
 
 const health = await request("/api/health");
 if (
-  health.version !== "0.8.9" ||
+  health.version !== "0.9.0" ||
   health.push?.provider !== "Firebase Cloud Messaging"
 )
   throw new Error(`Unexpected health payload: ${JSON.stringify(health)}`);

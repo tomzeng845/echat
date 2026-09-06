@@ -160,7 +160,7 @@ export default function EmojiPicker({
             )}
           </div>
           <footer className="border-t border-slate-100 px-4 py-2 text-[10px] text-slate-400">
-            点击表情将作为端到端加密消息立即发送
+            点击表情将作为独立消息立即发送
           </footer>
         </section>
       )}

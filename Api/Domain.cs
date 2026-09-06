@@ -10,7 +10,7 @@ public enum ConversationType { Direct, Group, System }
 public enum MemberRole { Owner, Admin, Member }
 public enum MessageKind { Text, Emoji, Image, Voice, Video, File, System }
 public enum MessageState { Accepted, Recalled }
-public enum MediaPurpose { Chat, Moment }
+public enum MediaPurpose { Chat, Moment, Feedback }
 public enum QrLoginStatus { Pending, Scanned, Approved, Denied, Consumed, Expired }
 public enum MomentVisibility { Friends, Private, Selected, Excluded }
 public enum MomentReportStatus { Submitted, Resolved, Rejected }
@@ -192,6 +192,7 @@ public sealed class ChatMessage
     public string Ciphertext { get; set; } = "";
     public string Nonce { get; set; } = "";
     public string Algorithm { get; set; } = "AES-GCM-256";
+    public string Content { get; set; } = "";
     public int KeyVersion { get; set; } = 1;
     public string? ReplyToMessageId { get; set; }
     public Dictionary<string, string> Metadata { get; set; } = [];
@@ -305,10 +306,10 @@ public sealed record UserView(string Id, string Account, string DisplayName, str
 public sealed record FriendRequestInput(string RequestId, string PeerAccount, string Note = "", string Source = "account");
 public sealed record ConversationCreateRequest(string PeerAccount, Dictionary<string, string>? KeyEnvelopes = null);
 public sealed record GroupCreateRequest(string Name, IReadOnlyList<string> MemberAccounts, Dictionary<string, string>? KeyEnvelopes = null);
-public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", int KeyVersion = 1, string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null);
+public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", int KeyVersion = 1, string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null, string? Content = null);
 public sealed record RotateConversationKeyRequest(int KeyVersion, Dictionary<string, string> KeyEnvelopes);
 public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, int KeyVersion, string? KeyEnvelope);
-public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, int KeyVersion, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc);
+public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, int KeyVersion, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc, string Content);
 public sealed record MediaAssetView(string Id, string FileName, string ContentType, long Size, MediaPurpose Purpose, string ContentUrl);
 public sealed record CreateMomentRequest(string Text, IReadOnlyList<string>? MediaAssetIds = null, MomentVisibility Visibility = MomentVisibility.Friends, IReadOnlyList<string>? AudienceUserIds = null);
 public sealed record AddMomentCommentRequest(string Text);

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Download, FileText, Loader2, ShieldCheck } from "lucide-react";
+import { Download, FileText, Loader2 } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
-  downloadDecryptedMedia,
+  downloadChatMedia,
   formatFileSize,
   parseMediaPayload,
 } from "@/lib/echat-media";
@@ -25,11 +25,7 @@ export default function RichMessageContent({
     let active = true;
     let objectUrl = "";
     setLoading(true);
-    downloadDecryptedMedia(
-      message.conversationId,
-      message.keyVersion || 1,
-      payload
-    )
+    downloadChatMedia(message.conversationId, message.keyVersion || 1, payload)
       .then(blob => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -38,7 +34,7 @@ export default function RichMessageContent({
       .catch(
         cause =>
           active &&
-          setError(cause instanceof Error ? cause.message : "媒体解密失败")
+          setError(cause instanceof Error ? cause.message : "媒体加载失败")
       )
       .finally(() => active && setLoading(false));
     return () => {
@@ -69,16 +65,10 @@ export default function RichMessageContent({
     return (
       <div className="flex min-h-20 min-w-40 items-center justify-center gap-2 text-xs opacity-70">
         <Loader2 className="h-4 w-4 animate-spin" />
-        正在解密媒体
+        正在加载媒体
       </div>
     );
-  if (error)
-    return (
-      <div className="flex items-center gap-2 text-xs opacity-75">
-        <ShieldCheck size={15} />
-        {error}
-      </div>
-    );
+  if (error) return <div className="text-xs opacity-75">{error}</div>;
 
   if (message.kind === "Image" && url)
     return (
@@ -93,8 +83,7 @@ export default function RichMessageContent({
       <div className="min-w-56">
         <audio controls preload="metadata" src={url} className="h-10 w-full" />
         <p className="mt-1 text-[10px] opacity-60">
-          {payload.duration ? `${Math.round(payload.duration)} 秒 · ` : ""}
-          端到端加密语音
+          {payload.duration ? `${Math.round(payload.duration)} 秒` : "语音消息"}
         </p>
       </div>
     );
@@ -114,7 +103,7 @@ export default function RichMessageContent({
     setLoading(true);
     setError("");
     try {
-      const blob = await downloadDecryptedMedia(
+      const blob = await downloadChatMedia(
         message.conversationId,
         message.keyVersion || 1,
         payload
@@ -145,7 +134,7 @@ export default function RichMessageContent({
           {payload.fileName}
         </span>
         <span className="mt-0.5 block text-[10px] opacity-60">
-          {formatFileSize(payload.size)} · 已加密
+          {formatFileSize(payload.size)}
         </span>
       </span>
       <Download size={17} className="shrink-0 opacity-70" />

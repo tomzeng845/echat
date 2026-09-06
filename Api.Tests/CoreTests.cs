@@ -24,7 +24,7 @@ public sealed class CoreTests
 
         var results = new List<ChatMessage>();
         for (var index = 0; index < 10; index++)
-            results.Add(await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = "same-request", ConversationId = conversation.Id, SenderId = "u1", Ciphertext = "cipher", Nonce = "nonce" }));
+            results.Add(await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = "same-request", ConversationId = conversation.Id, SenderId = "u1", Algorithm = "PLAINTEXT", Content = "明文幂等消息" }));
 
         Assert.Single(results.Select(x => x.Id).Distinct());
         Assert.Equal(1, results[0].Sequence);
@@ -36,7 +36,7 @@ public sealed class CoreTests
     {
         var repository = new InMemoryChatRepository();
         var conversation = await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Members = [new() { UserId = "u1" }] });
-        var tasks = Enumerable.Range(0, 30).Select(index => repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = $"m-{index}", ConversationId = conversation.Id, SenderId = "u1", Ciphertext = "cipher", Nonce = "nonce" }));
+        var tasks = Enumerable.Range(0, 30).Select(index => repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = $"m-{index}", ConversationId = conversation.Id, SenderId = "u1", Algorithm = "PLAINTEXT", Content = $"并发明文 {index}" }));
         var messages = await Task.WhenAll(tasks);
         Assert.Equal(Enumerable.Range(1, 30).Select(x => (long)x), messages.Select(x => x.Sequence).OrderBy(x => x));
     }
@@ -57,12 +57,35 @@ public sealed class CoreTests
             ConversationId = conversation.Id,
             SenderId = "u1",
             Kind = MessageKind.Emoji,
-            Ciphertext = "encrypted-emoji",
-            Nonce = "nonce"
+            Algorithm = "PLAINTEXT",
+            Content = "❤️"
         });
 
         Assert.Equal(MessageKind.Emoji, message.Kind);
         Assert.Equal("[表情]", conversation.LastMessagePreview);
+    }
+
+    [Fact]
+    public async Task PlaintextMessage_IsStoredAndUsedAsConversationPreview()
+    {
+        var repository = new InMemoryChatRepository();
+        var conversation = await repository.AddConversationAsync(new Conversation
+        {
+            Type = ConversationType.Direct,
+            Members = [new() { UserId = "u1" }, new() { UserId = "u2" }]
+        });
+
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage
+        {
+            ClientMessageId = "plain-1",
+            ConversationId = conversation.Id,
+            SenderId = "u1",
+            Algorithm = "PLAINTEXT",
+            Content = "后台可查看的明文消息"
+        });
+
+        Assert.Equal("后台可查看的明文消息", message.Content);
+        Assert.Equal("后台可查看的明文消息", conversation.LastMessagePreview);
     }
 
     [Fact]
@@ -247,12 +270,14 @@ public sealed class CoreTests
         var repository = new InMemoryChatRepository();
         await repository.EnsureSeedDataAsync();
         Assert.Equal(2, (await repository.GetAdminRecordsAsync("fund.subjects", 20)).Count);
-        Assert.Single(await repository.GetAdminRecordsAsync("system.roles", 20));
+        var roles = await repository.GetAdminRecordsAsync("system.roles", 20);
+        Assert.Equal(5, roles.Count);
+        Assert.Equal(new[] { "超级管理员", "运营管理员", "财务管理员", "审计员", "客服" }.OrderBy(x => x), roles.Select(x => x.Name).OrderBy(x => x));
         Assert.Empty(await repository.GetAdminRecordsAsync("chat.tasks", 20));
         Assert.Empty(await repository.GetAdminRecordsAsync("system.settings", 20));
 
-        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "system.roles", Name = "审核员", Data = new() { ["permissions"] = "verification:review" } });
-        Assert.Equal("verification:review", (await repository.GetAdminRecordAsync(record.Id))!.Data["permissions"]);
+        var record = await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Module = "system.announcements", Name = "测试公告", Data = new() { ["content"] = "可修改" } });
+        Assert.Equal("可修改", (await repository.GetAdminRecordAsync(record.Id))!.Data["content"]);
         await repository.DeleteAdminRecordAsync(record.Id);
         Assert.Null(await repository.GetAdminRecordAsync(record.Id));
 

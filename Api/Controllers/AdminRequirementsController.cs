@@ -94,6 +94,13 @@ public sealed class AdminRequirementsController(
             var ids = (await repository.GetUsersAsync(null, null, 10000, ct)).Where(x => x.Role != UserRole.User).Select(x => x.Id).ToHashSet();
             filtered = filtered.Where(x => ids.Contains(x.Data.GetValueOrDefault("userId", "")));
         }
+        else
+        {
+            var admins = (await repository.GetUsersAsync(null, null, 10000, ct)).Where(x => x.Role != UserRole.User).ToList();
+            var adminIds = admins.Select(x => x.Id).ToHashSet();
+            var adminAccounts = admins.Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            filtered = filtered.Where(x => !adminIds.Contains(x.Data.GetValueOrDefault("userId", "")) && !adminAccounts.Contains(x.Data.GetValueOrDefault("account", "")));
+        }
         if (!string.IsNullOrWhiteSpace(query.Account)) filtered = filtered.Where(x => x.Data.GetValueOrDefault("account", "").Contains(query.Account, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(query.Ip)) filtered = filtered.Where(x => x.Data.GetValueOrDefault("ip", "").Contains(query.Ip, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(query.Result)) filtered = filtered.Where(x => x.Data.GetValueOrDefault("result", "").Equals(query.Result, StringComparison.OrdinalIgnoreCase));
@@ -378,8 +385,8 @@ public sealed class AdminRequirementsController(
         var conversation = await repository.GetConversationAsync(id, ct); if (conversation is null) return NotFound(new { error = "会话不存在" });
         var messages = (await repository.GetAllMessagesAsync(10000, ct)).Where(x => x.ConversationId == id).OrderByDescending(x => x.Sequence).Take(Math.Clamp(limit, 1, 200)).OrderBy(x => x.Sequence).ToList();
         var userIds = messages.Select(x => x.SenderId).Concat(conversation.Members.Select(x => x.UserId)).Distinct(); var users = new Dictionary<string, UserAccount>(); foreach (var userId in userIds) { var user = await repository.GetUserByIdAsync(userId, ct); if (user is not null) users[userId] = user; }
-        await AuditAsync("conversation.messages.view", "conversation", id, $"count={messages.Count}; ciphertext-only", ct);
-        return Ok(new { conversation = new { conversation.Id, conversation.Name, conversation.Type, conversation.IsDissolved }, members = conversation.Members.Select(x => new { x.UserId, account = users.GetValueOrDefault(x.UserId)?.Account, displayName = users.GetValueOrDefault(x.UserId)?.DisplayName, x.Role }), messages = messages.Select(x => new { x.Id, x.Sequence, x.Kind, x.State, x.SentAtUtc, x.SenderId, account = users.GetValueOrDefault(x.SenderId)?.Account, displayName = users.GetValueOrDefault(x.SenderId)?.DisplayName, x.Ciphertext, x.Algorithm, x.Metadata, plaintextAvailable = false }) });
+        await AuditAsync("conversation.messages.view", "conversation", id, $"count={messages.Count}; plaintext={messages.Count(x => string.Equals(x.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase))}", ct);
+        return Ok(new { conversation = new { conversation.Id, conversation.Name, conversation.Type, conversation.IsDissolved }, members = conversation.Members.Select(x => new { x.UserId, account = users.GetValueOrDefault(x.UserId)?.Account, displayName = users.GetValueOrDefault(x.UserId)?.DisplayName, x.Role }), messages = messages.Select(x => new { x.Id, x.Sequence, x.Kind, x.State, x.SentAtUtc, x.SenderId, account = users.GetValueOrDefault(x.SenderId)?.Account, displayName = users.GetValueOrDefault(x.SenderId)?.DisplayName, x.Content, x.Ciphertext, x.Algorithm, x.Metadata, plaintextAvailable = string.Equals(x.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase) }) });
     }
 
     [HttpPut("contacts/{id}")]

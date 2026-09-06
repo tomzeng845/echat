@@ -66,6 +66,7 @@ public sealed class MediaController(IChatRepository repository, IMediaStorage st
     {
         var userId = User.UserId();
         if (asset.OwnerId == userId) return true;
+        if (asset.Purpose == MediaPurpose.Feedback) return User.IsInRole(nameof(UserRole.Admin));
         if (asset.Purpose == MediaPurpose.Chat && !string.IsNullOrWhiteSpace(asset.ConversationId))
         {
             var conversation = await repository.GetConversationAsync(asset.ConversationId, ct);

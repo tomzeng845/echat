@@ -653,7 +653,7 @@ export default function Admin() {
             <div>
               <div className="font-semibold text-white">E聊运营后台</div>
               <div className="text-[10px] tracking-[.16em] text-teal-300">
-                ADMIN 0.8.9
+                ADMIN 0.9.0
               </div>
             </div>
           </a>
@@ -788,13 +788,21 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
       <DocGenericManagedPanel
         refresh={refresh}
         title="角色"
-        description="新增角色并配置保留菜单/API权限。"
+        description="角色固定为超级管理员、运营管理员、财务管理员、审计员和客服；权限使用中文下拉多选。"
         module="system.roles"
+        fixedNames={[
+          "超级管理员",
+          "运营管理员",
+          "财务管理员",
+          "审计员",
+          "客服",
+        ]}
         fields={[
           {
             key: "permissions",
-            label: "从系统固定权限列表中多选",
+            label: "权限",
             options: [
+              "*",
               "users:read",
               "users:write",
               "logs:read",
@@ -809,6 +817,22 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
               "robots:write",
               "audit:read",
             ],
+            optionLabels: {
+              "*": "全部权限",
+              "users:read": "查看用户",
+              "users:write": "管理用户",
+              "logs:read": "查看登录与离线日志",
+              "funds:read": "查看资金数据",
+              "funds:write": "调整资金额度",
+              "operators:read": "查看管理账号",
+              "operators:write": "管理后台账号",
+              "announcements:write": "管理系统公告",
+              "errors:read": "查看报错日志",
+              "conversations:read": "查看会话和聊天记录",
+              "groups:write": "管理群聊",
+              "robots:write": "管理机器人与自动发言",
+              "audit:read": "查看操作审计",
+            },
           },
         ]}
       />

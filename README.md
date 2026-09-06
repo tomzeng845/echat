@@ -1,37 +1,37 @@
 # E聊
 
-**E聊**是一款面向 PC、手机浏览器与 Android APP 的端到端加密即时通信 MVP。前端采用 React 19、TypeScript、Tailwind CSS 与 HTML5；Android 使用 Capacitor 8 原生容器；API 采用 ASP.NET Core 8；实时通信采用 SignalR；生产数据层采用 MongoDB。API 默认监听 **2099** 端口。
+**E聊**是一款面向 PC、手机浏览器与 Android APP 的即时通信 MVP。前端采用 React 19、TypeScript、Tailwind CSS 与 HTML5；Android 使用 Capacitor 8 原生容器；API 采用 ASP.NET Core 8；实时通信采用 SignalR；生产数据层采用 MongoDB。API 默认监听 **2099** 端口。
 
 ## 当前实现范围
 
-| 模块        | 已实现能力                                                                                            | 状态             |
-| ----------- | ----------------------------------------------------------------------------------------------------- | ---------------- |
-| 账号        | 邀请码注册、密码登录、渐进式登录限制、JWT、刷新令牌轮换、服务端会话撤销                               | 已完成 P1        |
-| 二维码      | 两分钟一次性扫码登录、已登录设备确认、七天个人名片、摄像头/图片/粘贴扫码                              | 已完成 P1        |
-| 设备管理    | 登录设备列表、设备标识、单设备退出、退出其他设备                                                      | 已完成 P1        |
-| 管理登录    | 独立 `/admin` 登录、Admin 角色保护；开发预览密码登录，生产强制 Google Authenticator TOTP              | 已完成           |
-| 联系人      | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单                      | 已完成 P1        |
-| 会话        | 单聊、群聊、会话列表、会话成员权限                                                                    | 已完成 MVP       |
-| 消息        | SignalR 实时事件、分类/搜索/最近表情、增量补拉、幂等、实时已读、竞态保护和 2 分钟撤回                 | 已完成 P1        |
-| 富媒体      | 图片、视频、文件、浏览器语音录制、25 MB 大小限制、鉴权下载与 Range 响应                               | 已完成基础版本   |
-| 端到端加密  | 每设备 RSA-OAEP 身份密钥；版本化 AES-GCM-256 会话密钥与历史设备信封；新消息缺钥时即时恢复             | 已完成 P1        |
-| 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                                | 已完成           |
-| 管理后台    | HTML5 响应式四大系统；按 V2 文档实现普通用户隔离、邀请码、日志、交易、Admin、公告、图片和聊天治理 API | 已完成 0.7.1     |
-| 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区     | 已完成 0.7.1     |
-| Android APP | Capacitor 8、加密表情消息、鸿蒙兼容后台来电、原生 SignalR 服务、媒体权限和系统栏安全区                | 已完成 0.8.9     |
-| 消息推送    | 前台提示音、进程存活时后台本地通知；可选 FCM 高优先级通知、独立声音频道；通知不含聊天明文             | 应用层已完成     |
-| 音视频通话  | 后台原生来电通知、呼出等待铃声、双向音频、听筒/扬声器、静音、摄像头、记录、ICE 与 SignalR 信令        | 已完成 P1 应用层 |
-| 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                          | 已完成 P1        |
+| 模块        | 已实现能力                                                                                        | 状态             |
+| ----------- | ------------------------------------------------------------------------------------------------- | ---------------- |
+| 账号        | 邀请码注册、密码登录、渐进式登录限制、JWT、刷新令牌轮换、服务端会话撤销                           | 已完成 P1        |
+| 二维码      | 两分钟一次性扫码登录、已登录设备确认、七天个人名片、摄像头/图片/粘贴扫码                          | 已完成 P1        |
+| 设备管理    | 登录设备列表、设备标识、单设备退出、退出其他设备                                                  | 已完成 P1        |
+| 管理登录    | 独立 `/admin` 登录、Admin 角色保护；开发预览密码登录，生产强制 Google Authenticator TOTP          | 已完成           |
+| 联系人      | 好友申请、申请人资料、SignalR 实时提醒、接受后双端刷新、未处理数字、删除和黑名单                  | 已完成 P1        |
+| 会话        | 单聊、群聊、会话列表、会话成员权限                                                                | 已完成 MVP       |
+| 消息        | SignalR 实时事件、明文文字/表情存储、增量补拉、幂等、实时已读、竞态保护和 2 分钟撤回              | 已完成 0.9.0     |
+| 富媒体      | 图片、视频、文件、浏览器语音录制、原文件鉴权存储、25 MB 限制与 Range 响应                         | 已完成 0.9.0     |
+| 历史兼容    | 协议切换前的 RSA-OAEP/AES-GCM 消息和附件仍可由原设备解密；新消息不再加密                          | 已完成 0.9.0     |
+| 响应式界面  | PC 三栏布局、手机单栏/详情切换、联系人“发消息”、动态视口、安全区发送栏                            | 已完成           |
+| 管理后台    | HTML5 四大系统；图文反馈、固定五角色中文权限、用户/Admin 日志隔离及明文聊天记录                   | 已完成 0.9.0     |
+| 登录地区    | HTTPS GeoIP、中文国家/省州/城市、24 小时缓存；用户、登录/离线、操作和报错日志统一显示真实推断地区 | 已完成 0.7.1     |
+| Android APP | Capacitor 8、表情消息、鸿蒙兼容后台来电、原生 SignalR 服务、媒体权限和系统栏安全区                | 已完成 0.9.0     |
+| 消息推送    | 前台提示音、进程存活时后台本地通知；可选 FCM 高优先级通知、独立声音频道；通知不含聊天明文         | 应用层已完成     |
+| 音视频通话  | 后台原生来电通知、呼出等待铃声、双向音频、听筒/扬声器、静音、摄像头、记录、ICE 与 SignalR 信令    | 已完成 P1 应用层 |
+| 朋友圈      | 好友、仅自己、指定好友、排除好友四种范围，九宫格媒体、点赞、评论、删除与举报                      | 已完成 P1        |
 
 > 当前版本已开放可在应用代码内完成的 P1 能力，但不是已经达到 10 万用户容量目标的生产成品。Android 音视频后台来电不依赖 FCM；APP 被系统完全终止后的普通消息可靠推送仍需项目方配置 Firebase。TURN、SFU、转码和病毒扫描也属于生产环境外部基础设施。
 
-### 管理后台 0.7.1
+### 管理后台 0.9.0
 
-`/admin` 已按新版 7 页需求文档调整为 24 个页面：账户系统只显示普通用户，包含用户、登录/离线日志、失败 IP、意见反馈和八位邀请码；资金系统新增独立交易明细；管理系统仅包含 Admin 管理账号、登录日志、固定权限角色、公告、图片、操作和报错日志；聊天系统包含会话、客服、群管理、群发言、消息机器人、红包机器人和群邀请码。厂商推送、通讯录以及旧版已删除的资源、配置、定时任务和短信页面均不再出现在菜单中。
+`/admin` 已按本轮需求文档继续调整 24 个页面：意见反馈支持管理员新增文字与最多 6 张图片；角色管理固定为超级管理员、运营管理员、财务管理员、审计员、客服五类，角色和权限均以中文下拉选择；账户系统登录日志只显示普通用户，管理系统登录日志只显示后台角色；会话详情直接展示协议切换后的明文聊天记录，并明确区分历史密文。
 
 实名认证与企业认证标签可打开资料详情，支持编辑、审核通过和拒绝；用户分页固定在表格底部，修改邀请码改为选择已创建的八位码。登录、离线、失败 IP、反馈、资金、交易、操作和报错日志均提供筛选/分页；反馈支持批量标记已查看。额度调整使用 `idempotencyKey` 防止重复记账。管理账号严格限定 Admin，并可独立绑定 Google Authenticator；角色权限由 API 固定白名单约束。公告、群发言和机器人人工触发会通过 SignalR 通知在线成员并记录发送日志。抢红包机器人只保存可审计规则，不执行真实资金动作。
 
-用户管理沿用高密度运营表格和按钮锚定两级操作菜单，并隔离所有 Admin 账号。图片库支持搜索、分类、标签、编辑和删除；会话/群管理支持服务端筛选分页、密文时间线、后台安全建群、编辑群名称、解散和恢复。后台建群只持久化成员 RSA-OAEP 密钥信封，临时 AES 群密钥生成后立即清零。0.7.1 接入 GeoIP 后，用户管理“最后登录地址”和登录、离线、操作、报错日志的“地址”列显示同一份国家/省州/城市结果；后台首页同时显示 GeoIP 提供方与缓存数量。
+用户管理沿用高密度运营表格和按钮锚定两级操作菜单，并隔离所有后台角色账号。图片库支持搜索、分类、标签、编辑和删除；会话/群管理支持服务端筛选分页、明文新消息与历史密文时间线、后台建群、编辑群名称、解散和恢复。0.7.1 接入 GeoIP 后，用户管理“最后登录地址”和登录、离线、操作、报错日志的“地址”列显示同一份国家/省州/城市结果；后台首页同时显示 GeoIP 提供方与缓存数量。
 
 ## 目录结构
 
@@ -45,8 +45,8 @@
 | `client/`                                                          | React HTML5 响应式客户端                                           |
 | `client/src/pages/Admin.tsx`                                       | 独立 HTML5 响应式管理后台，按路由懒加载                            |
 | `client/src/components/admin/RequirementPanels.tsx`                | 后台需求文档专用页面、筛选表格与审核/配置弹窗                      |
-| `client/src/lib/echat-crypto.ts`                                   | 浏览器端身份密钥、会话密钥和 AES-GCM 消息加解密                    |
-| `client/src/lib/echat-media.ts`                                    | 富媒体二进制加密、上传、下载和解密                                 |
+| `client/src/lib/echat-crypto.ts`                                   | 协议切换前历史密文的设备端兼容解密                                 |
+| `client/src/lib/echat-media.ts`                                    | 新媒体原文件上传/下载及历史加密附件兼容读取                        |
 | `client/src/lib/emoji.ts`                                          | 表情分类、中文/英文搜索和最近使用记录                              |
 | `client/src/components/chat/EmojiPicker.tsx`                       | PC/手机响应式表情选择、搜索与即时发送面板                          |
 | `client/src/components/chat/CallManager.tsx`                       | WebRTC 音视频通话和 SignalR 信令控制                               |
@@ -66,7 +66,8 @@
 | `scripts/geoip-smoke.mjs`                                          | 真实公网 IP 地区、用户地址、登录日志和缓存端到端测试               |
 | `scripts/android-push-smoke.mjs`                                   | Android 推送设备注册、状态、停用和 health API 测试                 |
 | `scripts/android-safe-area-smoke.mjs`                              | 刘海屏与底部系统导航栏 inset 布局测试                              |
-| `scripts/android-e2ee-smoke.mjs`                                   | 新设备密钥轮换、版本化消息与真实界面解密测试                       |
+| `scripts/plaintext-message-smoke.mjs`                              | 明文文字、表情、原文件媒体和后台可见性专项测试                     |
+| `scripts/legacy-e2ee-compat-smoke.mjs`                             | 协议切换前历史密文的设备解密兼容测试                               |
 | `scripts/android-call-audio-smoke.mjs`                             | 双端音轨、接听去重、扬声器与呼出等待铃声测试                       |
 | `scripts/android-call-listener-smoke.mjs`                          | 受限令牌、后台来电路由、重连补发与清理事件测试                     |
 | `scripts/generate-android-alert-sounds.py`                         | 可重复生成消息、来电和呼出等待铃声资源                             |
@@ -124,7 +125,7 @@ pnpm android:sync
 pnpm android:apk
 ```
 
-debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。正式发布前应在 Android Studio 配置独立签名并生成 release AAB/APK，不能使用 debug 签名。
+debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`；本轮已同时复制为 `releases/EChat-0.9.0-debug.apk` 供直接安装测试。正式发布前应在 Android Studio 配置独立签名并生成 release AAB/APK，不能使用 debug 签名。
 
 Android 13 及以上会在登录后请求系统通知权限，用于 FCM 或本地后台通知。0.8.1 修复了缺少 `google-services.json` 时登录后自动调用 Firebase、导致部分手机闪退的问题：未配置时完全跳过 FCM 初始化。扫码只请求摄像头，语音录制只请求麦克风，视频通话请求摄像头和麦克风。Capacitor System Bars 把正确的 display cutout、状态栏和底部手势/三键导航栏 inset 注入 CSS；根布局、聊天发送栏和移动底部菜单均在安全区内显示，不会与刘海或系统菜单重叠。
 
@@ -144,6 +145,8 @@ Android 13 及以上会在登录后请求系统通知权限，用于 FCM 或本�
 
 0.8.9 把输入栏中的表情占位按钮替换为真实表情消息功能。面板提供最近使用、笑脸、手势、动物、食物、活动、旅行、物品和符号分类，并支持中文或英文关键词搜索；手机端打开面板时不会主动弹出系统键盘。点击表情后以独立 `Emoji` 类型立即发送，表情字符与普通文字一样先用当前版本 AES-GCM 会话密钥加密，服务端和通知载荷不保存或泄露明文。聊天气泡使用大号无底色样式，会话列表显示“[表情]”，后台通知只显示“发来一个表情”。
 
+0.9.0 按后台需求文档把**新发送**的文字、表情和富媒体消息切换为明文协议：文字和表情直接保存在消息记录中，图片、文件、语音和视频以原文件写入受鉴权媒体存储，后台会话详情可直接查看内容。协议切换前的 AES-GCM 消息与加密附件继续保留设备端兼容读取，不会批量解密或改写历史数据。该改动降低了消息内容的密码学保密等级，生产环境必须依赖 TLS、严格鉴权、最小权限后台访问和数据库/对象存储访问控制。
+
 针对仍支持 Android APK 的华为/荣耀鸿蒙设备，0.8.7 把常驻来电服务移入 `:calls` 独立进程，持有受控局部唤醒锁，设置 15 秒 SignalR keepalive，并在监听连接重建后补发 90 秒内仍处于振铃状态的来电。首次登录会请求允许 E聊忽略电池优化；个人中心“后台来电”会显示授权状态，授权后再次点击可打开厂商“应用启动管理”。请把 E聊改为**手动管理**，开启**允许自启动、关联启动和后台运行**，并保持“休眠时始终保持网络连接”。纯原生 HarmonyOS NEXT 不支持安装 Android APK，需要单独开发 ArkTS/HAP 客户端。
 
 `call_listener` 令牌不能访问普通 REST API，也不能调用已读、邀请、接听、拒绝、信令或结束等 Hub 方法；连接只加入当前用户组，不订阅聊天密文。Android **强制停止**应用会按系统规则禁止任何后台组件运行，必须由用户重新打开 APP；鸿蒙/华为的系统级启动管理也必须由用户明确允许，应用不能静默绕过。普通消息在 APP 进程被完全终止后的可靠通知仍需 FCM，但音视频后台来电不依赖 Firebase。
@@ -160,11 +163,11 @@ export FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 # 或设置 GOOGLE_APPLICATION_CREDENTIALS 指向只在服务端存在的服务账号文件
 ```
 
-服务端使用 FCM HTTP v1 OAuth 短期令牌发送高优先级通知。消息与来电分别指定内置短提示音和来电铃声；通知载荷只包含事件类型、会话/消息编号和“发来一条加密消息/表情/图片/语音/视频/文件”等摘要，不包含聊天明文。点击通知后，APP 再从 API 获取密文并在设备上解密。没有 Firebase 配置时，前台 SignalR 提示音和进程存活期间的后台本地通知仍可使用，个人中心显示“后台通知已开启”；被系统挂起或杀死后的可靠通知仍需要 FCM。
+服务端使用 FCM HTTP v1 OAuth 短期令牌发送高优先级通知。消息与来电分别指定内置短提示音和来电铃声；通知载荷只包含事件类型、会话/消息编号和“发来一条消息/表情/图片/语音/视频/文件”等通用摘要，不直接携带聊天正文。点击通知后，APP 再从鉴权 API 获取消息。没有 Firebase 配置时，前台 SignalR 提示音和进程存活期间的后台本地通知仍可使用，个人中心显示“后台通知已开启”；被系统挂起或杀死后的可靠通知仍需要 FCM。
 
 ## 媒体存储
 
-在 Manus 托管环境中，API 使用系统注入的对象存储签名服务：文件先由 ASP.NET Core 获取预签名地址，再直接写入对象存储；数据库只保存资产元数据和存储键。聊天附件在浏览器中使用会话密钥加密后上传，图片、视频、语音和文件的原始字节不会以明文写入对象存储。朋友圈媒体为好友权限控制内容，不使用会话端到端加密。
+在 Manus 托管环境中，API 使用系统注入的对象存储签名服务：文件先由 ASP.NET Core 获取预签名地址，再直接写入对象存储；数据库只保存资产元数据和存储键。0.9.0 起，新聊天图片、视频、语音和文件按原文件上传，并继续通过会话成员鉴权下载；协议切换前的加密附件仍由旧兼容路径在设备端解密。朋友圈和反馈图片也由各自权限规则控制访问。
 
 没有对象存储配置时，开发模式会回退到 `Api/.media/` 本地目录，便于离线调试；该回退不适合多实例或无持久磁盘的生产环境。单个文件当前限制为 25 MB。
 
@@ -172,11 +175,11 @@ export FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
 使用 MongoDB 的正式生产环境必须设置 `JWT_SECRET`、`ADMIN_BOOTSTRAP_PASSWORD` 和 `ADMIN_SECRET_ENCRYPTION_KEY`，可选用 `ADMIN_BOOTSTRAP_ACCOUNT` 修改管理账号。每个 Admin 账号现在通过“管理账号”页面独立绑定 Google Authenticator，Base32 密钥使用 AES-GCM 加密后保存；`ADMIN_SECRET_ENCRYPTION_KEY` 必须由密钥管理服务注入并保持稳定。未完成独立绑定的旧 Admin 仍可使用 `ADMIN_TOTP_SECRET` 作为迁移回退。普通用户登录不要求 TOTP；持久化生产环境中 Admin 完成密码验证后必须再提交 6 位动态验证码，且不会使用或重置演示默认密码。
 
-浏览器私钥以不可导出的 `CryptoKey` 保存到 IndexedDB。会话正文及聊天附件在浏览器使用 AES-GCM-256 加密后再发送。每个会话密钥通过成员 RSA-OAEP 公钥分别封装。服务端只保存密文、随机数、算法标识、媒体资产编号与成员密钥信封。
+0.9.0 起，新消息正文以明文保存在服务端，新聊天附件以原文件保存在媒体存储；管理员在授权的会话管理页面可直接查看内容。系统仍保留不可导出的浏览器私钥、版本化会话密钥信封和 AES-GCM 解密代码，仅用于读取协议切换前的历史密文。部署时必须启用 HTTPS、限制 MongoDB 和对象存储网络访问、严格控制后台角色权限，并审计所有消息查看操作。
 
 二维码登录采用两组独立随机令牌：二维码中只包含扫描令牌，桌面只保存轮询令牌；扫码设备必须显示目标设备并主动确认，授权结果只能兑换一次且两分钟后过期。个人名片码不含密码，可在七天内用于预览公开资料并发起好友申请。
 
-当前加密模型适合 MVP/P1 基线，已提供设备级独立密钥和会话密钥版本轮换；生产版仍需补充二维码设备验证、丢失设备后的密钥恢复、群成员变更自动轮换和第三方安全审计。不要把当前实现宣传为已经过第三方密码学审计的安全通信协议。
+不要再把当前新消息协议宣传为端到端加密。历史密文兼容代码仅用于平滑迁移，并不改变 0.9.0 之后新消息可由服务器和授权后台读取的事实。生产版仍需补充更严格的数据保留/删除策略、后台查看审批、审计告警和第三方安全评审。
 
 ## 构建与测试
 
@@ -195,13 +198,14 @@ node scripts/admin-requirements-smoke.mjs http://127.0.0.1:2099
 node scripts/geoip-smoke.mjs http://127.0.0.1:2099
 node scripts/android-push-smoke.mjs http://127.0.0.1:2099
 node scripts/android-safe-area-smoke.mjs http://127.0.0.1:2099
-node scripts/android-e2ee-smoke.mjs http://127.0.0.1:2099
+node scripts/plaintext-message-smoke.mjs http://127.0.0.1:2099
+node scripts/legacy-e2ee-compat-smoke.mjs http://127.0.0.1:2099
 node scripts/android-call-audio-smoke.mjs http://127.0.0.1:2099
 node scripts/android-call-listener-smoke.mjs http://127.0.0.1:2099
 pnpm android:apk
 ```
 
-`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证聊天、独立 `Emoji` 类型及“[表情]”预览、富媒体、四种朋友圈可见范围与举报；手机脚本验证表情分类面板保持在视口内、中文搜索、即时发送及持久化。二维码脚本验证生成、扫描、确认、一次性兑换、名片和设备撤销；通话脚本验证邀请、接受、拒绝、ICE/SDP、结束、记录和 RTC 配置；管理脚本验证普通用户/Admin 隔离、用户治理、交易明细、图片元数据、每账号菜单、角色权限白名单和全部 24 个 V2 页面。Android E2EE 脚本验证错误密钥缓存自愈；Android 通话音频脚本建立双端语音及视频通话，模拟鸿蒙接听时媒体启动延迟，确认服务端接听握手、双方远端音轨、完整播放音量、扬声器切换和两类呼出等待铃声；原生来电监听脚本验证受限令牌隔离、监听连接先建立后创建会话、接听准备后的重连不再补发，以及断线期间未接来电仍会在重连后补发。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
+`pnpm test` 同时运行前端测试入口和 .NET xUnit 测试。主冒烟脚本使用三账号验证明文文字、独立 `Emoji` 类型、“[表情]”预览、原文件富媒体、四种朋友圈可见范围与举报；明文专项脚本进一步验证数据库/API 内容、媒体原字节和后台可见性。后台专项脚本验证图文反馈、固定五角色中文权限、用户/Admin 登录日志隔离和明文聊天记录；后台浏览器脚本遍历全部 24 页并检查对应弹窗、表格与详情。历史 E2EE 兼容脚本只验证协议切换前的数据可继续读取。Android 通话音频脚本和原生来电监听脚本继续覆盖鸿蒙后台来电、接听握手、双向音轨、扬声器与呼出等待铃声。Gradle 流程还执行 Android 单元测试、lint 和 debug APK 组装。
 
 ## 生产部署
 
@@ -211,75 +215,75 @@ pnpm android:apk
 
 ## 主要接口
 
-| 方法                | 路径                                                                                   | 用途                                            |
-| ------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| POST                | `/api/auth/register`                                                                   | 邀请码注册                                      |
-| POST                | `/api/auth/login`                                                                      | 密码登录                                        |
-| POST                | `/api/auth/totp`                                                                       | 管理员 TOTP 验证                                |
-| POST                | `/api/auth/refresh`                                                                    | 刷新令牌轮换                                    |
-| POST                | `/api/qr/login/start`                                                                  | 生成一次性登录二维码                            |
-| POST                | `/api/qr/login/scan`                                                                   | 已登录设备扫描登录二维码                        |
-| POST                | `/api/qr/login/approve`                                                                | 确认或拒绝新设备登录                            |
-| POST                | `/api/qr/login/status`                                                                 | 登录页查询扫码状态                              |
-| POST                | `/api/qr/login/exchange`                                                               | 一次性兑换登录会话                              |
-| POST                | `/api/qr/contact/create`                                                               | 生成个人名片二维码                              |
-| POST                | `/api/qr/contact/preview`                                                              | 预览扫码名片                                    |
-| POST                | `/api/qr/contact/redeem`                                                               | 通过名片发起好友申请                            |
-| GET/DELETE          | `/api/devices`                                                                         | 查看或撤销登录设备                              |
-| PUT                 | `/api/users/me/public-key`                                                             | 发布当前设备身份公钥                            |
-| GET                 | `/api/users/{account}/public-key`                                                      | 获取联系人全部设备公钥                          |
-| GET/POST            | `/api/contacts/requests`                                                               | 查询或发起好友申请                              |
-| POST                | `/api/contacts/requests/{id}/accept`                                                   | 接受好友申请                                    |
-| GET                 | `/api/conversations`                                                                   | 会话列表                                        |
-| POST                | `/api/conversations/direct`                                                            | 创建单聊                                        |
-| POST                | `/api/conversations/groups`                                                            | 创建群聊                                        |
-| GET                 | `/api/conversations/{id}/members`                                                      | 获取通话成员                                    |
-| PUT                 | `/api/conversations/{id}/key`                                                          | 为成员设备轮换版本化会话密钥信封                |
-| GET                 | `/api/conversations/{id}/keys/{keyVersion}`                                            | 获取当前设备指定版本的会话密钥信封              |
-| GET/POST            | `/api/conversations/{id}/messages`                                                     | 补拉或发送密文消息                              |
-| POST                | `/api/conversations/{id}/messages/{messageId}/recall`                                  | 撤回消息                                        |
-| POST                | `/api/conversations/{id}/read/{sequence}`                                              | 更新已读游标                                    |
-| POST                | `/api/media`                                                                           | 上传聊天密文或朋友圈媒体                        |
-| GET                 | `/api/media/{id}/content`                                                              | 按关系与会话权限获取媒体                        |
-| GET/POST            | `/api/moments`                                                                         | 获取好友动态或发布动态                          |
-| POST/DELETE         | `/api/moments/{id}/like`                                                               | 点赞或取消点赞                                  |
-| POST                | `/api/moments/{id}/comments`                                                           | 发布评论                                        |
-| POST                | `/api/moments/{id}/reports`                                                            | 举报动态                                        |
-| GET                 | `/api/calls`                                                                           | 通话记录                                        |
-| POST                | `/api/calls/listener-token`                                                            | 签发会话绑定的只读 Android 来电监听令牌         |
-| GET                 | `/api/rtc/config`                                                                      | STUN/TURN 与媒体拓扑配置                        |
-| GET/POST            | `/api/push/status`、`/api/push/devices`                                                | 查询推送状态并注册 Android FCM 设备             |
-| DELETE              | `/api/push/devices/{deviceId}`                                                         | 停用当前账号的 Android 推送设备                 |
-| POST                | `/api/push/test`                                                                       | 发送当前账号的 FCM 测试通知                     |
-| GET                 | `/api/p1/capabilities`                                                                 | P1 能力和外部依赖状态                           |
-| GET                 | `/api/admin/overview`                                                                  | 管理后台运营与安全概览                          |
-| GET/POST            | `/api/admin/users`、`/api/admin/users/{account}/status`                                | 用户查询与状态治理                              |
-| POST                | `/api/admin/users/batch`                                                               | 单次批量新增 1–200 个用户                       |
-| GET                 | `/api/admin/users/export`                                                              | 按当前筛选条件导出防公式注入 CSV                |
-| PUT                 | `/api/admin/users/{account}/profile`                                                   | 修改昵称、手机号、邀请码来源和登录 IP 限制      |
-| PUT                 | `/api/admin/users/{account}/security`                                                  | 账号/登录/银行卡锁定、注销、红号、认证和风险值  |
-| PUT                 | `/api/admin/users/{account}/password`                                                  | 重置密码并撤销原设备会话                        |
-| POST/GET            | `/api/admin/users/{account}/duplicate`、`/api/admin/users/{account}/same-ip`           | 复制用户和同 IP 账号检测                        |
-| POST                | `/api/admin/users/{account}/sessions/revoke`                                           | 强制退出目标用户全部设备                        |
-| GET/PUT             | `/api/admin/users/{account}/invite-options`、`/api/admin/users/{account}/invite-code`  | 查询并选择用户的八位邀请码                      |
-| GET/POST            | `/api/admin/invites`、`/api/admin/invites/generate`                                    | 八位注册邀请码查询、生成和维护                  |
-| GET/POST            | `/api/admin/reports`、`/api/admin/reports/{id}/decision`                               | 举报队列与处置                                  |
-| GET                 | `/api/admin/audit`                                                                     | 管理操作审计日志                                |
-| GET/POST/PUT/DELETE | `/api/admin/modules/{module}`                                                          | 角色、公告、客服、群发言和机器人等保留模块 CRUD |
-| GET/POST            | `/api/admin/users/{account}/verifications`、`/api/admin/verifications/{id}/decision`   | 实名与企业认证详情、编辑和审核                  |
-| GET/POST/PUT/DELETE | `/api/admin/fund/subjects`、`/api/admin/fund/adjustments`                              | 额度科目、幂等人工调整和分页记录                |
-| GET                 | `/api/admin/fund/transactions`                                                         | 按账号、科目、方向和金额筛选交易明细            |
-| GET/POST/PUT/DELETE | `/api/admin/operators`、`/api/admin/operators/{account}/totp/*`                        | Admin 管理账号与独立 Google Authenticator 绑定  |
-| GET/POST            | `/api/admin/login-logs/search`、`/api/admin/login-failure-ips/*`                       | 分页登录/离线日志、失败 IP 聚合与处置           |
-| GET/POST            | `/api/admin/feedback`、`/api/admin/feedback/{id}/decision`、`/api/admin/feedback/seen` | 意见反馈查询、批量已查看、回复与删除            |
-| GET/PUT/POST        | `/api/admin/announcements/*`                                                           | 公告查询、编辑、发布、撤回和删除                |
-| GET/POST/PUT        | `/api/admin/chat/conversations`、`/api/admin/chat/groups/*`                            | 会话筛选分页、密文时间线、建群与群资料治理      |
-| GET/POST            | `/api/admin/group-invites`、`/api/group-invites/redeem`                                | 群邀请码生成、撤销和兑换                        |
-| POST                | `/api/admin/automations/{id}/run`                                                      | 人工触发群发言/机器人并生成发送日志             |
-| POST/PUT/DELETE     | `/api/admin/images`、`/api/admin/images/{id}`                                          | 后台图片上传、分类标签编辑和删除                |
-| WebSocket           | `/hubs/chat`                                                                           | 消息、回执、朋友圈更新与 WebRTC 信令            |
-| GET                 | `/api/health`                                                                          | 健康检查与 GeoIP/FCM 提供方状态                 |
+| 方法                | 路径                                                                                   | 用途                                           |
+| ------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| POST                | `/api/auth/register`                                                                   | 邀请码注册                                     |
+| POST                | `/api/auth/login`                                                                      | 密码登录                                       |
+| POST                | `/api/auth/totp`                                                                       | 管理员 TOTP 验证                               |
+| POST                | `/api/auth/refresh`                                                                    | 刷新令牌轮换                                   |
+| POST                | `/api/qr/login/start`                                                                  | 生成一次性登录二维码                           |
+| POST                | `/api/qr/login/scan`                                                                   | 已登录设备扫描登录二维码                       |
+| POST                | `/api/qr/login/approve`                                                                | 确认或拒绝新设备登录                           |
+| POST                | `/api/qr/login/status`                                                                 | 登录页查询扫码状态                             |
+| POST                | `/api/qr/login/exchange`                                                               | 一次性兑换登录会话                             |
+| POST                | `/api/qr/contact/create`                                                               | 生成个人名片二维码                             |
+| POST                | `/api/qr/contact/preview`                                                              | 预览扫码名片                                   |
+| POST                | `/api/qr/contact/redeem`                                                               | 通过名片发起好友申请                           |
+| GET/DELETE          | `/api/devices`                                                                         | 查看或撤销登录设备                             |
+| PUT                 | `/api/users/me/public-key`                                                             | 发布当前设备身份公钥                           |
+| GET                 | `/api/users/{account}/public-key`                                                      | 获取联系人全部设备公钥                         |
+| GET/POST            | `/api/contacts/requests`                                                               | 查询或发起好友申请                             |
+| POST                | `/api/contacts/requests/{id}/accept`                                                   | 接受好友申请                                   |
+| GET                 | `/api/conversations`                                                                   | 会话列表                                       |
+| POST                | `/api/conversations/direct`                                                            | 创建单聊                                       |
+| POST                | `/api/conversations/groups`                                                            | 创建群聊                                       |
+| GET                 | `/api/conversations/{id}/members`                                                      | 获取通话成员                                   |
+| PUT                 | `/api/conversations/{id}/key`                                                          | 为成员设备轮换版本化会话密钥信封               |
+| GET                 | `/api/conversations/{id}/keys/{keyVersion}`                                            | 获取当前设备指定版本的会话密钥信封             |
+| GET/POST            | `/api/conversations/{id}/messages`                                                     | 补拉或发送明文新消息（兼容历史密文）           |
+| POST                | `/api/conversations/{id}/messages/{messageId}/recall`                                  | 撤回消息                                       |
+| POST                | `/api/conversations/{id}/read/{sequence}`                                              | 更新已读游标                                   |
+| POST                | `/api/media`                                                                           | 上传聊天原文件、朋友圈或反馈图片               |
+| GET                 | `/api/media/{id}/content`                                                              | 按关系与会话权限获取媒体                       |
+| GET/POST            | `/api/moments`                                                                         | 获取好友动态或发布动态                         |
+| POST/DELETE         | `/api/moments/{id}/like`                                                               | 点赞或取消点赞                                 |
+| POST                | `/api/moments/{id}/comments`                                                           | 发布评论                                       |
+| POST                | `/api/moments/{id}/reports`                                                            | 举报动态                                       |
+| GET                 | `/api/calls`                                                                           | 通话记录                                       |
+| POST                | `/api/calls/listener-token`                                                            | 签发会话绑定的只读 Android 来电监听令牌        |
+| GET                 | `/api/rtc/config`                                                                      | STUN/TURN 与媒体拓扑配置                       |
+| GET/POST            | `/api/push/status`、`/api/push/devices`                                                | 查询推送状态并注册 Android FCM 设备            |
+| DELETE              | `/api/push/devices/{deviceId}`                                                         | 停用当前账号的 Android 推送设备                |
+| POST                | `/api/push/test`                                                                       | 发送当前账号的 FCM 测试通知                    |
+| GET                 | `/api/p1/capabilities`                                                                 | P1 能力和外部依赖状态                          |
+| GET                 | `/api/admin/overview`                                                                  | 管理后台运营与安全概览                         |
+| GET/POST            | `/api/admin/users`、`/api/admin/users/{account}/status`                                | 用户查询与状态治理                             |
+| POST                | `/api/admin/users/batch`                                                               | 单次批量新增 1–200 个用户                      |
+| GET                 | `/api/admin/users/export`                                                              | 按当前筛选条件导出防公式注入 CSV               |
+| PUT                 | `/api/admin/users/{account}/profile`                                                   | 修改昵称、手机号、邀请码来源和登录 IP 限制     |
+| PUT                 | `/api/admin/users/{account}/security`                                                  | 账号/登录/银行卡锁定、注销、红号、认证和风险值 |
+| PUT                 | `/api/admin/users/{account}/password`                                                  | 重置密码并撤销原设备会话                       |
+| POST/GET            | `/api/admin/users/{account}/duplicate`、`/api/admin/users/{account}/same-ip`           | 复制用户和同 IP 账号检测                       |
+| POST                | `/api/admin/users/{account}/sessions/revoke`                                           | 强制退出目标用户全部设备                       |
+| GET/PUT             | `/api/admin/users/{account}/invite-options`、`/api/admin/users/{account}/invite-code`  | 查询并选择用户的八位邀请码                     |
+| GET/POST            | `/api/admin/invites`、`/api/admin/invites/generate`                                    | 八位注册邀请码查询、生成和维护                 |
+| GET/POST            | `/api/admin/reports`、`/api/admin/reports/{id}/decision`                               | 举报队列与处置                                 |
+| GET                 | `/api/admin/audit`                                                                     | 管理操作审计日志                               |
+| GET/POST/PUT/DELETE | `/api/admin/modules/{module}`                                                          | 公告等模块 CRUD；角色固定五类且只允许更新      |
+| GET/POST            | `/api/admin/users/{account}/verifications`、`/api/admin/verifications/{id}/decision`   | 实名与企业认证详情、编辑和审核                 |
+| GET/POST/PUT/DELETE | `/api/admin/fund/subjects`、`/api/admin/fund/adjustments`                              | 额度科目、幂等人工调整和分页记录               |
+| GET                 | `/api/admin/fund/transactions`                                                         | 按账号、科目、方向和金额筛选交易明细           |
+| GET/POST/PUT/DELETE | `/api/admin/operators`、`/api/admin/operators/{account}/totp/*`                        | Admin 管理账号与独立 Google Authenticator 绑定 |
+| GET/POST            | `/api/admin/login-logs/search`、`/api/admin/login-failure-ips/*`                       | 用户登录日志隔离、失败 IP 聚合与处置           |
+| GET/POST            | `/api/admin/feedback`、`/api/admin/feedback/{id}/decision`、`/api/admin/feedback/seen` | 图文反馈新增、查询、批量已查看与回复           |
+| GET/PUT/POST        | `/api/admin/announcements/*`                                                           | 公告查询、编辑、发布、撤回和删除               |
+| GET/POST/PUT        | `/api/admin/chat/conversations`、`/api/admin/chat/groups/*`                            | 会话筛选、明文新消息/历史密文时间线与群治理    |
+| GET/POST            | `/api/admin/group-invites`、`/api/group-invites/redeem`                                | 群邀请码生成、撤销和兑换                       |
+| POST                | `/api/admin/automations/{id}/run`                                                      | 人工触发群发言/机器人并生成发送日志            |
+| POST/PUT/DELETE     | `/api/admin/images`、`/api/admin/images/{id}`                                          | 后台图片上传、分类标签编辑和删除               |
+| WebSocket           | `/hubs/chat`                                                                           | 消息、回执、朋友圈更新与 WebRTC 信令           |
+| GET                 | `/api/health`                                                                          | 健康检查与 GeoIP/FCM 提供方状态                |
 
 ## 仍需外部基础设施的能力
 
-应用层 P1 已开放，Android FCM 代码链路已完成，但生产上线仍需配置项目方 Firebase 客户端文件与服务账号。iOS APNs 尚未实现；TURN/SFU、短信供应商、视频转码与病毒扫描也需要外部服务。生产环境还应补充多设备密钥验证/轮换、运营审核工作流、MongoDB 副本集、备份恢复、监控告警、安全评审和容量压测。`/api/p1/capabilities` 会明确返回这些外部能力当前是已配置、仅 P2P，还是未配置，避免界面把演示能力误报为生产就绪。
+应用层 P1 已开放，Android FCM 代码链路已完成，但生产上线仍需配置项目方 Firebase 客户端文件与服务账号。iOS APNs 尚未实现；TURN/SFU、短信供应商、视频转码与病毒扫描也需要外部服务。生产环境还应补充明文消息的数据保留与访问审批、MongoDB 副本集、备份恢复、监控告警、安全评审和容量压测。`/api/p1/capabilities` 会明确返回这些外部能力当前是已配置、仅 P2P，还是未配置，避免界面把演示能力误报为生产就绪。
