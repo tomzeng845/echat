@@ -122,3 +122,7 @@ Api/.media/
 # Reproducible Android source/build artifacts kept outside WebDev checkpoints
 assets/icon.png
 releases/*.apk
+releases/*.aab
+releases/*.7z
+releases/*.pem
+releases/*password*.txt

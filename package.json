@@ -9,6 +9,7 @@
     "build:android:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_ANDROID_API_URL:-https://echatapp-favrlscm.manus.space} vite build",
     "android:sync": "pnpm build:android:web && cap sync android",
     "android:apk": "pnpm android:sync && cd android && ./gradlew assembleDebug",
+    "android:release": "bash scripts/android-release.sh",
     "start": "dotnet dist/dotnet/EChat.Api.dll",
     "check": "tsc --noEmit && dotnet build Api/EChat.Api.csproj --no-restore",
     "format": "prettier --write .",

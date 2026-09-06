@@ -332,3 +332,13 @@ Vitest 新增分类、中文/英文搜索、最近使用去重和本地持久化
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 13 项、xUnit 21 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。15 组遇错即停回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_090_OK`、`ADMIN_090_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`PLAINTEXT_MESSAGES_OK`、`LEGACY_E2EE_COMPAT_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
 
 最终 APK 内置生产 API `https://echatapp-favrlscm.manus.space`。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=18`、`versionName=0.9.0`、最低 API 24、目标 API 36。文件 `EChat-0.9.0-debug.apk` 的 SHA-256 为 `5cb6916233d20074247c62ead3af9916749a315063c7c9f7d9980878049c9356`。
+
+## 2026-09-06 Android 0.9.0 正式签名 AAB/APK
+
+本轮为 `com.echat.app` 新建独立 Android 发布身份：PKCS12 keystore、RSA 4096 位私钥、`SHA256withRSA`，别名为 `echat_release`，证书有效期从 2026-09-06 至 2054-01-22。证书 SHA-256 为 `c7e9b9bdd7c3ce714de27e224d5fd947df95d151946be6a43c4ad5b870f3c898`。私钥与签名凭据没有写入项目；二者已放入 AES-256、文件名加密的 `EChat-Android-signing-backup.7z`，解压密码保存为独立文件，归档完整性测试通过。
+
+Gradle release 签名只读取 `ECHAT_ANDROID_KEYSTORE`、`ECHAT_ANDROID_STORE_PASSWORD`、`ECHAT_ANDROID_KEY_ALIAS` 和 `ECHAT_ANDROID_KEY_PASSWORD`。缺少变量时，`scripts/android-release.sh` 以退出码 2 明确失败。完整发布命令执行 Android Web 资源同步、`testReleaseUnitTest`、`lintRelease`、`bundleRelease` 与 `assembleRelease`，随后自动验证产物并生成 SHA-256 清单。
+
+`EChat-0.9.0-release.apk` 的 SHA-256 为 `0120960097b1dfb46a30e711ef28742f4295866b85cd8851193f81ca26004e5c`；APK Signature Scheme v2 和 v3 均通过，16 KB zipalign 通过。`EChat-0.9.0-release.aab` 的 SHA-256 为 `6e9c9fd103fcf6c7c23b15023bead603a8a77bc9e3cd48431601d50080320302`；AAB JAR 签名通过，并确认与 APK 使用同一证书。Google 官方 bundletool 1.18.1 `validate` 成功，并从 AAB 生成可验证的通用 APK。两个产物均为 `versionName=0.9.0`、`versionCode=18`、最低 API 24、目标 API 36，并连接 `https://echatapp-favrlscm.manus.space`。
+
+此前 debug APK 使用 Android SDK 调试证书，不能被本次正式证书直接覆盖。设备首次切换正式版时必须先卸载 debug 版；从本次正式版开始，后续构建必须永久复用本轮发布密钥并递增 `versionCode`。正式签名不自动启用 Firebase；当前构建仍未包含项目方 `google-services.json`，系统进程被完全终止后的可靠普通消息推送仍需后续配置 FCM。

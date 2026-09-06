@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+def releaseKeystorePath = System.getenv('ECHAT_ANDROID_KEYSTORE')
+def releaseStorePassword = System.getenv('ECHAT_ANDROID_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ECHAT_ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ECHAT_ANDROID_KEY_PASSWORD')
+def releaseSigningConfigured = [releaseKeystorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it }
+def releaseTaskRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+
+if (releaseTaskRequested && !releaseSigningConfigured) {
+    throw new GradleException('Release signing requires ECHAT_ANDROID_KEYSTORE, ECHAT_ANDROID_STORE_PASSWORD, ECHAT_ANDROID_KEY_ALIAS and ECHAT_ANDROID_KEY_PASSWORD.')
+}
+
 android {
     namespace = "com.echat.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +27,25 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                storeType 'PKCS12'
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

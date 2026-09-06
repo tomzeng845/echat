@@ -1,0 +1,16 @@
+EChat Android signed release
+Application ID: com.echat.app
+Version name: 0.9.0
+Version code: 18
+Minimum SDK: 24
+Target SDK: 36
+Signing alias: echat_release
+Signing certificate SHA-256: c7e9b9bdd7c3ce714de27e224d5fd947df95d151946be6a43c4ad5b870f3c898
+APK: EChat-0.9.0-release.apk
+AAB: EChat-0.9.0-release.aab
+Checksums: EChat-0.9.0-release.sha256
+APK alignment: 16 KB verified
+APK signature: v2/v3 verified by apksigner
+AAB signature: verified by jarsigner (self-signed Android release certificate)
+AAB/APK certificate match: verified
+API base URL: https://echatapp-favrlscm.manus.space

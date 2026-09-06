@@ -123,9 +123,18 @@ pnpm android:sync
 
 # 生成测试用 debug APK
 pnpm android:apk
+
+# 正式签名变量必须由密码管理器或 CI Secret 注入
+export ECHAT_ANDROID_KEYSTORE='/secure/path/echat-release.jks'
+export ECHAT_ANDROID_STORE_PASSWORD='***'
+export ECHAT_ANDROID_KEY_ALIAS='echat_release'
+export ECHAT_ANDROID_KEY_PASSWORD='***'
+
+# 生成并校验正式 AAB 与 APK
+pnpm android:release
 ```
 
-debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`；本轮已同时复制为 `releases/EChat-0.9.0-debug.apk` 供直接安装测试。正式发布前应在 Android Studio 配置独立签名并生成 release AAB/APK，不能使用 debug 签名。
+debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。正式构建输出 `releases/EChat-0.9.0-release.apk` 和 `releases/EChat-0.9.0-release.aab`；APK 使用独立 RSA 4096 位发布证书并通过 v2/v3 签名和 16 KB 对齐验证，AAB 已通过 Google bundletool 校验。此前安装的 debug 版证书不同，首次切换正式版必须先卸载 debug 版；之后只要持续使用同一发布密钥并递增 `versionCode` 即可覆盖升级。完整密钥保管、商店发布和校验说明见 `android-release-signing.md`。
 
 Android 13 及以上会在登录后请求系统通知权限，用于 FCM 或本地后台通知。0.8.1 修复了缺少 `google-services.json` 时登录后自动调用 Firebase、导致部分手机闪退的问题：未配置时完全跳过 FCM 初始化。扫码只请求摄像头，语音录制只请求麦克风，视频通话请求摄像头和麦克风。Capacitor System Bars 把正确的 display cutout、状态栏和底部手势/三键导航栏 inset 注入 CSS；根布局、聊天发送栏和移动底部菜单均在安全区内显示，不会与刘海或系统菜单重叠。
 

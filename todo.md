@@ -1,5 +1,21 @@
 # E聊开发跟踪
 
+## Android 0.9.0 正式签名发布
+
+- [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥
+- [x] 发布密钥和凭据打包为 AES-256 加密备份，密码单独保存
+- [x] Gradle 仅从环境变量读取 keystore、别名和密码
+- [x] 缺少任何签名变量时 release 构建立即失败，不回退为 debug 签名
+- [x] 增加 `pnpm android:release` 可重复构建命令
+- [x] 执行 `testReleaseUnitTest`、`lintRelease`、`bundleRelease` 和 `assembleRelease`
+- [x] 生成 `EChat-0.9.0-release.apk` 和 `EChat-0.9.0-release.aab`
+- [x] APK v2/v3 签名、RSA 4096 位证书和 16 KB 对齐验证通过
+- [x] AAB JAR 签名和 APK/AAB 同证书验证通过
+- [x] Google bundletool 1.18.1 `validate` 和通用 APK 生成通过
+- [x] 包名 `com.echat.app`、版本 `0.9.0(18)`、API 24–36 验证通过
+- [x] 生成 SHA-256 校验清单、发布证书和发布信息摘要
+- [x] 文档记录 debug 转正式版需先卸载、密钥永久备份和 Google Play 发布步骤
+
 ## E聊 0.9.0 后台文档功能改造
 
 - [x] 意见反馈页面增加“新增”按钮和文字、联系方式、多图片表单
