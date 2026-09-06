@@ -481,6 +481,7 @@ function Messenger({
   const [showGroup, setShowGroup] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
+  const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const [identityReady, setIdentityReady] = useState(false);
@@ -1492,6 +1493,18 @@ function Messenger({
                             @{contact.user.account}
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          title="查看资料"
+                          aria-label={`查看${contact.user.displayName}的资料`}
+                          onClick={event => {
+                            event.stopPropagation();
+                            setProfileUser(contact.user);
+                          }}
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-teal-50 hover:text-teal-600"
+                        >
+                          <CircleUserRound size={17} />
+                        </button>
                         <span className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 md:hidden">
                           发消息
                         </span>
@@ -1551,7 +1564,6 @@ function Messenger({
                   </h2>
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600">
                     <MessageCircleMore size={11} />
-                    明文消息 ·{" "}
                     {selected.type === "Group"
                       ? `${selected.memberCount} 位成员`
                       : "在线"}
@@ -1581,11 +1593,6 @@ function Messenger({
               </header>
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
-                  <div className="mb-5 flex items-center justify-center">
-                    <span className="rounded-full bg-slate-200/70 px-3 py-1 text-[11px] text-slate-500">
-                      新消息以明文保存；历史密文仍保持兼容读取
-                    </span>
-                  </div>
                   {messages.length ? (
                     messages.map(message => (
                       <MessageBubble
@@ -1697,6 +1704,12 @@ function Messenger({
         user={user}
         connection={realtimeConnection}
       />
+      {profileUser && (
+        <UserProfileDialog
+          user={profileUser}
+          onClose={() => setProfileUser(null)}
+        />
+      )}
       {showScanner && (
         <QrScanFlow
           onClose={() => setShowScanner(false)}
@@ -1854,6 +1867,14 @@ function MessageBubble({
     message.kind === "Video" ||
     message.kind === "File";
   const emoji = message.kind === "Emoji" && message.state === "Accepted";
+  if (message.kind === "System")
+    return (
+      <div className="mb-5 flex justify-center">
+        <span className="rounded-full bg-slate-200/70 px-3 py-1.5 text-[11px] text-slate-500">
+          {message.plaintext}
+        </span>
+      </div>
+    );
   return (
     <div
       className={`group mb-4 flex ${mine ? "justify-end" : "justify-start"}`}
@@ -1909,6 +1930,66 @@ function EmptyState({
       </div>
       <p className="mt-4 text-sm font-semibold text-slate-600">{title}</p>
       <p className="mt-1 text-xs leading-5 text-slate-400">{text}</p>
+    </div>
+  );
+}
+function UserProfileDialog({
+  user,
+  onClose,
+}: {
+  user: User;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="好友个人资料"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h2 className="text-base font-semibold text-slate-800">个人资料</h2>
+          <button
+            type="button"
+            aria-label="关闭个人资料"
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <div className="px-6 py-7 text-center">
+          <div className="flex justify-center">
+            <Avatar name={user.displayName} src={user.avatarUrl} size="lg" />
+          </div>
+          <h3 className="mt-3 text-lg font-semibold text-slate-800">
+            {user.displayName}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">@{user.account}</p>
+          <p className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+            {user.signature || "这个人很安静，还没有填写个性签名"}
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-left text-xs">
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+              <p className="text-slate-400">地区</p>
+              <p className="mt-1 truncate font-medium text-slate-700">
+                {user.region || "未设置"}
+              </p>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+              <p className="text-slate-400">状态</p>
+              <p className="mt-1 font-medium text-emerald-600">
+                {user.status === "Active" ? "正常" : user.status}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

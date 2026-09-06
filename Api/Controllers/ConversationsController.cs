@@ -46,9 +46,22 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var item = existing ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = userId, Members = [new() { UserId = userId }, new() { UserId = peer.Id }], KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
         if (item.KeyVersion < 1) item.KeyVersion = 1;
         if (created)
+        {
+            var welcome = await repository.AddMessageIdempotentlyAsync(new ChatMessage
+            {
+                ClientMessageId = $"friend-welcome:{item.Id}",
+                ConversationId = item.Id,
+                SenderId = userId,
+                Kind = MessageKind.System,
+                Algorithm = "PLAINTEXT",
+                KeyVersion = 0,
+                Content = "我们已经是好友了，现在可以开始聊天吧"
+            }, ct);
+            _ = BroadcastMessageAsync(item.Id, View(welcome), item.Members.Select(member => member.UserId).ToList());
             await Task.WhenAll(
                 hub.Clients.Group($"user:{userId}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct),
                 hub.Clients.Group($"user:{peer.Id}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct));
+        }
         var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
         return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, item.KeyVersion, keyEnvelope));
     }

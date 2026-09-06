@@ -67,6 +67,8 @@ try {
   });
   const receivedConversationEvent = await conversationEvent;
   if (receivedConversationEvent.conversationId !== conversation.id || receivedConversationEvent.action !== "created") throw new Error("direct conversation event mismatch");
+  const welcomeMessages = await request(`/api/conversations/${conversation.id}/messages?after=0&limit=20`, bob.accessToken);
+  if (!welcomeMessages.some(item => item.kind === "System" && item.content === "我们已经是好友了，现在可以开始聊天吧")) throw new Error("friend welcome system message missing");
   const receivedMessage = once(bobHub, "message.created");
   const sentMessage = await request(`/api/conversations/${conversation.id}/messages`, alice.accessToken, {
     method: "POST",
