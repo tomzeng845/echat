@@ -6,7 +6,7 @@
 
 > App Store Connect 分发 IPA 不能像企业包或 Ad Hoc 包一样直接安装。生成后可作为受控发布产物下载、校验，并在 App Store Connect 应用记录准备完成后上传 TestFlight。
 
-**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建；证书/profile Secrets 与首次 workflow 运行待完成。
+**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建。首次 workflow `34024319750` 已成功完成，生成 `EChat-iOS-0.9.0-181.ipa`；本地最终副本为 `releases/EChat-0.9.0-TestFlight.ipa`。
 
 ## 构建路线与安全边界
 
@@ -22,6 +22,18 @@
 | 签名方式        | Manual，Apple Distribution `.p12` + App Store Connect `.mobileprovision`   |
 | Artifact 保存   | 14 天，仅仓库有权用户可下载                                                |
 | TestFlight 上传 | 不执行；生成 IPA 后另行上传                                                |
+
+首次成功构建的实际值如下：
+
+| 项目          | 值                                                                 |
+| ------------- | ------------------------------------------------------------------ |
+| GitHub run ID | `34024319750`                                                      |
+| 版本 / Build  | `0.9.0 (181)`                                                      |
+| 生成时间 UTC  | `2026-09-06T09:21:32Z`                                             |
+| IPA 大小      | `6,957,995 bytes`                                                  |
+| SHA-256       | `e99ffe0e7b4d658eb9cbc7ef83915cc161fa5dd1ac947b334573b7e2f3eb044d` |
+
+下载后已再次解析 IPA：Bundle ID、版本、build、iOS 15 最低版本、Mach-O 主程序、隐私清单、三类提示音、Assets.car 与内嵌 profile 均正确；内嵌 profile UUID 为 `be3ef7da-d200-4d97-b5df-41cebabdca07`，`aps-environment=production`。短期 GitHub PAT 与两次临时 Deploy Key 已撤销，本地临时私钥、PKCS#12、密码和 Base64 文本已删除；GitHub Environment Secrets 保留供后续可重复构建。
 
 工作流仅请求 `contents: read`，不会向仓库写代码。Apple 证书、密码和 provisioning profile 只从 GitHub Environment Secrets 读取，写入 runner 临时目录和临时 Keychain，结束时执行清理。GitHub-hosted runner 随任务销毁，签名材料不会进入 artifact。
 

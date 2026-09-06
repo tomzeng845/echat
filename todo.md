@@ -20,14 +20,15 @@
 - [x] workflow 校验 Team、Bundle ID、production APNs entitlement、codesign、版本和 Build，并上传 14 天私有 artifact
 - [x] 提供 `ios-production` Environment Secrets、`.p12`/profile Base64、触发、下载和 SHA-256 说明
 - [x] 用户授权 GitHub 连接器并创建私有仓库 `tomzeng845/echat`，源码已推送到 `main`
-- [ ] 在私有仓库配置 Apple Distribution `.p12`、密码、Team ID 和 App Store Connect profile Secrets
-- [ ] 运行 `Build signed iOS IPA` workflow 并下载验证 `.ipa` 与 SHA-256
+- [x] 在私有仓库配置 Apple Distribution `.p12`、密码、Team ID 和 App Store Connect profile Environment Secrets
+- [x] 运行 `Build signed iOS IPA` workflow `34024319750`，下载并验证 `0.9.0 (181)` IPA 与 SHA-256
 - [x] 为 Team `PPY8H6QWB5` 注册 `com.tomzeng845.echat` 显式 App ID 并开启 Push Notifications
 - [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
 - [ ] 创建 APNs Key 并配置服务端生产秘密
 - [ ] 在 App Store Connect 创建应用记录、上传 API Key、隐私信息、隐私政策和 Beta 元数据
 - [ ] 由账号持有人审查 AES-GCM/RSA-OAEP、第三方 SDK 与发布地区后完成 Apple 出口合规问卷，再决定 `ITSAppUsesNonExemptEncryption`
-- [ ] 在 macOS Xcode 26 编译签名并以真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风
+- [x] 在 GitHub-hosted macOS 26 / Xcode 26 完成 Manual archive、export、codesign、profile、Bundle ID、版本与资源验证
+- [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风
 - [ ] 执行 `pnpm ios:testflight`，等待 Apple 处理并分配内部测试员
 - [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收
 - [ ] 如需外部测试，提交首次 Beta App Review

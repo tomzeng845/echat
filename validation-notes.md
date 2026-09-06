@@ -355,19 +355,19 @@ Apple 隐私清单不再错误声明“未收集数据”。当前声明 E聊发
 
 `pnpm check`、`pnpm test` 和 `pnpm build` 全部通过。Vitest 为 15/15，其中 iOS 专项覆盖普通 APNs 与 PushKit token 分平台上传、CallKit `answerRequested` Web 事件和 iOS 不调度 Android 本地通知；xUnit 为 25/25，其中 APNs 专项覆盖 JWT、payload、production VoIP endpoint、topic、push type、即时过期、collapse ID、主叫资料、多平台 token 共存与停用。ASP.NET Core 编译为 0 warning、0 error，React/Vite 和 .NET Release publish 成功。
 
-`pnpm ios:sync` 成功，Capacitor 检出 App、Local Notifications 与 Push Notifications 三个 iOS 插件，且同步前后的 AppDelegate、SceneDelegate、entitlement 和隐私清单哈希一致。`scripts/validate-ios-project.py` 返回 `IOS_STATIC_OK bundle=com.echat.app version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready`，验证 plist、PBX 资源引用、APNs Debug/Release 环境、版本、图标、PCM 铃声、隐私数据类型和仓库中无 Apple 私钥。
+`pnpm ios:sync` 成功，Capacitor 检出 App、Local Notifications 与 Push Notifications 三个 iOS 插件，且同步前后的 AppDelegate、SceneDelegate、entitlement 和隐私清单哈希一致。Bundle ID 迁移后，`scripts/validate-ios-project.py` 返回 `IOS_STATIC_OK bundle=com.tomzeng845.echat version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready`，验证 plist、PBX 资源引用、APNs Debug/Release 环境、版本、图标、PCM 铃声、隐私数据类型和仓库中无 Apple 私钥。
 
 Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返回 `BUILD SUCCESSFUL`。推送 API 分别返回 `ANDROID_PUSH_OK ... registered=1 disabled=1` 和 `IOS_PUSH_API_OK ... registered=2 platforms=ios,ios-voip disabled=2 ios_enabled=false`；`ios_enabled=false` 是因为当前服务端没有注入 Apple Key，属于安全降级预期。健康接口保持版本 0.9.0，并新增 `androidEnabled=false` 与 `iosEnabled=false`。
 
 业务回归最终返回 `E2E_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`P1_QR_OK`、`PLAINTEXT_MESSAGES_OK`、`LEGACY_E2EE_COMPAT_OK`、`CALL_SIGNAL_OK`、`ANDROID_CALL_LISTENER_OK`、`ANDROID_CALL_AUDIO_OK`、`ANDROID_SAFE_AREA_OK`、`ADMIN_REQUIREMENTS_090_OK`、`ADMIN_090_OK` 和 `GEOIP_OK`。后台 UI 脚本依赖后台需求脚本创建的明文会话验收数据，按 `admin-requirements-smoke` 后执行即通过全部 24 页、菜单锚定、空白关闭与 1440×900/390×844 布局检查。
 
-### 尚未验证的 Apple 侧边界
+### 初始阶段尚未验证的 Apple 侧边界
 
-当前 Linux 环境没有 `xcodebuild` 或 Swift 编译器，也没有 Apple Developer/App Store Connect 凭据和 macOS runner。`scripts/ios-testflight.sh` 的 shell 语法、输入门控和 Linux 安全阻断已验证，但 Xcode Archive、Apple 签名、IPA、`altool` 上传、App Store Connect 处理、TestFlight 安装、真实 APNs/PushKit/CallKit 和 iPhone 相机/麦克风仍未执行。只有在用户提供 Apple Team/App ID、APNs Key、上传 API Key、安全的 macOS Xcode 26 构建机和测试员后，才能完成并宣称“通过 TestFlight 测试”。
+本节记录源码初始就绪时的环境边界；后续 GitHub-hosted macOS 26 已完成 Xcode Archive、Apple 签名和 IPA 导出，详见本文末尾。`altool` 上传、App Store Connect 处理、TestFlight 安装、真实 APNs/PushKit/CallKit 和 iPhone 相机/麦克风仍未执行。
 
 ### 2026-09-06 Apple 配置指南独立审校修正
 
-独立审校确认 APNs 普通 topic `com.echat.app`、VoIP topic `com.echat.app.voip`、Debug sandbox/Release production 和 PushKit/CallKit 方向正确，同时发现预设出口合规结论、自动/手工签名混用、上传 Key 与 provisioning 权限混淆、隐私政策缺失及外部 TestFlight 步骤不完整等风险。现已移除 `Info.plist` 中未经账号持有人审查的 `ITSAppUsesNonExemptEncryption=false`，静态检查改为要求该值保持未设置，直至完成 AES-GCM/RSA-OAEP、第三方 SDK、发布地区和 Apple 问卷审查。指南已把 Automatic 与 Manual 定义为互斥路线，明确现有脚本只支持 Automatic，拆分上传角色与 Developer Portal 权限，加入隐私政策硬门槛、生产数据盘点、外部 TestFlight Review 和 Organizer/Transporter 回退流程。TestFlight 脚本默认 build number 精度由分钟提升到秒，但文档仍要求使用单调递增 CI 编号或人工确认未占用。
+独立审校确认 APNs 普通 topic 与 VoIP 派生 topic、Debug sandbox/Release production 和 PushKit/CallKit 方向正确，同时发现预设出口合规结论、自动/手工签名混用、上传 Key 与 provisioning 权限混淆、隐私政策缺失及外部 TestFlight 步骤不完整等风险。Apple 注册后，正式普通 topic 为 `com.tomzeng845.echat`，VoIP topic 为 `com.tomzeng845.echat.voip`。现已移除 `Info.plist` 中未经账号持有人审查的 `ITSAppUsesNonExemptEncryption=false`，静态检查改为要求该值保持未设置，直至完成 AES-GCM/RSA-OAEP、第三方 SDK、发布地区和 Apple 问卷审查。指南已把 Automatic 与 Manual 定义为互斥路线，明确现有脚本只支持 Automatic，拆分上传角色与 Developer Portal 权限，加入隐私政策硬门槛、生产数据盘点、外部 TestFlight Review 和 Organizer/Transporter 回退流程。TestFlight 脚本默认 build number 精度由分钟提升到秒，但文档仍要求使用单调递增 CI 编号或人工确认未占用。
 
 ## 2026-09-06 GitHub macOS 26 签名 IPA 工作流
 
@@ -375,7 +375,7 @@ Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返
 
 工作流在签名前校验 Team ID、独立 App ID Prefix 后的精确 Bundle ID、production APNs、`get-task-allow=false`、无 `ProvisionedDevices`/`ProvisionsAllDevices`、UUID 与过期时间，从而拒绝 Development、Ad Hoc、Enterprise、过期或错误 Bundle 的 profile。导出后解包 IPA，执行 `codesign --verify`，再次验证内嵌 profile、Bundle ID、版本与 build，并生成可在 artifact 根目录直接验证的 SHA-256。签名秘密只在校验、证书导入和 archive 三个必要步骤可见；证书、profile、Keychain、Archive 和解包目录在 `always()` 清理步骤删除。三个 GitHub 官方 Action 固定到经核验的 v6/v7 commit SHA，artifact 保存 14 天且不自动上传 TestFlight。
 
-本地验证使用 actionlint 1.7.12 与 ShellCheck 0.9.0，GitHub Actions YAML、表达式和内嵌 Bash 均无告警。`scripts/validate-apple-profile.py` 的合成测试确认：旧账号 App ID Prefix 不等于 Team ID 时仍接受正确 App Store profile，并拒绝 Ad Hoc、过期及错误 Bundle profile。`pnpm ios:validate`、`pnpm check`、Vitest 15 项和 xUnit 25 项通过，项目内未发现 `.p8`、`.p12`、`.mobileprovision`、`.cer` 或 `.ipa`。当前 GitHub connector 启用建议未获用户确认，且尚未提供 Apple Distribution 证书/profile Secrets，因此仍未创建远程私有仓库、运行 macOS runner 或实际生成 IPA。
+本地验证使用 actionlint 1.7.12 与 ShellCheck 0.9.0，GitHub Actions YAML、表达式和内嵌 Bash 均无告警。`scripts/validate-apple-profile.py` 的合成测试确认：旧账号 App ID Prefix 不等于 Team ID 时仍接受正确 App Store profile，并拒绝 Ad Hoc、过期及错误 Bundle profile。`pnpm ios:validate`、`pnpm check`、Vitest 15 项和 xUnit 25 项通过。此处记录的是 workflow 首次实现时的状态；后续私有仓库、Secrets、macOS runner 和 IPA 已完成，结果见下文。
 
 ## 2026-09-06 Apple 资源实配与 iOS Bundle ID 迁移
 
@@ -385,4 +385,14 @@ Apple Developer Program 续订已生效，Team 为 `PPY8H6QWB5`。原计划的 `
 
 Capacitor 配置现在通过 `ECHAT_CAPACITOR_APP_ID` 支持平台独立标识：`pnpm ios:sync` 固定生成 `com.tomzeng845.echat`，普通 `pnpm android:sync` 继续生成 `com.echat.app`。Xcode Debug/Release、TestFlight 脚本、GitHub workflow、APNs 测试、静态校验和发布文档已同步迁移。`pnpm ios:sync`、`pnpm ios:validate`、`pnpm android:sync`、TypeScript/.NET 编译、Vitest、xUnit 和生产构建均通过；同步后的两个原生 `capacitor.config.json` 分别包含正确平台标识。
 
-当前仍未生成 IPA。下一步是将临时 `.p12`、密码和 production profile 写入私有仓库 `tomzeng845/echat` 的 `ios-production` Environment Secrets，推送本次 Bundle ID 迁移检查点，然后运行 macOS 26 workflow。
+私有仓库 `tomzeng845/echat` 已创建 `ios-production` Environment，限制为 `main`，并安全配置 Team、PKCS#12、密码和 production profile Secrets。检查点 `9d7a476600288dfcde481910fb24137ba6b80182` 已推送至 `main`。
+
+## 2026-09-06 签名 IPA 实际构建结果
+
+GitHub-hosted macOS 26 workflow run `34024319750`、attempt 1 在 2 分 6 秒内成功。证书/profile Secret 校验、依赖安装、Capacitor iOS sync、Swift Package resolve、Manual archive/export、codesign、内嵌 profile、Bundle ID、版本/build、artifact 上传、构建摘要和 `always()` 签名清理全部通过。构建时间为 `2026-09-06T09:21:32Z`，API 为 `https://echatapp-favrlscm.manus.space`。
+
+下载的 `EChat-iOS-0.9.0-181.ipa` 和最终副本 `releases/EChat-0.9.0-TestFlight.ipa` 均通过 SHA-256 校验；最终文件大小为 6,957,995 bytes，SHA-256 为 `e99ffe0e7b4d658eb9cbc7ef83915cc161fa5dd1ac947b334573b7e2f3eb044d`。二次解包验证确认 Bundle ID `com.tomzeng845.echat`、版本 `0.9.0`、build `181`、最低 iOS `15.0`、Mach-O 主程序、`PrivacyInfo.xcprivacy`、三类提示音、`Assets.car` 和内嵌 profile 均存在；包内未发现 `.p8`、`.p12`、`.key` 或 `.pem`。
+
+内嵌 profile 再次通过项目校验器：UUID `be3ef7da-d200-4d97-b5df-41cebabdca07`，application identifier `PPY8H6QWB5.com.tomzeng845.echat`，`aps-environment=production`，到期 `2027-09-06T08:27:52Z`。短期 GitHub PAT 与两次临时 Deploy Key 均已从 GitHub 撤销；本地 PAT、Distribution 私钥、CSR、PKCS#12、密码和三个 Base64 Secret 文本已删除。GitHub Environment Secrets 保留供后续可重复构建。
+
+该 IPA 尚未上传 App Store Connect。TestFlight 上传、Apple 处理、出口合规回答、内部测试员分配、APNs production Key 和至少两台 iPhone 的消息/通话真机验收仍为明确待办。

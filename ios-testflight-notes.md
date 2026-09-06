@@ -4,7 +4,7 @@
 
 E聊 iOS 客户端已基于 Capacitor 8 生成 Xcode 工程，Bundle ID 默认为 `com.tomzeng845.echat`，版本为 `0.9.0 (18)`，最低支持 iOS 15。普通消息、好友申请和测试通知使用 APNs alert；真实音视频来电使用 PushKit VoIP push，并立即交给 CallKit 显示系统来电界面。相机、麦克风、通知、后台音频、刘海屏和 Home Indicator 安全区已经接入应用代码。
 
-> **当前不是“已上传 TestFlight”。** Apple Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 并开启 Push Notifications，Apple Distribution 证书和 production profile 已验证；私有 GitHub 仓库和 macOS 26 workflow 已就绪。签名 Secrets、实际 workflow Archive、App Store Connect 应用记录、上传和 iPhone 真机验收仍未完成。
+> **签名 IPA 已生成，但尚未上传 TestFlight。** Apple Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 并开启 Push Notifications，Apple Distribution 证书和 production profile 已验证。GitHub macOS 26 workflow `34024319750` 已成功完成 `0.9.0 (181)` Archive/export。App Store Connect 应用记录、上传 API Key、上传和 iPhone 真机验收仍未完成。
 
 ## 实现映射
 
@@ -45,11 +45,11 @@ Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，
 
 ## 构建与上传方案
 
-| 方案                                | 自动化程度 | 适用场景                            | 当前状态                                           |
-| ----------------------------------- | ---------- | ----------------------------------- | -------------------------------------------------- |
-| 受控 Mac 执行 `pnpm ios:testflight` | 高         | 有固定 Mac、希望可重复 Archive/上传 | 脚本已完成；缺 Apple 凭据和 Mac 实跑               |
-| Xcode Organizer 或 Transporter      | 中         | 首次签名排错、人工选择 Team/profile | 可作为上传脚本回退方案                             |
-| GitHub Actions macOS runner         | 高         | 已有私有 GitHub 仓库并希望 CI 发布  | 私有仓库、workflow 与环境已建；签名 Secrets 待写入 |
+| 方案                                | 自动化程度 | 适用场景                            | 当前状态                                      |
+| ----------------------------------- | ---------- | ----------------------------------- | --------------------------------------------- |
+| 受控 Mac 执行 `pnpm ios:testflight` | 高         | 有固定 Mac、希望可重复 Archive/上传 | 脚本已完成；缺 Apple 凭据和 Mac 实跑          |
+| Xcode Organizer 或 Transporter      | 中         | 首次签名排错、人工选择 Team/profile | 可作为上传脚本回退方案                        |
+| GitHub Actions macOS runner         | 高         | 已有私有 GitHub 仓库并希望 CI 发布  | Run `34024319750` 成功；签名 IPA 已下载并校验 |
 
 推荐先在受控 Mac 上用 Xcode 打开一次工程，确认 Team、Bundle ID、capability 与真机 PushKit/CallKit，再使用脚本重复上传：
 
