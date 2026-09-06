@@ -414,3 +414,9 @@ GitHub-hosted macOS 26 / Xcode 26.6 workflow run `34028293524` 成功完成证�
 App Store Connect 已处理 Build 181。账号持有人确认应用使用标准 AES-GCM/RSA-OAEP/SHA-256 加密作为 Apple 操作系统加密能力的补充或替代，并确认当前不在法国分发；Apple 接受答案并移除 Missing Export Compliance。随后创建自动分发的 `E聊内部测试` 组，Build 181 已加入，账号持有人状态为“已邀请”。
 
 用于写入 GitHub Secrets 和监控本次上传的一天期 fine-grained token 已永久撤销，GitHub 显示无 fine-grained token；本地 token、Token 页面 HTML 和 `.p8` 附件均已删除。仍待完成：创建并部署 APNs production Key、在 iPhone 接受 TestFlight 邀请、至少两台真机完成普通推送与 PushKit/CallKit/音视频验收，以及正式发布前完成 App Privacy、隐私政策和需要时的外部 Beta App Review。
+
+## 2026-09-06 APNs Production Key 验证结果
+
+Apple Developer 已创建 Production Team Scoped APNs Key `35STBCJUCJ`，覆盖 E聊普通 alert topic `com.tomzeng845.echat` 与 VoIP topic `com.tomzeng845.echat.voip`。用户上传的 `AuthKey_35STBCJUCJ.p8` 未写入仓库；在隔离的本地 API 进程中以完整 PEM 注入后，新增 Vitest `server/apns-production-secret.test.ts` 通过，健康响应确认 `version=0.9.0`、`push.enabled=true`、`push.iosEnabled=true`，provider 为 Apple Push Notification service。
+
+尝试通过 WebDev Secrets 更新正式 `APNS_PRIVATE_KEY` 时，当前服务仍收到无 PEM 头尾的自动生成/旧值，连续健康测试显示 `iosEnabled=false`；WebDev Secrets 的最新更新请求未能保存用户上传文件内容。正式 API 因此没有被误报为 APNs 已启用，也没有把私钥写入代码、GitHub 或日志。其余 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_BUNDLE_ID` 和 `APNS_USE_SANDBOX=false` 配置值已确认；剩余阻断是安全注入正确 p8 私钥后重启服务并再次通过该测试。

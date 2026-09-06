@@ -14,7 +14,7 @@
 - [x] MongoDB/内存仓库支持 Android、iOS alert 与 iOS VoIP token 共存和整设备停用
 - [x] 新增 `pnpm ios:sync`、`pnpm ios:open`、`pnpm ios:testflight` 与静态检查脚本
 - [x] Vitest 15 项、xUnit 25 项、生产构建、iOS sync、Android Gradle 和全量业务回归通过
-- [x] 确认当前 Linux 环境无 Xcode、Apple 凭据或 macOS runner，未误报为已上传 TestFlight
+- [x] 初始 Linux 环境检查确认无 Xcode；随后改用 GitHub-hosted macOS runner 完成签名与上传
 - [x] 提供 App ID、App Store Connect 记录、自动/手工签名、描述文件、APNs Key、上传 Key、隐私和 TestFlight 的详细操作指南
 - [x] 新增 GitHub-hosted `macos-26` 手工签名 workflow，生成并校验 App Store Connect 分发 IPA
 - [x] workflow 校验 Team、Bundle ID、production APNs entitlement、codesign、版本和 Build，并上传 14 天私有 artifact
@@ -25,7 +25,8 @@
 - [x] 为 Team `PPY8H6QWB5` 注册 `com.tomzeng845.echat` 显式 App ID 并开启 Push Notifications
 - [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
 - [x] 创建 App Store Connect 记录“E聊即时通讯”，绑定 `com.tomzeng845.echat`，Apple ID `6809145695`
-- [ ] 创建 APNs Key 并配置服务端生产秘密
+- [x] 创建 APNs Production Team Scoped Key `35STBCJUCJ`，并验证用户上传的 p8 可被 OpenSSL/APNs 服务导入
+- [ ] 将正确 APNs p8 安全注入正式服务；当前正式 API 健康字段仍为 `iosEnabled=false`
 - [x] 创建 Developer 角色 App Store Connect Team API Key，并加入 GitHub `ios-production` Environment Secrets
 - [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据
 - [x] 由账号持有人确认标准加密算法并声明当前不在法国分发，完成 Build 181 出口合规问卷
