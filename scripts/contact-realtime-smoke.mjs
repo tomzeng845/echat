@@ -59,7 +59,32 @@ try {
     request("/api/contacts", bob.accessToken),
   ]);
   if (!aliceContacts.some(item => item.user.account === bobAccount) || !bobContacts.some(item => item.user.account === aliceAccount)) throw new Error("contact list did not refresh at source");
-  console.log(`CONTACT_REALTIME_OK request=${created.id} sender=${requestEvent.sender.displayName} contacts=${aliceContacts.length}:${bobContacts.length}`);
+
+  const conversationEvent = once(bobHub, "conversation.updated");
+  const conversation = await request("/api/conversations/direct", alice.accessToken, {
+    method: "POST",
+    body: JSON.stringify({ peerAccount: bobAccount }),
+  });
+  const receivedConversationEvent = await conversationEvent;
+  if (receivedConversationEvent.conversationId !== conversation.id || receivedConversationEvent.action !== "created") throw new Error("direct conversation event mismatch");
+  await bobHub.invoke("JoinConversation", conversation.id);
+
+  const receivedMessage = once(bobHub, "message.created");
+  const sentMessage = await request(`/api/conversations/${conversation.id}/messages`, alice.accessToken, {
+    method: "POST",
+    body: JSON.stringify({
+      clientMessageId: `contact-message-${suffix}`,
+      kind: "Text",
+      content: "加好友后立即发送的消息",
+      ciphertext: "",
+      nonce: "",
+      algorithm: "PLAINTEXT",
+    }),
+  });
+  const messageEvent = await receivedMessage;
+  if (messageEvent.id !== sentMessage.id || messageEvent.content !== "加好友后立即发送的消息") throw new Error("message was not delivered after direct conversation creation");
+
+  console.log(`CONTACT_REALTIME_OK request=${created.id} conversation=${conversation.id} message=${messageEvent.id} sender=${requestEvent.sender.displayName} contacts=${aliceContacts.length}:${bobContacts.length}`);
 } finally {
   await Promise.allSettled([aliceHub.stop(), bobHub.stop()]);
 }

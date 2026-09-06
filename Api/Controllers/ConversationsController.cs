@@ -42,8 +42,13 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var relation = await repository.GetRelationAsync(userId, peer.Id, ct);
         if (relation?.Status != RelationStatus.Friend) return StatusCode(403, new { error = "只有好友可以创建会话" });
         var existing = await repository.FindDirectConversationAsync(userId, peer.Id, ct);
+        var created = existing is null;
         var item = existing ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = userId, Members = [new() { UserId = userId }, new() { UserId = peer.Id }], KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
         if (item.KeyVersion < 1) item.KeyVersion = 1;
+        if (created)
+            await Task.WhenAll(
+                hub.Clients.Group($"user:{userId}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct),
+                hub.Clients.Group($"user:{peer.Id}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct));
         var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
         return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, item.KeyVersion, keyEnvelope));
     }

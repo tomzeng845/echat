@@ -319,7 +319,11 @@ export async function uploadMedia(
 export type RealtimeHandlers = {
   onMessage?: (message: Message) => void;
   onMessageUpdate?: (message: Message) => void;
-  onConversation?: () => void;
+  onConversation?: (event: {
+    conversationId: string;
+    action: string;
+    keyVersion?: number;
+  }) => void;
   onContactRequest?: (event: FriendRequest) => void;
   onContactUpdate?: (event: ContactRealtimeEvent) => void;
   onReceipt?: (event: ReceiptUpdated) => void;

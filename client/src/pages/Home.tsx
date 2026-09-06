@@ -859,7 +859,18 @@ function Messenger({
           );
         }
       },
-      onConversation: () => loadData().catch(() => undefined),
+      onConversation: event => {
+        loadData()
+          .then(() => {
+            if (event?.conversationId)
+              return connectionRef.current?.invoke(
+                "JoinConversation",
+                event.conversationId
+              );
+            return undefined;
+          })
+          .catch(() => undefined);
+      },
       onContactRequest: request => {
         setRequests(current =>
           current.some(item => item.id === request.id)
