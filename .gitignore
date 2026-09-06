@@ -59,6 +59,10 @@ jspm_packages/
 # TypeScript cache
 *.tsbuildinfo
 
+# Python validation cache
+__pycache__/
+*.pyc
+
 # Optional npm cache directory
 .npm
 
@@ -135,3 +139,5 @@ releases/*password*.txt
 releases/*.ipa
 releases/*.ipa.sha256
 releases/*-testflight.json
+releases/*-build.txt
+releases/*-upload.txt

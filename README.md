@@ -202,7 +202,9 @@ export APP_STORE_CONNECT_API_KEY_PATH='/安全目录/AuthKey_xxx.p8'
 pnpm ios:testflight
 ```
 
-发布脚本还支持 `ECHAT_IOS_API_URL`、`ECHAT_IOS_BUNDLE_ID`、`ECHAT_IOS_VERSION` 和唯一的 `ECHAT_IOS_BUILD_NUMBER`。脚本只从环境和项目外文件读取凭据，复制到 Apple CLI 约定目录的临时私钥会在结束时删除；`.p8`、证书、provisioning profile、Archive 和 IPA 不进入源码仓库。推荐在受控 Mac 上执行该脚本；人工 Xcode Organizer/Transporter 是同等可行的低自动化回退方案。若后续改用 GitHub Actions macOS runner，应先建立私有仓库，再把 Apple 凭据放入 GitHub Encrypted Secrets，不能提交到工作流或代码。
+发布脚本还支持 `ECHAT_IOS_API_URL`、`ECHAT_IOS_BUNDLE_ID`、`ECHAT_IOS_VERSION` 和唯一的 `ECHAT_IOS_BUILD_NUMBER`。脚本只从环境和项目外文件读取凭据，复制到 Apple CLI 约定目录的临时私钥会在结束时删除；`.p8`、证书、provisioning profile、Archive 和 IPA 不进入源码仓库。推荐在受控 Mac 上执行该脚本；人工 Xcode Organizer/Transporter 是同等可行的低自动化回退方案。
+
+仓库现在还包含手工触发的 `.github/workflows/ios-ipa.yml`。它固定使用 GitHub-hosted `macos-26`、Apple Distribution `.p12` 和 App Store Connect production provisioning profile，验证 Team、Bundle ID、APNs entitlement、代码签名、版本和 Build 后，把 IPA、SHA-256 与构建元数据保存为 14 天的私有 workflow artifact。该 workflow **只生成 IPA，不自动上传 TestFlight**；凭据必须放入受保护的 `ios-production` Environment Secrets。详见 [GitHub IPA 构建说明](github-ios-ipa.md)。
 
 APNs 服务端另需一把在 Apple Developer 网站创建并允许 APNs 的 Key；它与 App Store Connect 上传 Key 属于两套用途，不应混用。生产/TestFlight 必须关闭 APNs sandbox：
 
@@ -214,7 +216,7 @@ export APNS_PRIVATE_KEY='由秘密管理服务注入的完整 PKCS#8 PEM'
 export APNS_USE_SANDBOX=false
 ```
 
-当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试和双平台设备 API 已通过；**尚未完成的 Apple 侧步骤**是 Xcode 编译签名、首次上传后的处理、内部测试员分配，以及真机通知、相机/麦克风、后台 PushKit/CallKit 接听和双向音视频验收。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [Apple 配置详细指南](apple-app-store-connect-setup-guide.md)、[iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
+当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试、双平台设备 API 和 GitHub IPA workflow 源码已就绪；**尚未完成的 Apple/GitHub 侧步骤**是授权 GitHub 连接、创建私有仓库、配置 Distribution 证书/profile Secrets、运行 macOS 26 Archive，以及后续上传、处理、测试员分配和真机验收。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [GitHub IPA 构建说明](github-ios-ipa.md)、[Apple 配置详细指南](apple-app-store-connect-setup-guide.md)、[iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
 
 App Store Connect 的 App Privacy 必须与 `PrivacyInfo.xcprivacy` 和实际生产数据流一致。E聊会将账号/昵称、可选手机号、好友社交图、消息、照片/视频、语音、其他用户内容、反馈、用户/设备标识、活跃/登录诊断及由 IP 推断的粗略地区发送到服务端并与账号关联，仅用于 App Functionality，不用于跨应用跟踪。消息私聊不能标记为“不收集数据”；账号持有人仍需在提交前根据最终生产部署、隐私政策和第三方服务逐项确认。
 

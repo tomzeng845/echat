@@ -261,7 +261,7 @@ security cms -D -i /路径/EChat_App_Store_0_9.mobileprovision > /tmp/echat-prof
 /usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' /tmp/echat-profile.plist
 ```
 
-预期 `application-identifier` 以 Team ID 开头并以 `com.echat.app` 结尾，`aps-environment` 为 `production`。如果之后要恢复仓库自带的 TestFlight 脚本，请先把 Debug/Release 重新设为 Automatic，并移除手工 profile specifier。
+预期 `application-identifier` 以 `.com.echat.app` 结尾，`aps-environment` 为 `production`，`TeamIdentifier` 包含目标 Team ID。部分旧 Apple 账号的 App ID Prefix 可能不等于 Team ID，不能把二者强制视为相同。[18] 如果之后要恢复仓库自带的 TestFlight 脚本，请先把 Debug/Release 重新设为 Automatic，并移除手工 profile specifier。
 
 ## 8. 创建 TestFlight 上传 API Key
 
@@ -458,3 +458,4 @@ E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收�
 [15]: https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-export-compliance-information-for-beta-builds/ "App Store Connect — Provide Export Compliance Information for Beta Builds"
 [16]: https://developer.apple.com/help/account/access/automatic-signing-controls/ "Apple Developer — Automatic Signing Controls"
 [17]: https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/ "App Store Connect — Invite External Testers"
+[18]: https://developer.apple.com/library/archive/qa/qa1879/_index.html "Apple QA1879 — Resolving -34018 Errors from Keychain Services"

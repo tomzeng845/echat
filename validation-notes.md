@@ -368,3 +368,11 @@ Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返
 ### 2026-09-06 Apple 配置指南独立审校修正
 
 独立审校确认 APNs 普通 topic `com.echat.app`、VoIP topic `com.echat.app.voip`、Debug sandbox/Release production 和 PushKit/CallKit 方向正确，同时发现预设出口合规结论、自动/手工签名混用、上传 Key 与 provisioning 权限混淆、隐私政策缺失及外部 TestFlight 步骤不完整等风险。现已移除 `Info.plist` 中未经账号持有人审查的 `ITSAppUsesNonExemptEncryption=false`，静态检查改为要求该值保持未设置，直至完成 AES-GCM/RSA-OAEP、第三方 SDK、发布地区和 Apple 问卷审查。指南已把 Automatic 与 Manual 定义为互斥路线，明确现有脚本只支持 Automatic，拆分上传角色与 Developer Portal 权限，加入隐私政策硬门槛、生产数据盘点、外部 TestFlight Review 和 Organizer/Transporter 回退流程。TestFlight 脚本默认 build number 精度由分钟提升到秒，但文档仍要求使用单调递增 CI 编号或人工确认未占用。
+
+## 2026-09-06 GitHub macOS 26 签名 IPA 工作流
+
+新增 `.github/workflows/ios-ipa.yml`，仅允许 `workflow_dispatch` 手工触发，并绑定受保护的 `ios-production` environment。工作流使用 GitHub-hosted `macos-26`、Node.js 22、pnpm 10.4.1、Xcode 26 和项目现有 Capacitor SPM 工程；通过 Apple Distribution `.p12`、App Store Connect production provisioning profile 与 Manual signing 执行 archive/export。默认 build number 为字符串 `18` 加 GitHub workflow run number，避免低于当前 build 18；也允许显式传入未使用的 1–18 位数字。
+
+工作流在签名前校验 Team ID、独立 App ID Prefix 后的精确 Bundle ID、production APNs、`get-task-allow=false`、无 `ProvisionedDevices`/`ProvisionsAllDevices`、UUID 与过期时间，从而拒绝 Development、Ad Hoc、Enterprise、过期或错误 Bundle 的 profile。导出后解包 IPA，执行 `codesign --verify`，再次验证内嵌 profile、Bundle ID、版本与 build，并生成可在 artifact 根目录直接验证的 SHA-256。签名秘密只在校验、证书导入和 archive 三个必要步骤可见；证书、profile、Keychain、Archive 和解包目录在 `always()` 清理步骤删除。三个 GitHub 官方 Action 固定到经核验的 v6/v7 commit SHA，artifact 保存 14 天且不自动上传 TestFlight。
+
+本地验证使用 actionlint 1.7.12 与 ShellCheck 0.9.0，GitHub Actions YAML、表达式和内嵌 Bash 均无告警。`scripts/validate-apple-profile.py` 的合成测试确认：旧账号 App ID Prefix 不等于 Team ID 时仍接受正确 App Store profile，并拒绝 Ad Hoc、过期及错误 Bundle profile。`pnpm ios:validate`、`pnpm check`、Vitest 15 项和 xUnit 25 项通过，项目内未发现 `.p8`、`.p12`、`.mobileprovision`、`.cer` 或 `.ipa`。当前 GitHub connector 启用建议未获用户确认，且尚未提供 Apple Distribution 证书/profile Secrets，因此仍未创建远程私有仓库、运行 macOS runner 或实际生成 IPA。

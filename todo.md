@@ -16,6 +16,12 @@
 - [x] Vitest 15 项、xUnit 25 项、生产构建、iOS sync、Android Gradle 和全量业务回归通过
 - [x] 确认当前 Linux 环境无 Xcode、Apple 凭据或 macOS runner，未误报为已上传 TestFlight
 - [x] 提供 App ID、App Store Connect 记录、自动/手工签名、描述文件、APNs Key、上传 Key、隐私和 TestFlight 的详细操作指南
+- [x] 新增 GitHub-hosted `macos-26` 手工签名 workflow，生成并校验 App Store Connect 分发 IPA
+- [x] workflow 校验 Team、Bundle ID、production APNs entitlement、codesign、版本和 Build，并上传 14 天私有 artifact
+- [x] 提供 `ios-production` Environment Secrets、`.p12`/profile Base64、触发、下载和 SHA-256 说明
+- [ ] 用户授权 GitHub 连接器并指定或允许创建私有仓库
+- [ ] 在私有仓库配置 Apple Distribution `.p12`、密码、Team ID 和 App Store Connect profile Secrets
+- [ ] 运行 `Build signed iOS IPA` workflow 并下载验证 `.ipa` 与 SHA-256
 - [ ] 确认 Apple Developer Team 是否拥有 `com.echat.app`；不可用时统一更换 Bundle ID
 - [ ] 在 Apple Developer 开启 Push Notifications，创建 provisioning profile 与 APNs Key
 - [ ] 在 App Store Connect 创建应用记录、上传 API Key、隐私信息、隐私政策和 Beta 元数据

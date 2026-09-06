@@ -1,0 +1,299 @@
+name: Build signed iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Marketing version
+        required: true
+        default: "0.9.0"
+        type: string
+      build_number:
+        description: Optional unique numeric build; defaults to 18 followed by the workflow run number
+        required: false
+        default: ""
+        type: string
+      api_url:
+        description: Production EChat HTTPS API URL embedded in the app
+        required: true
+        default: "https://echatapp-favrlscm.manus.space"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: echat-ios-ipa
+  cancel-in-progress: false
+
+jobs:
+  build-signed-ipa:
+    name: Archive and export EChat IPA
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: ios-production
+    env:
+      ECHAT_IOS_BUNDLE_ID: com.echat.app
+      ECHAT_IOS_VERSION: ${{ inputs.version }}
+      ECHAT_IOS_BUILD_NUMBER: ${{ inputs.build_number != '' && inputs.build_number || format('18{0}', github.run_number) }}
+      ECHAT_IOS_API_URL: ${{ inputs.api_url }}
+
+    steps:
+      - name: Check out EChat source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Enable the project pnpm version
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.4.1 --activate
+          node --version
+          pnpm --version
+          xcodebuild -version
+
+      - name: Validate required signing secrets and inputs
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_TEAM_ID:?Missing ios-production environment secret APPLE_TEAM_ID}"
+          : "${BUILD_CERTIFICATE_BASE64:?Missing ios-production environment secret BUILD_CERTIFICATE_BASE64}"
+          : "${P12_PASSWORD:?Missing ios-production environment secret P12_PASSWORD}"
+          : "${BUILD_PROVISION_PROFILE_BASE64:?Missing ios-production environment secret BUILD_PROVISION_PROFILE_BASE64}"
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Za-z0-9]{10}$ ]] || { echo "APPLE_TEAM_ID must contain exactly 10 letters or digits." >&2; exit 2; }
+          [[ "$ECHAT_IOS_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo "Invalid iOS version." >&2; exit 2; }
+          [[ "$ECHAT_IOS_BUILD_NUMBER" =~ ^[0-9]{1,18}$ ]] || { echo "Build number must contain 1-18 digits." >&2; exit 2; }
+          [[ "$ECHAT_IOS_API_URL" =~ ^https://[^[:space:]]+$ ]] || { echo "The embedded API URL must use HTTPS." >&2; exit 2; }
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Apple Distribution certificate and profile
+        id: signing
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/echat_distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/echat_app_store.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/echat_profile.plist"
+          KEYCHAIN_PATH="$RUNNER_TEMP/echat-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          printf '%s' "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o "$PROFILE_PATH"
+          chmod 600 "$CERTIFICATE_PATH" "$PROFILE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee "$RUNNER_TEMP/echat-identities.txt"
+          grep -q 'Apple Distribution:' "$RUNNER_TEMP/echat-identities.txt" || { echo "The p12 does not contain an Apple Distribution signing identity." >&2; exit 3; }
+
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+          python3 scripts/validate-apple-profile.py "$PROFILE_PLIST" "$APPLE_TEAM_ID" "$ECHAT_IOS_BUNDLE_ID"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          printf '%s' "$PROFILE_UUID" > "$RUNNER_TEMP/echat-profile-uuid"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          echo "profile_uuid=$PROFILE_UUID" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and synchronize Capacitor iOS project
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm ios:validate
+          pnpm ios:sync
+          pnpm ios:validate
+          pnpm exec tsc --noEmit
+
+      - name: Resolve Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
+
+      - name: Archive and export signed IPA
+        id: archive
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_UUID: ${{ steps.signing.outputs.profile_uuid }}
+        run: |
+          set -euo pipefail
+          DERIVED="$RUNNER_TEMP/ios-ipa"
+          ARCHIVE="$DERIVED/EChat.xcarchive"
+          EXPORT_DIR="$DERIVED/export"
+          EXPORT_OPTIONS="$DERIVED/ExportOptions.plist"
+          mkdir -p "$EXPORT_DIR" releases
+
+          cat > "$EXPORT_OPTIONS" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>export</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${ECHAT_IOS_BUNDLE_ID}</key>
+              <string>${PROFILE_UUID}</string>
+            </dict>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$ECHAT_IOS_BUNDLE_ID" \
+            MARKETING_VERSION="$ECHAT_IOS_VERSION" \
+            CURRENT_PROJECT_VERSION="$ECHAT_IOS_BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            clean archive
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT_DIR" \
+            -exportOptionsPlist "$EXPORT_OPTIONS"
+
+          IPA="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.ipa' -print -quit)"
+          [[ -n "$IPA" && -f "$IPA" ]] || { echo "Exported IPA was not found." >&2; exit 4; }
+          ARTIFACT="releases/EChat-iOS-${ECHAT_IOS_VERSION}-${ECHAT_IOS_BUILD_NUMBER}.ipa"
+          cp "$IPA" "$ARTIFACT"
+          ARTIFACT_BASENAME="$(basename "$ARTIFACT")"
+          (cd releases && shasum -a 256 "$ARTIFACT_BASENAME" > "$ARTIFACT_BASENAME.sha256")
+
+          VERIFY_DIR="$RUNNER_TEMP/verify-ipa"
+          rm -rf "$VERIFY_DIR"
+          mkdir -p "$VERIFY_DIR"
+          unzip -q "$ARTIFACT" -d "$VERIFY_DIR"
+          APP_PATH="$(find "$VERIFY_DIR/Payload" -maxdepth 1 -name '*.app' -print -quit)"
+          [[ -n "$APP_PATH" ]] || { echo "The IPA does not contain an app bundle." >&2; exit 4; }
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/exported-profile.plist"
+          python3 scripts/validate-apple-profile.py "$RUNNER_TEMP/exported-profile.plist" "$APPLE_TEAM_ID" "$ECHAT_IOS_BUNDLE_ID"
+          ACTUAL_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")"
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")"
+          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")"
+          [[ "$ACTUAL_BUNDLE_ID" == "$ECHAT_IOS_BUNDLE_ID" ]] || { echo "IPA Bundle ID mismatch." >&2; exit 4; }
+          [[ "$ACTUAL_VERSION" == "$ECHAT_IOS_VERSION" ]] || { echo "IPA version mismatch." >&2; exit 4; }
+          [[ "$ACTUAL_BUILD" == "$ECHAT_IOS_BUILD_NUMBER" ]] || { echo "IPA build number mismatch." >&2; exit 4; }
+
+          BUILD_INFO="releases/EChat-iOS-${ECHAT_IOS_VERSION}-${ECHAT_IOS_BUILD_NUMBER}-build.txt"
+          cat > "$BUILD_INFO" <<INFO
+          bundleId=$ACTUAL_BUNDLE_ID
+          version=$ACTUAL_VERSION
+          build=$ACTUAL_BUILD
+          api=$ECHAT_IOS_API_URL
+          profileUuid=$PROFILE_UUID
+          generatedAtUtc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          githubRunId=$GITHUB_RUN_ID
+          githubRunAttempt=$GITHUB_RUN_ATTEMPT
+          INFO
+
+          {
+            echo "artifact_name=EChat-iOS-${ECHAT_IOS_VERSION}-${ECHAT_IOS_BUILD_NUMBER}"
+            echo "ipa_path=$ARTIFACT"
+            echo "build_info_path=$BUILD_INFO"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed IPA artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.archive.outputs.artifact_name }}
+          path: |
+            ${{ steps.archive.outputs.ipa_path }}
+            ${{ steps.archive.outputs.ipa_path }}.sha256
+            ${{ steps.archive.outputs.build_info_path }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Publish build summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          IPA_PATH: ${{ steps.archive.outputs.ipa_path }}
+        run: |
+          {
+            echo "## EChat signed iOS IPA"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Bundle ID | \`$ECHAT_IOS_BUNDLE_ID\` |"
+            echo "| Version | \`$ECHAT_IOS_VERSION\` |"
+            echo "| Build | \`$ECHAT_IOS_BUILD_NUMBER\` |"
+            echo "| API | \`$ECHAT_IOS_API_URL\` |"
+            echo "| IPA | \`$IPA_PATH\` |"
+            echo
+            echo "[Download the workflow artifact]($ARTIFACT_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up signing material
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          KEYCHAIN_PATH="$RUNNER_TEMP/echat-signing.keychain-db"
+          PROFILE_UUID=""
+          if [[ -f "$RUNNER_TEMP/echat-profile-uuid" ]]; then
+            PROFILE_UUID="$(cat "$RUNNER_TEMP/echat-profile-uuid")"
+          fi
+          if [[ -f "$KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
+          if [[ -n "$PROFILE_UUID" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          fi
+          rm -f "$RUNNER_TEMP/echat_distribution.p12" \
+                "$RUNNER_TEMP/echat_app_store.mobileprovision" \
+                "$RUNNER_TEMP/echat_profile.plist" \
+                "$RUNNER_TEMP/echat-identities.txt" \
+                "$RUNNER_TEMP/echat-profile-uuid" \
+                "$RUNNER_TEMP/exported-profile.plist"
+          rm -rf "$RUNNER_TEMP/ios-ipa" "$RUNNER_TEMP/verify-ipa"

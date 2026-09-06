@@ -115,9 +115,15 @@ def main() -> int:
             require(audio.getsampwidth() == 2, f"{name} must be 16-bit PCM")
             require(audio.getframerate() == 44100, f"{name} must use 44.1 kHz")
 
-    private_keys = list(ROOT.rglob("*.p8"))
-    require(not private_keys, "Apple private key material must not be stored in the project")
+    signing_material = [
+        path
+        for suffix in ("*.p8", "*.p12", "*.mobileprovision", "*.cer", "*.ipa")
+        for path in ROOT.rglob(suffix)
+        if "node_modules" not in path.parts
+    ]
+    require(not signing_material, "Apple signing material or IPA must not be stored in the project")
     require((ROOT / "scripts" / "ios-testflight.sh").stat().st_mode & 0o111 != 0, "TestFlight script is not executable")
+    require((ROOT / "scripts" / "validate-apple-profile.py").stat().st_mode & 0o111 != 0, "Apple profile validator is not executable")
 
     print("IOS_STATIC_OK bundle=com.echat.app version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready")
     return 0
