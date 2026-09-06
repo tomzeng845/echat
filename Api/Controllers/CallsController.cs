@@ -18,7 +18,19 @@ public sealed class CallsController(IChatRepository repository, TokenService tok
             var name = conversation?.Type == ConversationType.Direct
                 ? (await OtherUserNameAsync(conversation, ct) ?? "单聊")
                 : conversation?.Name ?? "已删除会话";
-            result.Add(new CallRecordView(call.Id, call.ConversationId, name, call.CallerId, call.Mode, call.Status, call.StartedAtUtc, call.AnsweredAtUtc, call.EndedAtUtc, call.EndReason));
+            result.Add(new CallRecordView(
+                call.Id,
+                call.ConversationId,
+                name,
+                call.CallerId,
+                call.Mode,
+                call.Status,
+                call.StartedAtUtc,
+                call.AnsweredAtUtc,
+                call.EndedAtUtc,
+                call.EndReason,
+                call.AnsweringAtUtc?.ContainsKey(User.UserId()) == true
+            ));
         }
         return Ok(result);
     }

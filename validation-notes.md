@@ -294,3 +294,17 @@ APK 后台收到邀请时使用 `CATEGORY_CALL` 高优先级通知和循环 `ech
 最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 11 项、xUnit 19 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_087_OK`、`ADMIN_087_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`；监听回归额外确认 `reconnect_replay=received`。
 
 最终 APK 的合并 Manifest 包含 `android:process=":calls"`、`foregroundServiceType=remoteMessaging`、`WAKE_LOCK` 与电池优化请求权限；包内包含 `echat_message.wav`、`echat_call.wav` 和 `echat_ringback.wav`。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=15`、`versionName=0.8.7`、最低 API 24、目标 API 36。文件 `EChat-0.8.7-debug.apk` 的 SHA-256 为 `ed1cd7e0fbb18b44145bea2f217b984245aec9223cc75ce77c7842336ae24d34`。
+
+## 2026-09-06 Android APP 0.8.8 鸿蒙接听握手与音频恢复
+
+0.8.7 已避免 React 把通知清理误当成挂断，但在用户点击“接听”到麦克风/摄像头采集完成之间，服务端记录仍处于 `Ringing`。鸿蒙若在这个窗口重建 `:calls` 进程或原生 SignalR 连接，会再次补发同一 `callId`。0.8.8 新增 `CallPrepareAnswer`：客户端点击接听后先把当前账号写入 `AnsweringAtUtc` 并立即清除原生通知，然后才请求媒体并执行 `CallAccept`。监听重连补发跳过最近 30 秒正在接听的账号；群聊仍允许不同成员分别准备和依次接听。
+
+原生 `CallListenerService` 同时在独立进程内存和应用私有存储保留两分钟 `callId` 清理墓碑。迟到的用户组事件、跨进程广播、通知 Intent、待处理 SharedPreferences 和 Capacitor 事件都会先检查墓碑；来电事件不再使用 retained replay。通知冷启动直接读取 Intent 载荷。`android-call-listener-smoke.mjs` 在接听准备后断开并重建监听连接，确认没有再次收到同一邀请；未接来电断线后仍能正常补发，最终输出 `ANDROID_CALL_LISTENER_OK ... answering_replay=suppressed reconnect_replay=received`。
+
+接听音频恢复同时强化：远端 audio/video 显式 `muted=false`、`volume=1`，在挂载、`loadedmetadata`、`canplay`、250 ms、1 秒和 2.5 秒重试播放；远端音轨到达及接通后再次应用通信音频路由。原生层解除麦克风静音，现代通信设备 API 失败时回退 speakerphone。呼出等待铃声在原生层明确走扬声器。双端回归人为延迟接听方媒体采集 1.2 秒，确认准备握手先持久化；语音和视频双方远端音轨均为 1、未静音、音量为 1，两次呼出等待铃声都在接听时停止，最终输出 `ANDROID_CALL_AUDIO_OK ... volume=1 answering_handshake=ok ... ringback=voice,video stopped=accept`。原有 `CALL_SIGNAL_OK` 同时通过。
+
+最终 `pnpm check` 为 0 个 TypeScript/.NET 错误和 0 个 .NET 警告；Vitest 11 项、xUnit 19 项、`pnpm build`、Android `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 全部成功。14 组全量回归返回 `E2E_OK`、`CALL_SIGNAL_OK`、`P1_QR_OK`、`CONTACT_REALTIME_OK`、`MOBILE_CHAT_OK`、`UNREAD_CLEAR_OK`、`ADMIN_REQUIREMENTS_088_OK`、`ADMIN_088_OK`、`GEOIP_OK`、`ANDROID_PUSH_OK`、`ANDROID_SAFE_AREA_OK`、`ANDROID_E2EE_OK`、`ANDROID_CALL_AUDIO_OK` 和 `ANDROID_CALL_LISTENER_OK`。
+
+最终 APK 的合并 Manifest 保留 `android:process=":calls"` 与 `foregroundServiceType=remoteMessaging`，包内包含来电铃声与呼出等待铃声。16 KB zipalign 与 APK Signature Scheme v2 验证通过；`aapt` 确认包名 `com.echat.app`、`versionCode=16`、`versionName=0.8.8`、最低 API 24、目标 API 36。文件 `EChat-0.8.8-debug.apk` 的 SHA-256 为 `889d240114c1397033b4cdf07ec520cab05fc4f9dba48348946b6bb7ef8e2096`。
+
+沙箱没有可用 Android/鸿蒙真机或 KVM，因此自动化验证覆盖协议、浏览器双端 WebRTC、Android Java 编译、Manifest 和 APK 产物；仍需在目标鸿蒙设备允许 E聊忽略电池优化，并在系统应用启动管理中开启自启动、关联启动和后台运行。Android“强制停止”会禁用所有后台组件，必须重新打开 APP。

@@ -41,17 +41,27 @@ public class MediaPermissionsPlugin extends Plugin {
     private MediaPlayer messagePlayer;
     private MediaPlayer callPlayer;
     private BroadcastReceiver callListenerReceiver;
+    private CallListenerService.IncomingCallPayload pendingIntentCall;
 
     @Override
     public void load() {
+        Intent initialIntent = getActivity() == null ? null : getActivity().getIntent();
+        if (initialIntent != null && initialIntent.hasExtra(CallListenerService.EXTRA_CALL_ID)) {
+            CallListenerService.IncomingCallPayload candidate = fromIntent(initialIntent);
+            if (!CallListenerService.isCallRecentlyCleared(getContext(), candidate.callId))
+                pendingIntentCall = candidate;
+        }
         callListenerReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (CallListenerService.ACTION_INCOMING.equals(intent.getAction()))
-                    notifyListeners("callListenerIncoming", toCallJson(fromIntent(intent)), true);
+                    notifyListeners("callListenerIncoming", toCallJson(fromIntent(intent)), false);
                 else if (CallListenerService.ACTION_CLEARED.equals(intent.getAction())) {
+                    String callId = intent.getStringExtra(CallListenerService.EXTRA_CALL_ID);
+                    if (pendingIntentCall != null && callId != null && callId.equals(pendingIntentCall.callId))
+                        pendingIntentCall = null;
                     JSObject data = new JSObject();
-                    data.put("callId", intent.getStringExtra(CallListenerService.EXTRA_CALL_ID));
+                    data.put("callId", callId);
                     notifyListeners("callListenerCleared", data);
                 }
             }
@@ -86,21 +96,32 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PluginMethod
     public void clearCallListenerAlert(PluginCall call) {
-        CallListenerService.clear(getContext(), call.getString("callId", ""));
+        String callId = call.getString("callId", "");
+        if (pendingIntentCall != null && callId.equals(pendingIntentCall.callId)) pendingIntentCall = null;
+        CallListenerService.clear(getContext(), callId);
         call.resolve();
     }
 
     @PluginMethod
     public void getPendingCall(PluginCall call) {
-        CallListenerService.IncomingCallPayload pending = CallListenerService.consumePendingCall(getContext());
+        CallListenerService.IncomingCallPayload pending = takePendingCall();
         JSObject result = toCallJson(pending);
         result.put("available", pending != null);
         call.resolve(result);
     }
 
     private void emitPendingCall(boolean retainUntilConsumed) {
-        CallListenerService.IncomingCallPayload pending = CallListenerService.consumePendingCall(getContext());
-        if (pending != null) notifyListeners("callListenerIncoming", toCallJson(pending), retainUntilConsumed);
+        CallListenerService.IncomingCallPayload pending = takePendingCall();
+        if (pending != null) notifyListeners("callListenerIncoming", toCallJson(pending), false);
+    }
+
+    private CallListenerService.IncomingCallPayload takePendingCall() {
+        if (pendingIntentCall != null) {
+            CallListenerService.IncomingCallPayload result = pendingIntentCall;
+            pendingIntentCall = null;
+            if (!CallListenerService.isCallRecentlyCleared(getContext(), result.callId)) return result;
+        }
+        return CallListenerService.consumePendingCall(getContext());
     }
 
     private static JSObject toCallJson(CallListenerService.IncomingCallPayload call) {
@@ -144,6 +165,7 @@ public class MediaPermissionsPlugin extends Plugin {
             return;
         }
         try {
+            if (outgoingCall) routeOutgoingRingbackToSpeaker();
             Uri uri = Uri.parse("android.resource://" + getContext().getPackageName() + "/" + resourceId);
             MediaPlayer player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder()
@@ -153,6 +175,7 @@ public class MediaPermissionsPlugin extends Plugin {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build());
             player.setDataSource(getContext(), uri);
+            player.setVolume(1.0f, 1.0f);
             player.setLooping(callSound);
             player.setOnCompletionListener(completed -> {
                 releasePlayer(completed);
@@ -193,6 +216,20 @@ public class MediaPermissionsPlugin extends Plugin {
         }
         player.reset();
         player.release();
+    }
+
+    private void routeOutgoingRingbackToSpeaker() {
+        AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            for (AudioDeviceInfo device : audioManager.getAvailableCommunicationDevices()) {
+                if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    audioManager.setCommunicationDevice(device);
+                    return;
+                }
+            }
+        }
+        audioManager.setSpeakerphoneOn(true);
     }
 
     @PluginMethod
@@ -295,6 +332,7 @@ public class MediaPermissionsPlugin extends Plugin {
         boolean speaker = Boolean.TRUE.equals(call.getBoolean("speaker", false));
         AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        audioManager.setMicrophoneMute(false);
         int focusResult;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (audioFocusRequest == null) {
@@ -323,6 +361,10 @@ public class MediaPermissionsPlugin extends Plugin {
             }
             if (target != null) applied = audioManager.setCommunicationDevice(target) && applied;
             else if (!speaker) audioManager.clearCommunicationDevice();
+            if (target == null || !applied) {
+                audioManager.setSpeakerphoneOn(speaker);
+                applied = true;
+            }
         } else {
             audioManager.setSpeakerphoneOn(speaker);
         }
@@ -373,7 +415,12 @@ public class MediaPermissionsPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         CallListenerService.setAppActive(getContext(), true);
-        emitPendingCall(true);
+        if (intent != null && intent.hasExtra(CallListenerService.EXTRA_CALL_ID)) {
+            CallListenerService.IncomingCallPayload candidate = fromIntent(intent);
+            if (!CallListenerService.isCallRecentlyCleared(getContext(), candidate.callId))
+                pendingIntentCall = candidate;
+            emitPendingCall(false);
+        } else emitPendingCall(false);
     }
 
     @PluginMethod

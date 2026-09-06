@@ -192,6 +192,15 @@ try {
       () => (window.__echatOutgoingStops += 1)
     );
   });
+  await pageB.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(
+      navigator.mediaDevices
+    );
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      return original(constraints);
+    };
+  });
   await pageA.evaluate(() => {
     const button = Array.from(document.querySelectorAll("button")).find(item =>
       item.textContent?.includes("接听方")
@@ -218,6 +227,25 @@ try {
     { timeout: 4000 }
   );
   await pageB.click('button[aria-label="接听通话"]');
+  await pageB.waitForFunction(
+    () => document.body.innerText.includes("正在接听…"),
+    { timeout: 4000 }
+  );
+  let preparingCall = null;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    preparingCall = (
+      await request("/api/calls", {
+        token: authB.accessToken,
+        deviceId: deviceB,
+      })
+    ).find(item => item.conversationId === conversation.id);
+    if (preparingCall?.status === "Ringing" && preparingCall.answering) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (preparingCall?.status !== "Ringing" || !preparingCall.answering)
+    throw new Error(
+      `CallPrepareAnswer was not persisted: ${JSON.stringify(preparingCall)}`
+    );
   await pageA.waitForFunction(() => window.__echatOutgoingStops >= 1, {
     timeout: 4000,
   });
@@ -232,6 +260,8 @@ try {
         const stream = element?.srcObject;
         return {
           autoplay: Boolean(element?.autoplay),
+          muted: Boolean(element?.muted),
+          volume: Number(element?.volume ?? 0),
           tracks:
             stream instanceof MediaStream ? stream.getAudioTracks().length : 0,
           enabled:
@@ -247,6 +277,10 @@ try {
     !audioB.autoplay ||
     audioA.tracks < 1 ||
     audioB.tracks < 1 ||
+    audioA.muted ||
+    audioB.muted ||
+    audioA.volume !== 1 ||
+    audioB.volume !== 1 ||
     !audioA.enabled ||
     !audioB.enabled
   )
@@ -305,8 +339,12 @@ try {
     timeout: 4000,
   });
   await Promise.all([
-    pageA.waitForSelector("video:not([muted])", { timeout: 15000 }),
-    pageB.waitForSelector("video:not([muted])", { timeout: 15000 }),
+    pageA.waitForSelector('video[data-audio-role="remote"]', {
+      timeout: 15000,
+    }),
+    pageB.waitForSelector('video[data-audio-role="remote"]', {
+      timeout: 15000,
+    }),
     pageA.waitForSelector('button[aria-label="关闭扬声器"]', {
       visible: true,
       timeout: 8000,
@@ -315,16 +353,29 @@ try {
   const videoAudioTracks = await Promise.all(
     [pageA, pageB].map(page =>
       page.evaluate(() => {
-        const element = document.querySelector("video:not([muted])");
+        const element = document.querySelector(
+          'video[data-audio-role="remote"]'
+        );
         const stream = element?.srcObject;
-        return stream instanceof MediaStream
-          ? stream.getAudioTracks().filter(track => track.enabled).length
-          : 0;
+        return {
+          tracks:
+            stream instanceof MediaStream
+              ? stream.getAudioTracks().filter(track => track.enabled).length
+              : 0,
+          muted: Boolean(element?.muted),
+          volume: Number(element?.volume ?? 0),
+        };
       })
     )
   );
-  if (videoAudioTracks.some(count => count < 1))
-    throw new Error(`Video call audio tracks missing: ${videoAudioTracks}`);
+  if (
+    videoAudioTracks.some(
+      item => item.tracks < 1 || item.muted || item.volume !== 1
+    )
+  )
+    throw new Error(
+      `Video call audio tracks missing: ${JSON.stringify(videoAudioTracks)}`
+    );
   const alertState = await pageB.evaluate(() => ({
     kinds: window.__echatCallAlerts.map(item => item.kind),
     stops: window.__echatCallStops,
@@ -343,7 +394,7 @@ try {
     timeout: 8000,
   });
   console.log(
-    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.join(",")} autoplay=true speaker=toggle video_speaker=default_on alerts=voice,video ringback=voice,video stopped=accept`
+    `ANDROID_CALL_AUDIO_OK conversation=${conversation.id} peers=2 voice_tracks=${audioA.tracks},${audioB.tracks} video_audio_tracks=${videoAudioTracks.map(item => item.tracks).join(",")} autoplay=true volume=1 answering_handshake=ok speaker=toggle video_speaker=default_on alerts=voice,video ringback=voice,video stopped=accept`
   );
 } finally {
   await contextA.close();

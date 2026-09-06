@@ -121,6 +121,10 @@ public sealed class CoreTests
 
         await repository.UpsertCallAsync(new CallRecord { Id = "call1", ConversationId = "c1", CallerId = "u1", ParticipantIds = ["u1", "u2"] });
         var call = await repository.GetCallAsync("call1");
+        var answeringAt = DateTime.UtcNow;
+        call!.AnsweringAtUtc["u2"] = answeringAt;
+        await repository.UpsertCallAsync(call);
+        Assert.Equal(answeringAt, (await repository.GetCallAsync("call1"))!.AnsweringAtUtc["u2"]);
         call!.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow;
         await repository.UpsertCallAsync(call);
         Assert.Equal(CallRecordStatus.Ended, (await repository.GetCallsAsync("u2")).Single().Status);

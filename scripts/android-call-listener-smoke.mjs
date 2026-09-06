@@ -116,7 +116,8 @@ const conversation = await request(
 );
 
 const callerHub = connection(caller.accessToken);
-await callerHub.start();
+const receiverHub = connection(receiver.accessToken);
+await Promise.all([callerHub.start(), receiverHub.start()]);
 let readOnlyRejected = false;
 try {
   await listenerHub.invoke("MarkRead", conversation.id, 0);
@@ -140,10 +141,24 @@ if (
   throw new Error(`native invite payload mismatch: ${JSON.stringify(invite)}`);
 
 const cleared = once(listenerHub, "call.listener.cleared");
-await callerHub.invoke("CallEnd", conversation.id, callId);
-if ((await cleared).callId !== callId) throw new Error("call.ended mismatch");
+await receiverHub.invoke("CallPrepareAnswer", conversation.id, callId);
+if ((await cleared).callId !== callId)
+  throw new Error("prepared call clear mismatch");
 
 await listenerHub.stop();
+const suppressedListener = connection(listenerToken.token);
+let duplicateInvite = false;
+suppressedListener.on("call.invited", event => {
+  if (event.callId === callId) duplicateInvite = true;
+});
+await suppressedListener.start();
+await new Promise(resolve => setTimeout(resolve, 1200));
+if (duplicateInvite)
+  throw new Error("answering call was replayed after listener reconnect");
+await receiverHub.invoke("CallAccept", conversation.id, callId);
+await callerHub.invoke("CallEnd", conversation.id, callId);
+
+await suppressedListener.stop();
 const replayedCallId = crypto.randomUUID();
 await callerHub.invoke("CallInvite", conversation.id, replayedCallId, "audio");
 const resumedListener = connection(listenerToken.token);
@@ -159,7 +174,11 @@ if (
   throw new Error(`replayed invite mismatch: ${JSON.stringify(replayed)}`);
 await callerHub.invoke("CallEnd", conversation.id, replayedCallId);
 
-await Promise.all([callerHub.stop(), resumedListener.stop()]);
+await Promise.all([
+  callerHub.stop(),
+  receiverHub.stop(),
+  resumedListener.stop(),
+]);
 console.log(
-  `ANDROID_CALL_LISTENER_OK conversation=${conversation.id} call=${callId} mode=video scope=readonly api=403 late_conversation=received reconnect_replay=received events=invited,cleared`
+  `ANDROID_CALL_LISTENER_OK conversation=${conversation.id} call=${callId} mode=video scope=readonly api=403 late_conversation=received answering_replay=suppressed reconnect_replay=received events=invited,cleared`
 );

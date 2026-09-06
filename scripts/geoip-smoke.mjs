@@ -77,7 +77,7 @@ if (!login || login.data.address !== user.lastLoginAddress)
   throw new Error(`login address mismatch: ${JSON.stringify(login?.data)}`);
 
 const health = await call("/api/health");
-if (health.version !== "0.8.7" || health.geoIp.cachedEntries < 2)
+if (health.version !== "0.8.8" || health.geoIp.cachedEntries < 2)
   throw new Error(`GeoIP health invalid: ${JSON.stringify(health.geoIp)}`);
 
 console.log(

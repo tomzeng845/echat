@@ -1,4 +1,12 @@
-# E聊 Android 0.8.7 集成说明
+# E聊 Android 0.8.8 集成说明
+
+## 0.8.8 接听握手、重复来电墓碑与音频恢复
+
+0.8.7 只在 React 内区分 `incoming` 与 `answering`，但点击接听到媒体权限/采集完成之间，服务端通话仍为 Ringing；鸿蒙在这段时间重建 `:calls` 进程或 SignalR 连接时，会把同一来电再次补发。0.8.8 增加 `CallPrepareAnswer` 握手：用户点击接听后先将当前账号写入通话的 `AnsweringAtUtc`，并立刻向该账号的所有连接发送 `call.listener.cleared`。原生监听重连补发会跳过最近 30 秒正在接听的账号；媒体采集成功后才执行 `CallAccept`，拒绝或失败仍沿用原结束路径。群聊允许多个成员分别完成准备和接听。
+
+原生 `CallListenerService` 对已接听、拒绝或结束的 `callId` 保存两分钟清理墓碑，同时保存在独立进程内存与应用私有存储。迟到的用户组事件、跨进程广播、通知 Intent、SharedPreferences 待处理记录和 Capacitor 事件都会先检查墓碑；`callListenerIncoming` 不再使用 Capacitor 的 retained event，避免监听器重建后再次回放。通知点击时直接读取 Intent 来电载荷，不依赖鸿蒙多进程 SharedPreferences 缓存。
+
+接听音频方面，远端 `<audio>` / `<video>` 显式设置未静音和音量 1，并在挂载、`loadedmetadata`、`canplay`、250 ms、1 秒和 2.5 秒时主动尝试播放。远端音轨到达、呼叫被接受时会再次应用 Android 通信设备路由；原生层取消麦克风静音，并在 `setCommunicationDevice` 不可用或失败时退回 speakerphone。语音和视频呼出的 `echat_ringback.wav` 在原生层强制走扬声器，对方接听后再恢复当前通话路由。
 
 ## 0.8.7 鸿蒙后台来电、接听去重与呼出铃声
 

@@ -342,5 +342,5 @@ for (const retired of [
 await call("/api/admin/tasks/retired/run", token, { method: "POST" }, 410);
 
 console.log(
-  `ADMIN_REQUIREMENTS_087_OK verification=approved invite=${generated.code} login_logs=${loginSearch.total} failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=paged group_speech=sent group_invite=${groupInvite.data.code} e2ee=protected retired_modules=5`
+  `ADMIN_REQUIREMENTS_088_OK verification=approved invite=${generated.code} login_logs=${loginSearch.total} failure_ips=${failureIps.total} fund=${adjustment.data.balanceAfter} transactions=filtered totp=active announcement=revoke conversations=paged group_speech=sent group_invite=${groupInvite.data.code} e2ee=protected retired_modules=5`
 );

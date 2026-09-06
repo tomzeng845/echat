@@ -1,5 +1,27 @@
 # E聊开发跟踪
 
+## Android APP 0.8.8 鸿蒙接听握手与音频恢复
+
+- [x] 定位点击接听到媒体采集完成期间服务端仍为 Ringing 的重复补发窗口
+- [x] 接听后先调用 `CallPrepareAnswer`，再请求摄像头/麦克风并完成 `CallAccept`
+- [x] 服务端按账号记录接听准备时间，监听重连跳过正在接听的同一来电
+- [x] 群聊保持多成员分别准备和依次接听兼容
+- [x] 原生 `:calls` 服务为已清理 `callId` 保存两分钟进程内/持久化墓碑
+- [x] 跨进程广播、通知 Intent、待处理缓存和迟到事件统一检查清理墓碑
+- [x] 取消 Capacitor retained 来电事件，避免监听器重建后二次回放
+- [x] 通知冷启动直接读取 Intent 来电载荷，不依赖鸿蒙多进程缓存
+- [x] 远端 audio/video 明确未静音、音量 1，并在多个媒体就绪时点重试播放
+- [x] 远端音轨到达和接通后重新应用 Android 听筒/扬声器路由
+- [x] 原生通信设备选择失败时回退 speakerphone，并解除麦克风静音
+- [x] 语音和视频呼出等待铃声明确通过扬声器播放
+- [x] `ANDROID_CALL_LISTENER_OK` 验证 `answering_replay=suppressed`
+- [x] `ANDROID_CALL_AUDIO_OK` 验证 `volume=1 answering_handshake=ok`
+- [x] `CALL_SIGNAL_OK` 确认原有 WebRTC 信令兼容
+- [x] `pnpm check`、Vitest 11 项、xUnit 19 项和生产构建通过
+- [x] 14 组聊天、后台、移动、加密、推送与通话全量回归通过
+- [x] Android 单测、lint、三类铃声、16 KB 对齐和 v2 签名通过
+- [x] 生成 `versionCode=16`、`versionName=0.8.8` 可覆盖安装 APK
+
 ## Android APP 0.8.7 鸿蒙后台来电与通话状态修复
 
 - [x] 定位接听后 `callListenerCleared` 被误当成通话结束的状态机错误

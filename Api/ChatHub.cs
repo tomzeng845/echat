@@ -18,8 +18,14 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{userId}");
         if (principal.FindFirst("scope")?.Value == "call_listener")
         {
+            var answeringCutoff = DateTime.UtcNow.AddSeconds(-30);
             var recentRingingCalls = (await repository.GetCallsAsync(userId))
-                .Where(x => x.Status == CallRecordStatus.Ringing && x.CallerId != userId && x.StartedAtUtc >= DateTime.UtcNow.AddSeconds(-90));
+                .Where(x => x.Status == CallRecordStatus.Ringing
+                    && x.CallerId != userId
+                    && x.StartedAtUtc >= DateTime.UtcNow.AddSeconds(-90)
+                    && (x.AnsweringAtUtc is null
+                        || !x.AnsweringAtUtc.TryGetValue(userId, out var answeringAt)
+                        || answeringAt < answeringCutoff));
             foreach (var call in recentRingingCalls)
             {
                 var caller = await repository.GetUserByIdAsync(call.CallerId);
@@ -78,12 +84,33 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
     public async Task CallAccept(string conversationId, string callId)
     {
         RequireInteractiveScope();
-        await RequireConversationMemberAsync(conversationId);
+        var conversation = await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
-        if (call.Status == CallRecordStatus.Ringing) { call.Status = CallRecordStatus.Active; call.AnsweredAtUtc ??= DateTime.UtcNow; await repository.UpsertCallAsync(call); }
+        if (call.Status != CallRecordStatus.Ringing
+            && !(conversation.Type == ConversationType.Group && call.Status == CallRecordStatus.Active))
+            throw new HubException("CALL_NOT_RINGING");
+        call.Status = CallRecordStatus.Active;
+        call.AnsweredAtUtc ??= DateTime.UtcNow;
+        call.AnsweringAtUtc?.Remove(Context.User!.UserId());
+        await repository.UpsertCallAsync(call);
         var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.accepted", new { conversationId, callId, userId = user.Id, displayName = user.DisplayName, avatarUrl = user.AvatarUrl });
         await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+    }
+
+    public async Task CallPrepareAnswer(string conversationId, string callId)
+    {
+        RequireInteractiveScope();
+        var conversation = await RequireConversationMemberAsync(conversationId);
+        var call = await RequireCallAsync(conversationId, callId);
+        if (call.Status != CallRecordStatus.Ringing
+            && !(conversation.Type == ConversationType.Group && call.Status == CallRecordStatus.Active))
+            throw new HubException("CALL_NOT_RINGING");
+        var userId = Context.User!.UserId();
+        call.AnsweringAtUtc ??= [];
+        call.AnsweringAtUtc[userId] = DateTime.UtcNow;
+        await repository.UpsertCallAsync(call);
+        await Clients.Group($"user:{userId}").SendAsync("call.listener.cleared", new { callId });
     }
 
     public async Task CallReject(string conversationId, string callId, string callerId, string reason = "declined")

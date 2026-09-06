@@ -263,6 +263,7 @@ public sealed class CallRecord
     public string Mode { get; set; } = "audio";
     public CallRecordStatus Status { get; set; } = CallRecordStatus.Ringing;
     public List<string> ParticipantIds { get; set; } = [];
+    public Dictionary<string, DateTime> AnsweringAtUtc { get; set; } = [];
     public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? AnsweredAtUtc { get; set; }
     public DateTime? EndedAtUtc { get; set; }
@@ -330,7 +331,7 @@ public sealed record RegisterPushDeviceRequest(string DeviceId, string Token, st
 public sealed record PushDeviceView(string DeviceId, string Platform, string AppVersion, DateTime LastSeenAtUtc, bool Enabled);
 public sealed record LogoutRequest(string? RefreshToken = null);
 public sealed record MomentReportRequest(string Reason, string Detail = "");
-public sealed record CallRecordView(string Id, string ConversationId, string ConversationName, string CallerId, string Mode, CallRecordStatus Status, DateTime StartedAtUtc, DateTime? AnsweredAtUtc, DateTime? EndedAtUtc, string EndReason);
+public sealed record CallRecordView(string Id, string ConversationId, string ConversationName, string CallerId, string Mode, CallRecordStatus Status, DateTime StartedAtUtc, DateTime? AnsweredAtUtc, DateTime? EndedAtUtc, string EndReason, bool Answering);
 public sealed class AdminUserView
 {
     public string Id { get; set; } = "";

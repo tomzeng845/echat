@@ -62,28 +62,44 @@ function StreamView({
   stream,
   muted = false,
   className = "",
+  audioRole = "remote",
 }: {
   stream: MediaStream;
   muted?: boolean;
   className?: string;
+  audioRole?: "local" | "remote";
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current) {
       const element = ref.current;
-      const play = () => element.play().catch(() => undefined);
+      const play = () => {
+        element.muted = muted;
+        element.volume = 1;
+        element.play().catch(() => undefined);
+      };
       element.srcObject = stream;
       element.onloadedmetadata = play;
       element.oncanplay = play;
-      play();
+      const retries = [0, 250, 1000, 2500].map(delay =>
+        window.setTimeout(play, delay)
+      );
       return () => {
+        retries.forEach(window.clearTimeout);
         element.onloadedmetadata = null;
         element.oncanplay = null;
       };
     }
-  }, [stream]);
+  }, [muted, stream]);
   return (
-    <video ref={ref} autoPlay playsInline muted={muted} className={className} />
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      data-audio-role={audioRole}
+      className={className}
+    />
   );
 }
 
@@ -92,12 +108,19 @@ function AudioStream({ stream }: { stream: MediaStream }) {
   useEffect(() => {
     if (ref.current) {
       const element = ref.current;
-      const play = () => element.play().catch(() => undefined);
+      const play = () => {
+        element.muted = false;
+        element.volume = 1;
+        element.play().catch(() => undefined);
+      };
       element.srcObject = stream;
       element.onloadedmetadata = play;
       element.oncanplay = play;
-      play();
+      const retries = [0, 250, 1000, 2500].map(delay =>
+        window.setTimeout(play, delay)
+      );
       return () => {
+        retries.forEach(window.clearTimeout);
         element.onloadedmetadata = null;
         element.oncanplay = null;
       };
@@ -140,7 +163,9 @@ const CallManager = forwardRef<
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [speakerOn, setSpeakerOn] = useState(false);
+  const speakerOnRef = useRef(false);
   callRef.current = call;
+  speakerOnRef.current = speakerOn;
 
   useEffect(() => {
     api<RtcConfig>("/api/rtc/config")
@@ -177,6 +202,7 @@ const CallManager = forwardRef<
     const useSpeaker = defaultSpeakerForCallMode(mode);
     await setNativeCallAudioRoute(useSpeaker).catch(() => useSpeaker);
     setSpeakerOn(useSpeaker);
+    speakerOnRef.current = useSpeaker;
     return stream;
   }
 
@@ -202,11 +228,13 @@ const CallManager = forwardRef<
             )
             .catch(() => undefined);
       };
-      peer.ontrack = event =>
+      peer.ontrack = event => {
+        setNativeCallAudioRoute(speakerOnRef.current).catch(() => undefined);
         setRemoteStreams(current => ({
           ...current,
           [targetUserId]: event.streams[0] ?? new MediaStream([event.track]),
         }));
+      };
       peer.onconnectionstatechange = () => {
         if (peer?.connectionState === "failed") peer.restartIce();
         if (peer?.connectionState === "closed")
@@ -250,6 +278,7 @@ const CallManager = forwardRef<
     setRemoteStreams({});
     setMembers([]);
     setSpeakerOn(false);
+    speakerOnRef.current = false;
     setCall(null);
   }
 
@@ -344,6 +373,9 @@ const CallManager = forwardRef<
       const active = callRef.current;
       if (!active || active.callId !== participant.callId) return;
       await stopIncomingCallAlert();
+      await setNativeCallAudioRoute(speakerOnRef.current).catch(
+        () => speakerOnRef.current
+      );
       const connected: ActiveCall = { ...active, status: "connected" };
       callRef.current = connected;
       setCall(connected);
@@ -443,14 +475,21 @@ const CallManager = forwardRef<
   async function accept() {
     const active = callRef.current;
     if (!active || !connection) return;
+    const answering: ActiveCall = { ...active, status: "answering" };
+    callRef.current = answering;
+    setCall(answering);
     if (!(await waitForRealtimeConnection(connection))) {
+      callRef.current = active;
+      setCall(active);
       toast.error("实时连接正在恢复，请稍后再次接听");
       return;
     }
     try {
-      const answering: ActiveCall = { ...active, status: "answering" };
-      callRef.current = answering;
-      setCall(answering);
+      await connection.invoke(
+        "CallPrepareAnswer",
+        active.conversationId,
+        active.callId
+      );
       await clearNativeCallListenerAlert(active.callId);
       await stopIncomingCallAlert();
       await acquire(active.mode);
@@ -459,14 +498,14 @@ const CallManager = forwardRef<
           `/api/conversations/${active.conversationId}/members`
         )
       );
-      const connected: ActiveCall = { ...active, status: "connected" };
-      callRef.current = connected;
-      setCall(connected);
       await connection.invoke(
         "CallAccept",
         active.conversationId,
         active.callId
       );
+      const connected: ActiveCall = { ...active, status: "connected" };
+      callRef.current = connected;
+      setCall(connected);
     } catch (cause) {
       await connection
         .invoke(
@@ -497,7 +536,9 @@ const CallManager = forwardRef<
   async function toggleSpeaker() {
     const next = toggledSpeakerState(speakerOn);
     try {
-      setSpeakerOn(await setNativeCallAudioRoute(next));
+      const applied = await setNativeCallAudioRoute(next);
+      speakerOnRef.current = applied;
+      setSpeakerOn(applied);
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "无法切换扬声器");
     }
@@ -578,6 +619,7 @@ const CallManager = forwardRef<
             <StreamView
               stream={localStream}
               muted
+              audioRole="local"
               className="h-full w-full object-cover -scale-x-100"
             />
             <span className="absolute bottom-2 left-2 text-[10px]">我</span>

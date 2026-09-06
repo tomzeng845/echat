@@ -23,6 +23,7 @@ import com.microsoft.signalr.HubConnection;
 import com.microsoft.signalr.HubConnectionBuilder;
 import com.microsoft.signalr.HubConnectionState;
 import io.reactivex.rxjava3.core.Single;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CallListenerService extends Service {
@@ -42,6 +43,8 @@ public class CallListenerService extends Service {
     public static final String EXTRA_CALLER_ID = "callerId";
     public static final String EXTRA_CALLER_NAME = "callerName";
     public static final String EXTRA_CALLER_AVATAR_URL = "callerAvatarUrl";
+    private static final String EXTRA_CLEARED_CALL_ID = "clearedCallId";
+    private static final String EXTRA_CLEARED_AT = "clearedAt";
 
     private static final String PREFS = "echat_call_listener";
     private static final String LISTENER_CHANNEL = "call-listener-v1";
@@ -51,6 +54,7 @@ public class CallListenerService extends Service {
 
     private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
     private final AtomicInteger generation = new AtomicInteger();
+    private final ConcurrentHashMap<String, Long> recentlyClearedCalls = new ConcurrentHashMap<>();
     private HubConnection hubConnection;
     private MediaPlayer ringtone;
     private int reconnectAttempt;
@@ -206,6 +210,7 @@ public class CallListenerService extends Service {
     private void handleInvite(IncomingCallPayload invite) {
         if (invite == null || invite.callId == null || invite.conversationId == null) return;
         if (invite.callerId != null && invite.callerId.equals(preferences().getString(EXTRA_USER_ID, ""))) return;
+        if (wasRecentlyCleared(invite.callId)) return;
         if (activeCall != null && invite.callId.equals(activeCall.callId)) return;
         activeCall = invite;
         if (!appActive) {
@@ -249,13 +254,45 @@ public class CallListenerService extends Service {
     }
 
     private void clearCall(String callId) {
-        if (callId == null || activeCall == null || !callId.equals(activeCall.callId)) return;
+        if (callId == null || callId.isBlank()) return;
+        boolean duplicateClear = wasRecentlyCleared(callId);
+        rememberCleared(callId);
         getSystemService(NotificationManager.class).cancel(stableNotificationId(callId));
-        activeCall = null;
-        clearPendingCall();
-        stopRingtone();
+        if (activeCall != null && callId.equals(activeCall.callId)) {
+            activeCall = null;
+            clearPendingCall();
+            stopRingtone();
+        } else if (callId.equals(preferences().getString(EXTRA_CALL_ID, null))) {
+            clearPendingCall();
+        }
+        if (duplicateClear) return;
         Intent event = new Intent(ACTION_CLEARED).setPackage(getPackageName()).putExtra(EXTRA_CALL_ID, callId);
         sendBroadcast(event);
+    }
+
+    private boolean wasRecentlyCleared(String callId) {
+        long now = System.currentTimeMillis();
+        recentlyClearedCalls.entrySet().removeIf(entry -> now - entry.getValue() > 120_000L);
+        Long clearedAt = recentlyClearedCalls.get(callId);
+        if (clearedAt != null && now - clearedAt <= 120_000L) return true;
+        return isCallRecentlyCleared(this, callId);
+    }
+
+    public static boolean isCallRecentlyCleared(Context context, String callId) {
+        if (callId == null || callId.isBlank()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        return callId.equals(prefs.getString(EXTRA_CLEARED_CALL_ID, null))
+            && now - prefs.getLong(EXTRA_CLEARED_AT, 0L) <= 120_000L;
+    }
+
+    private void rememberCleared(String callId) {
+        long now = System.currentTimeMillis();
+        recentlyClearedCalls.put(callId, now);
+        preferences().edit()
+            .putString(EXTRA_CLEARED_CALL_ID, callId)
+            .putLong(EXTRA_CLEARED_AT, now)
+            .apply();
     }
 
     private void stopBackgroundAlert() {
@@ -368,6 +405,17 @@ public class CallListenerService extends Service {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String callId = prefs.getString(EXTRA_CALL_ID, null);
         if (callId == null) return null;
+        if (isCallRecentlyCleared(context, callId)) {
+            prefs.edit()
+                .remove(EXTRA_CONVERSATION_ID)
+                .remove(EXTRA_CALL_ID)
+                .remove(EXTRA_MODE)
+                .remove(EXTRA_CALLER_ID)
+                .remove(EXTRA_CALLER_NAME)
+                .remove(EXTRA_CALLER_AVATAR_URL)
+                .apply();
+            return null;
+        }
         IncomingCallPayload result = new IncomingCallPayload();
         result.conversationId = prefs.getString(EXTRA_CONVERSATION_ID, "");
         result.callId = callId;
