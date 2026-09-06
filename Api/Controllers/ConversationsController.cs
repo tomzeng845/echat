@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/conversations")]
-public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
+public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, ILogger<ConversationsController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ConversationView>>> List(CancellationToken ct)
@@ -166,11 +166,25 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             .Select(member => member.UserId)
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);
-        await Task.WhenAll(recipientIds.Select(recipientId =>
-            hub.Clients.Group($"user:{recipientId}").SendAsync("message.available", view, ct)));
+        _ = BroadcastMessageAsync(id, view, recipientIds);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         return Ok(view);
+    }
+
+    private async Task BroadcastMessageAsync(string conversationId, MessageView view, IReadOnlyList<string> recipientIds)
+    {
+        try
+        {
+            await hub.Clients.Group($"conversation:{conversationId}")
+                .SendAsync("message.created", view, CancellationToken.None);
+            await Task.WhenAll(recipientIds.Select(recipientId =>
+                hub.Clients.Group($"user:{recipientId}")
+                    .SendAsync("message.available", view, CancellationToken.None)));
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "实时消息广播失败，messageId={MessageId} conversationId={ConversationId}", view.Id, conversationId);
+        }
     }
 
     [HttpPost("{id}/messages/{messageId}/recall")]
