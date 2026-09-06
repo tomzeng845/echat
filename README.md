@@ -214,7 +214,7 @@ export APNS_PRIVATE_KEY='由秘密管理服务注入的完整 PKCS#8 PEM'
 export APNS_USE_SANDBOX=false
 ```
 
-当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试和双平台设备 API 已通过；**尚未完成的 Apple 侧步骤**是 Xcode 编译签名、首次上传后的处理、内部测试员分配，以及真机通知、相机/麦克风、后台 PushKit/CallKit 接听和双向音视频验收。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
+当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试和双平台设备 API 已通过；**尚未完成的 Apple 侧步骤**是 Xcode 编译签名、首次上传后的处理、内部测试员分配，以及真机通知、相机/麦克风、后台 PushKit/CallKit 接听和双向音视频验收。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [Apple 配置详细指南](apple-app-store-connect-setup-guide.md)、[iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
 
 App Store Connect 的 App Privacy 必须与 `PrivacyInfo.xcprivacy` 和实际生产数据流一致。E聊会将账号/昵称、可选手机号、好友社交图、消息、照片/视频、语音、其他用户内容、反馈、用户/设备标识、活跃/登录诊断及由 IP 推断的粗略地区发送到服务端并与账号关联，仅用于 App Functionality，不用于跨应用跟踪。消息私聊不能标记为“不收集数据”；账号持有人仍需在提交前根据最终生产部署、隐私政策和第三方服务逐项确认。
 

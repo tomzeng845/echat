@@ -31,7 +31,7 @@ command -v python3 >/dev/null || { echo "python3 is required for iOS project val
 
 BUNDLE_ID="${ECHAT_IOS_BUNDLE_ID:-com.echat.app}"
 VERSION="${ECHAT_IOS_VERSION:-0.9.0}"
-BUILD_NUMBER="${ECHAT_IOS_BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
+BUILD_NUMBER="${ECHAT_IOS_BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
 API_URL="${ECHAT_IOS_API_URL:-https://echatapp-favrlscm.manus.space}"
 
 XCODE_MAJOR="$(xcodebuild -version | awk 'NR == 1 { split($2, version, "."); print version[1] }')"

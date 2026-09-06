@@ -77,7 +77,7 @@ Apple 把发送到设备外并保留的私聊、照片/视频、语音、账号/
 
 E聊隐私清单目前声明 Name、Phone Number、Coarse Location、Contacts、Emails or Text Messages、Photos or Videos、Audio Data、Other User Content、Customer Support、User ID、Device ID、Other Usage Data 和 Other Diagnostic Data。这些数据均声明为与账号关联、用于 App Functionality、不用于跨应用跟踪。App Store Connect 的隐私营养标签、隐私政策 URL 和数据删除说明仍需账号持有人根据最终生产环境与第三方服务逐项确认。
 
-`ITSAppUsesNonExemptEncryption=false` 表示项目当前判断标准 HTTPS、系统 WebCrypto 及历史消息兼容解密属于豁免范围，并非“应用不使用加密”。最终提交人必须根据发布地区、实际加密用途和 Apple 问卷再次确认；如 Apple 要求出口合规文档，应在 App Store Connect 提交后再锁定此值。
+项目现阶段不在 `Info.plist` 预设 `ITSAppUsesNonExemptEncryption`。E聊包含 HTTPS、WebCrypto AES-GCM/RSA-OAEP 历史消息兼容逻辑和服务端加密代码；账号持有人必须根据最终功能、第三方 SDK、发布国家/地区和 Apple 问卷完成出口合规审查。只有结论明确后才能把该键设置为对应值；如 Apple 要求文档，应先在 App Store Connect 完成加密声明流程。
 
 ## 验证结果与 TestFlight 待办
 

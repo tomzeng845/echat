@@ -46,7 +46,7 @@ def main() -> int:
     require(info.get("NSMicrophoneUsageDescription"), "Microphone usage text is missing")
     require(info.get("NSPhotoLibraryUsageDescription"), "Photo library usage text is missing")
     require({"audio", "remote-notification", "voip"}.issubset(set(info.get("UIBackgroundModes", []))), "Required background modes are missing")
-    require(info.get("ITSAppUsesNonExemptEncryption") is False, "Export-compliance default changed; review the TestFlight notes")
+    require("ITSAppUsesNonExemptEncryption" not in info, "Export compliance must remain unset until the account holder completes Apple review")
     require(entitlements.get("aps-environment") == "$(APS_ENVIRONMENT)", "APNs entitlement is missing")
 
     accessed = privacy.get("NSPrivacyAccessedAPITypes", [])

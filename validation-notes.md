@@ -364,3 +364,7 @@ Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返
 ### 尚未验证的 Apple 侧边界
 
 当前 Linux 环境没有 `xcodebuild` 或 Swift 编译器，也没有 Apple Developer/App Store Connect 凭据和 macOS runner。`scripts/ios-testflight.sh` 的 shell 语法、输入门控和 Linux 安全阻断已验证，但 Xcode Archive、Apple 签名、IPA、`altool` 上传、App Store Connect 处理、TestFlight 安装、真实 APNs/PushKit/CallKit 和 iPhone 相机/麦克风仍未执行。只有在用户提供 Apple Team/App ID、APNs Key、上传 API Key、安全的 macOS Xcode 26 构建机和测试员后，才能完成并宣称“通过 TestFlight 测试”。
+
+### 2026-09-06 Apple 配置指南独立审校修正
+
+独立审校确认 APNs 普通 topic `com.echat.app`、VoIP topic `com.echat.app.voip`、Debug sandbox/Release production 和 PushKit/CallKit 方向正确，同时发现预设出口合规结论、自动/手工签名混用、上传 Key 与 provisioning 权限混淆、隐私政策缺失及外部 TestFlight 步骤不完整等风险。现已移除 `Info.plist` 中未经账号持有人审查的 `ITSAppUsesNonExemptEncryption=false`，静态检查改为要求该值保持未设置，直至完成 AES-GCM/RSA-OAEP、第三方 SDK、发布地区和 Apple 问卷审查。指南已把 Automatic 与 Manual 定义为互斥路线，明确现有脚本只支持 Automatic，拆分上传角色与 Developer Portal 权限，加入隐私政策硬门槛、生产数据盘点、外部 TestFlight Review 和 Organizer/Transporter 回退流程。TestFlight 脚本默认 build number 精度由分钟提升到秒，但文档仍要求使用单调递增 CI 编号或人工确认未占用。
