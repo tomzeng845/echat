@@ -1,7 +1,9 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+const appId = process.env.ECHAT_CAPACITOR_APP_ID?.trim() || "com.echat.app";
+
 const config: CapacitorConfig = {
-  appId: "com.echat.app",
+  appId,
   appName: "E聊",
   webDir: "Api/wwwroot",
   android: {

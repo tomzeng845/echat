@@ -78,7 +78,7 @@ public sealed class ApnsTests
             ["Push:Enabled"] = "true",
             ["Push:Apns:TeamId"] = "TEAM123",
             ["Push:Apns:KeyId"] = "KEY123",
-            ["Push:Apns:BundleId"] = "com.echat.app",
+            ["Push:Apns:BundleId"] = "com.tomzeng845.echat",
             ["Push:Apns:PrivateKey"] = key.ExportPkcs8PrivateKeyPem(),
             ["Push:Apns:UseSandbox"] = "false"
         }).Build();
@@ -95,7 +95,7 @@ public sealed class ApnsTests
         }, "conversation-one", callId, "video");
 
         Assert.Equal("https://api.push.apple.com/3/device/" + new string('c', 64), factory.Handler.LastUri?.ToString());
-        Assert.Equal("com.echat.app.voip", factory.Handler.Header("apns-topic"));
+        Assert.Equal("com.tomzeng845.echat.voip", factory.Handler.Header("apns-topic"));
         Assert.Equal("voip", factory.Handler.Header("apns-push-type"));
         Assert.Equal("0", factory.Handler.Header("apns-expiration"));
         Assert.Equal(callId, factory.Handler.Header("apns-collapse-id"));

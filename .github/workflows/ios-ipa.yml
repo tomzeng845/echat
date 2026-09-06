@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 60
     environment: ios-production
     env:
-      ECHAT_IOS_BUNDLE_ID: com.echat.app
+      ECHAT_IOS_BUNDLE_ID: com.tomzeng845.echat
       ECHAT_IOS_VERSION: ${{ inputs.version }}
       ECHAT_IOS_BUILD_NUMBER: ${{ inputs.build_number != '' && inputs.build_number || format('18{0}', github.run_number) }}
       ECHAT_IOS_API_URL: ${{ inputs.api_url }}
@@ -122,7 +122,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm ios:validate
           pnpm ios:sync
           pnpm ios:validate
           pnpm exec tsc --noEmit

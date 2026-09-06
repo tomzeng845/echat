@@ -376,3 +376,13 @@ Android 防回归执行 `testDebugUnitTest lintDebug assembleDebug`，Gradle 返
 工作流在签名前校验 Team ID、独立 App ID Prefix 后的精确 Bundle ID、production APNs、`get-task-allow=false`、无 `ProvisionedDevices`/`ProvisionsAllDevices`、UUID 与过期时间，从而拒绝 Development、Ad Hoc、Enterprise、过期或错误 Bundle 的 profile。导出后解包 IPA，执行 `codesign --verify`，再次验证内嵌 profile、Bundle ID、版本与 build，并生成可在 artifact 根目录直接验证的 SHA-256。签名秘密只在校验、证书导入和 archive 三个必要步骤可见；证书、profile、Keychain、Archive 和解包目录在 `always()` 清理步骤删除。三个 GitHub 官方 Action 固定到经核验的 v6/v7 commit SHA，artifact 保存 14 天且不自动上传 TestFlight。
 
 本地验证使用 actionlint 1.7.12 与 ShellCheck 0.9.0，GitHub Actions YAML、表达式和内嵌 Bash 均无告警。`scripts/validate-apple-profile.py` 的合成测试确认：旧账号 App ID Prefix 不等于 Team ID 时仍接受正确 App Store profile，并拒绝 Ad Hoc、过期及错误 Bundle profile。`pnpm ios:validate`、`pnpm check`、Vitest 15 项和 xUnit 25 项通过，项目内未发现 `.p8`、`.p12`、`.mobileprovision`、`.cer` 或 `.ipa`。当前 GitHub connector 启用建议未获用户确认，且尚未提供 Apple Distribution 证书/profile Secrets，因此仍未创建远程私有仓库、运行 macOS runner 或实际生成 IPA。
+
+## 2026-09-06 Apple 资源实配与 iOS Bundle ID 迁移
+
+Apple Developer Program 续订已生效，Team 为 `PPY8H6QWB5`。原计划的 `com.echat.app` 被 Apple 判定为不可注册；经用户确认后，已注册显式 App ID `com.tomzeng845.echat`，Description 为 `EChat iOS`，并启用 Push Notifications。Android 正式包名仍保持 `com.echat.app`，不因 iOS 标识迁移而改变。
+
+已创建 Apple Distribution 证书 `Apple Distribution: zhihai zeng (PPY8H6QWB5)`；证书公钥与本次 CSR 私钥完全匹配，有效期至 2027-09-06。已生成密码保护的临时 PKCS#12，签名材料未进入项目或 Git。已创建 `EChat App Store 2026` App Store Connect production provisioning profile，UUID 为 `be3ef7da-d200-4d97-b5df-41cebabdca07`，`application-identifier` 为 `PPY8H6QWB5.com.tomzeng845.echat`，`aps-environment=production`，不含开发、Ad Hoc 或 Enterprise 标记，有效期至 2027-09-06。
+
+Capacitor 配置现在通过 `ECHAT_CAPACITOR_APP_ID` 支持平台独立标识：`pnpm ios:sync` 固定生成 `com.tomzeng845.echat`，普通 `pnpm android:sync` 继续生成 `com.echat.app`。Xcode Debug/Release、TestFlight 脚本、GitHub workflow、APNs 测试、静态校验和发布文档已同步迁移。`pnpm ios:sync`、`pnpm ios:validate`、`pnpm android:sync`、TypeScript/.NET 编译、Vitest、xUnit 和生产构建均通过；同步后的两个原生 `capacitor.config.json` 分别包含正确平台标识。
+
+当前仍未生成 IPA。下一步是将临时 `.p12`、密码和 production profile 写入私有仓库 `tomzeng845/echat` 的 `ios-production` Environment Secrets，推送本次 Bundle ID 迁移检查点，然后运行 macOS 26 workflow。

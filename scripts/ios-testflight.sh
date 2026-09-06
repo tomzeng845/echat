@@ -29,7 +29,7 @@ command -v python3 >/dev/null || { echo "python3 is required for iOS project val
   exit 2
 }
 
-BUNDLE_ID="${ECHAT_IOS_BUNDLE_ID:-com.echat.app}"
+BUNDLE_ID="${ECHAT_IOS_BUNDLE_ID:-com.tomzeng845.echat}"
 VERSION="${ECHAT_IOS_VERSION:-0.9.0}"
 BUILD_NUMBER="${ECHAT_IOS_BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
 API_URL="${ECHAT_IOS_API_URL:-https://echatapp-favrlscm.manus.space}"
@@ -67,8 +67,9 @@ cleanup() {
 trap cleanup EXIT
 
 export ECHAT_IOS_API_URL="$API_URL"
-pnpm ios:validate
+export ECHAT_IOS_BUNDLE_ID="$BUNDLE_ID"
 pnpm ios:sync
+pnpm ios:validate
 
 cat >"$EXPORT_OPTIONS" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

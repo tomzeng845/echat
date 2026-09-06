@@ -182,9 +182,9 @@ export FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
 ## iOS APP、APNs 与 TestFlight
 
-iOS 客户端位于 `ios/`，Bundle ID 默认为 `com.echat.app`，版本为 `0.9.0 (18)`，最低系统版本为 iOS 15。工程已包含 1024×1024 App Store 图标、启动图、相机/麦克风/相册权限说明、`audio`/`remote-notification`/`voip` 后台模式、APNs entitlement 和 Apple 隐私清单。普通消息、好友申请与推送测试使用 APNs alert；真实音视频邀请才使用 PushKit VoIP push，并立即报告给 CallKit。用户在系统来电界面接听时会恢复 WebRTC 接听流程，拒接、远端接听或挂断会按 `callId` 清理其他 iOS 设备上的系统来电。
+iOS 客户端位于 `ios/`，Bundle ID 为 `com.tomzeng845.echat`，版本为 `0.9.0 (18)`，最低系统版本为 iOS 15。Android 继续使用已发布包名 `com.echat.app`，两端标识相互独立。工程已包含 1024×1024 App Store 图标、启动图、相机/麦克风/相册权限说明、`audio`/`remote-notification`/`voip` 后台模式、APNs entitlement 和 Apple 隐私清单。普通消息、好友申请与推送测试使用 APNs alert；真实音视频邀请才使用 PushKit VoIP push，并立即报告给 CallKit。用户在系统来电界面接听时会恢复 WebRTC 接听流程，拒接、远端接听或挂断会按 `callId` 清理其他 iOS 设备上的系统来电。
 
-Linux 可以同步和静态验证 iOS 工程，但不能运行 Xcode Archive、Apple 签名、上传或真机 CallKit 测试。构建机需要 macOS、Xcode 26 或更新版本、有效 Apple Developer Team、已注册且归属该团队的 `com.echat.app` App ID、Push Notifications capability、App Store Connect 应用记录，以及有上传权限的 App Store Connect API Key。若该 Bundle ID 在目标团队不可用，必须在首次上传前统一修改 Capacitor、Xcode、APNs topic 与 App Store Connect 记录。
+Linux 可以同步和静态验证 iOS 工程，但不能运行 Xcode Archive、Apple 签名、上传或真机 CallKit 测试。Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 显式 App ID 并开启 Push Notifications；Apple Distribution 证书与 `EChat App Store 2026` production profile 已创建并验证。签名 IPA 由私有仓库 `tomzeng845/echat` 的 GitHub-hosted macOS 26 workflow 生成；App Store Connect 应用记录、APNs Key、TestFlight 上传和真机验收仍需后续完成。
 
 ```bash
 # Linux/macOS 均可执行的源码检查与资源同步
@@ -211,12 +211,12 @@ APNs 服务端另需一把在 Apple Developer 网站创建并允许 APNs 的 Key
 ```bash
 export APNS_TEAM_ID='你的十位 Team ID'
 export APNS_KEY_ID='APNs Key ID'
-export APNS_BUNDLE_ID='com.echat.app'
+export APNS_BUNDLE_ID='com.tomzeng845.echat'
 export APNS_PRIVATE_KEY='由秘密管理服务注入的完整 PKCS#8 PEM'
 export APNS_USE_SANDBOX=false
 ```
 
-当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试、双平台设备 API 和 GitHub IPA workflow 源码已就绪；**尚未完成的 Apple/GitHub 侧步骤**是授权 GitHub 连接、创建私有仓库、配置 Distribution 证书/profile Secrets、运行 macOS 26 Archive，以及后续上传、处理、测试员分配和真机验收。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [GitHub IPA 构建说明](github-ios-ipa.md)、[Apple 配置详细指南](apple-app-store-connect-setup-guide.md)、[iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
+当前代码、Web/iOS 同步、plist/资源静态检查、APNs 单元测试、双平台设备 API、私有 GitHub 仓库、`ios-production` 环境、Distribution 证书与 production profile 已就绪；**当前下一步**是把签名材料写入 Environment Secrets、运行 macOS 26 Archive 并下载校验 IPA。App Store Connect 记录、APNs Key、上传、Apple 处理、测试员分配和真机验收尚未完成。TestFlight 构建可测试 90 天，内部测试最多 100 人；首次外部测试还需要 Beta App Review。详见 [GitHub IPA 构建说明](github-ios-ipa.md)、[Apple 配置详细指南](apple-app-store-connect-setup-guide.md)、[iOS/TestFlight 发布说明](ios-testflight-notes.md)、[Apple 上传构建文档](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)和 [Apple TestFlight 文档](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview)。
 
 App Store Connect 的 App Privacy 必须与 `PrivacyInfo.xcprivacy` 和实际生产数据流一致。E聊会将账号/昵称、可选手机号、好友社交图、消息、照片/视频、语音、其他用户内容、反馈、用户/设备标识、活跃/登录诊断及由 IP 推断的粗略地区发送到服务端并与账号关联，仅用于 App Functionality，不用于跨应用跟踪。消息私聊不能标记为“不收集数据”；账号持有人仍需在提交前根据最终生产部署、隐私政策和第三方服务逐项确认。
 

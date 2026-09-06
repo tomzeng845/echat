@@ -2,9 +2,9 @@
 
 ## 当前结论
 
-E聊 iOS 客户端已基于 Capacitor 8 生成 Xcode 工程，Bundle ID 默认为 `com.echat.app`，版本为 `0.9.0 (18)`，最低支持 iOS 15。普通消息、好友申请和测试通知使用 APNs alert；真实音视频来电使用 PushKit VoIP push，并立即交给 CallKit 显示系统来电界面。相机、麦克风、通知、后台音频、刘海屏和 Home Indicator 安全区已经接入应用代码。
+E聊 iOS 客户端已基于 Capacitor 8 生成 Xcode 工程，Bundle ID 默认为 `com.tomzeng845.echat`，版本为 `0.9.0 (18)`，最低支持 iOS 15。普通消息、好友申请和测试通知使用 APNs alert；真实音视频来电使用 PushKit VoIP push，并立即交给 CallKit 显示系统来电界面。相机、麦克风、通知、后台音频、刘海屏和 Home Indicator 安全区已经接入应用代码。
 
-> **当前是“源码与 Linux 可验证范围就绪”，不是“已上传 TestFlight”。** 当前执行环境是 Linux，没有 Xcode、Apple Developer/App Store Connect 凭据或可用 macOS 构建机，因而无法生成 Apple 签名 Archive/IPA、上传构建、等待 Apple 处理或进行 iPhone 真机验收。
+> **当前不是“已上传 TestFlight”。** Apple Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 并开启 Push Notifications，Apple Distribution 证书和 production profile 已验证；私有 GitHub 仓库和 macOS 26 workflow 已就绪。签名 Secrets、实际 workflow Archive、App Store Connect 应用记录、上传和 iPhone 真机验收仍未完成。
 
 ## 实现映射
 
@@ -33,7 +33,7 @@ APNs 发送 Key 与 App Store Connect 上传 Key 是两类用途。即使 Apple 
 | -------------------------------- | ---------------------------------------------- | ------------------- |
 | `APNS_TEAM_ID`                   | APNs provider JWT 的 Apple Team ID             | 仅服务端秘密管理    |
 | `APNS_KEY_ID`                    | APNs Key ID                                    | 仅服务端秘密管理    |
-| `APNS_BUNDLE_ID`                 | APNs topic，默认 `com.echat.app`               | 服务端部署配置      |
+| `APNS_BUNDLE_ID`                 | APNs topic，默认 `com.tomzeng845.echat`        | 服务端部署配置      |
 | `APNS_PRIVATE_KEY`               | APNs PKCS#8 PEM；可用 `\n` 转义换行            | 仅服务端秘密管理    |
 | `APNS_USE_SANDBOX`               | Debug 真机为 `true`；TestFlight/生产为 `false` | 服务端部署配置      |
 | `APPLE_TEAM_ID`                  | Xcode 自动签名 Team ID                         | macOS 构建机 Secret |
@@ -41,15 +41,15 @@ APNs 发送 Key 与 App Store Connect 上传 Key 是两类用途。即使 Apple 
 | `APP_STORE_CONNECT_ISSUER_ID`    | App Store Connect issuer UUID                  | macOS 构建机 Secret |
 | `APP_STORE_CONNECT_API_KEY_PATH` | 只可下载一次的上传 `.p8` 文件路径              | 项目外安全目录      |
 
-首次上传前还必须完成以下 Apple 侧资源：在 Apple Developer 注册属于目标团队的 `com.echat.app` App ID，开启 Push Notifications；确认 provisioning profile 含 APNs entitlement；在 App Store Connect 创建同 Bundle ID 的应用记录。如果该 Bundle ID 不属于用户团队或已被其他团队占用，必须在首次上传前统一修改 Capacitor、Xcode、APNs topic 和 App Store Connect 记录。
+Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，Team `PPY8H6QWB5` 成功注册 `com.tomzeng845.echat`，开启 Push Notifications，并生成含 production APNs entitlement 的 App Store profile。首次上传前仍需创建同 Bundle ID 的 App Store Connect 应用记录、APNs production Key 和上传 API Key。
 
 ## 构建与上传方案
 
-| 方案                                | 自动化程度 | 适用场景                            | 当前状态                                     |
-| ----------------------------------- | ---------- | ----------------------------------- | -------------------------------------------- |
-| 受控 Mac 执行 `pnpm ios:testflight` | 高         | 有固定 Mac、希望可重复 Archive/上传 | 脚本已完成；缺 Apple 凭据和 Mac 实跑         |
-| Xcode Organizer 或 Transporter      | 中         | 首次签名排错、人工选择 Team/profile | 可作为上传脚本回退方案                       |
-| GitHub Actions macOS runner         | 高         | 已有私有 GitHub 仓库并希望 CI 发布  | 当前 GitHub connector 未启用，尚未创建工作流 |
+| 方案                                | 自动化程度 | 适用场景                            | 当前状态                                           |
+| ----------------------------------- | ---------- | ----------------------------------- | -------------------------------------------------- |
+| 受控 Mac 执行 `pnpm ios:testflight` | 高         | 有固定 Mac、希望可重复 Archive/上传 | 脚本已完成；缺 Apple 凭据和 Mac 实跑               |
+| Xcode Organizer 或 Transporter      | 中         | 首次签名排错、人工选择 Team/profile | 可作为上传脚本回退方案                             |
+| GitHub Actions macOS runner         | 高         | 已有私有 GitHub 仓库并希望 CI 发布  | 私有仓库、workflow 与环境已建；签名 Secrets 待写入 |
 
 推荐先在受控 Mac 上用 Xcode 打开一次工程，确认 Team、Bundle ID、capability 与真机 PushKit/CallKit，再使用脚本重复上传：
 

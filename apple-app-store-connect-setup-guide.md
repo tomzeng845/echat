@@ -1,7 +1,7 @@
 # E聊 App Store Connect、证书、描述文件与 TestFlight 配置指南
 
-**适用版本：** E聊 iOS 0.9.0（Build 18）  
-**当前 Bundle ID：** `com.echat.app`  
+**适用版本：** E聊 iOS 0.9.0（Build 18）
+**当前 Bundle ID：** `com.tomzeng845.echat`
 **作者：** Manus AI  
 **更新日期：** 2026-09-06
 
@@ -13,15 +13,17 @@ Apple 的对象容易混淆。**App ID** 负责绑定 Bundle ID 和 capability�
 
 | 阶段                          | 推荐方式                       | E聊建议                                                                       |
 | ----------------------------- | ------------------------------ | ----------------------------------------------------------------------------- |
-| App ID 与 capability          | Apple Developer 网站           | 显式 App ID `com.echat.app`，开启 Push Notifications                          |
+| App ID 与 capability          | Apple Developer 网站           | 显式 App ID `com.tomzeng845.echat`，开启 Push Notifications                   |
 | 本机真机调试签名              | Xcode 自动签名                 | 由 Xcode 创建 Apple Development 证书和开发描述文件                            |
-| App Store/TestFlight 分发签名 | Xcode 自动签名与云管理证书     | 第一次先用 Xcode Organizer 完成，稳定后使用项目脚本                           |
+| App Store/TestFlight 分发签名 | GitHub Actions 手工签名        | 使用已配对 Apple Distribution `.p12` 与 production profile                    |
 | APNs 服务端认证               | `.p8` token Key                | 第一阶段使用 **Production Team Scoped** Key，确保同时覆盖 alert 与 VoIP topic |
 | TestFlight 自动上传           | App Store Connect Team API Key | 先验证上传角色；签名与 provisioning 权限需单独确认                            |
 
 > **推荐结论：优先使用 Xcode 的 Automatically manage signing。** Xcode 13 及以后可在 Organizer 分发流程中使用云管理分发证书；若使用自动签名，通常不需要手工创建开发或 App Store Connect 描述文件。[5] [6] 手工流程应只作为团队策略要求或自动签名排错的备用方案。
 
 > **自动签名与手工签名是两条互斥路线。** 当前 E聊 Xcode 工程和 `scripts/ios-testflight.sh` 均配置为 Automatic。选择第 6 节后，不要再在 Release 中固定手工 profile；选择第 7 节后，不要直接运行现有 `pnpm ios:testflight`，因为该脚本会执行 `-allowProvisioningUpdates` 并按自动签名导出。手工 CI 需要另行配置 Manual、签名身份和 `PROVISIONING_PROFILE_SPECIFIER`。
+
+> **本次实际采用手工 CI 路线。** `.github/workflows/ios-ipa.yml` 在 GitHub-hosted macOS 26 runner 中通过命令行覆盖 Manual signing，不会永久修改 Xcode 工程中的 Automatic 配置；workflow 只生成 IPA，不自动上传 TestFlight。
 
 ## 2. 开始前的账户与环境检查
 
@@ -43,14 +45,14 @@ Apple 的对象容易混淆。**App ID** 负责绑定 Bundle ID 和 capability�
 | Apple Developer Program | 会员有效，目标 Team 可用                             | Team 名称、10 位 Team ID |
 | App Store Connect 协议  | Business 页面没有待签协议                            | 协议状态                 |
 | 操作账号角色            | 推荐 Account Holder 或 Admin 完成首次配置            | 账号角色                 |
-| Bundle ID               | 首选 `com.echat.app`，必须在目标 Team 可注册         | 可用或需更换             |
+| Bundle ID               | `com.tomzeng845.echat`，已在目标 Team 注册           | 已完成                   |
 | 构建环境                | macOS，Xcode 26 或更新版本，Node.js/pnpm/Python 3    | Mac 与 Xcode 版本        |
 | 真机                    | 至少一台 iPhone；完整通话测试建议两台                | iOS 版本、设备名称       |
 | 正式 API                | 有效 HTTPS 地址，不能使用本机 `localhost`            | `ECHAT_IOS_API_URL`      |
 | 隐私政策                | 外部测试/商店提交前必须有公网 HTTPS 页面且可匿名访问 | Privacy Policy URL       |
 | TestFlight 测试员       | 内部测试员必须先成为 App Store Connect 用户          | Apple Account 邮箱       |
 
-E聊当前代码中的 Bundle ID 已统一为 `com.echat.app`。Bundle ID 在上传首个构建后不能更改；Apple 使用 Bundle ID、版本号和 build string 的组合作为构建身份。[7] 如果 `com.echat.app` 无法注册，不要继续创建应用记录。应先确定新的反向域名，例如 `com.yourcompany.echat`，再统一修改 Capacitor、Xcode、APNs 和 App Store Connect 配置。
+Apple 拒绝了已被其他团队占用的 `com.echat.app`；用户随后确认使用 `com.tomzeng845.echat`，并已在 Team `PPY8H6QWB5` 成功注册。E聊 iOS 的 Capacitor 同步、Xcode、APNs topic、CI 和文档均已迁移到新值；Android 已发布包名仍保持 `com.echat.app`。Bundle ID 在上传首个构建后不能更改；Apple 使用 Bundle ID、版本号和 build string 的组合作为构建身份。[7]
 
 ## 3. 注册 E聊显式 App ID
 
@@ -61,9 +63,9 @@ E聊当前代码中的 Bundle ID 已统一为 `com.echat.app`。Bundle ID 在上
 3. 点击左上角 **+**。
 4. 选择 **App IDs**，点击 Continue。
 5. 类型选择 **App**，点击 Continue。
-6. Description 填写 `EChat iOS Production` 或 `E聊 iOS 正式版`。
+6. Description 填写 `EChat iOS`（本次已使用该值）。
 7. 选择 **Explicit App ID**。
-8. Bundle ID 精确填写 `com.echat.app`，不要添加空格、通配符或 `.voip`。
+8. Bundle ID 精确填写 `com.tomzeng845.echat`，不要添加空格、通配符或 `.voip`。
 9. 在 Capabilities 中勾选 **Push Notifications**。
 10. 点击 Continue，核对 Team、Description、Identifier 和 capability，再点击 Register。
 
@@ -71,7 +73,7 @@ E聊当前代码中的 Bundle ID 已统一为 `com.echat.app`。Bundle ID 在上
 
 ### 3.1 不应额外创建的对象
 
-E聊服务端已使用 APNs token authentication，因此**不要创建旧式 VoIP Services Certificate 或单独的 APNs TLS 证书**。也不要为 `com.echat.app.voip` 创建第二个 App ID。PushKit 的 VoIP topic 是主 Bundle ID 派生出的 `{BundleId}.voip`，当前服务端会发送到 `com.echat.app.voip`。
+E聊服务端已使用 APNs token authentication，因此**不要创建旧式 VoIP Services Certificate 或单独的 APNs TLS 证书**。也不要为 `com.tomzeng845.echat.voip` 创建第二个 App ID。PushKit 的 VoIP topic 是主 Bundle ID 派生出的 `{BundleId}.voip`，当前服务端会发送到 `com.tomzeng845.echat.voip`。
 
 ## 4. 创建 APNs 服务端 Key
 
@@ -81,7 +83,7 @@ Apple 目前支持 **Team Scoped** 和 **Topic Specific** 两类 APNs Key，并�
 
 ### 4.1 第一次 TestFlight 的推荐选择
 
-E聊需要同时发送两个 topic：普通通知使用 `com.echat.app`，VoIP 来电使用 `com.echat.app.voip`。为降低首次配置失败风险，建议创建 **Production + Team Scoped** Key。以后如改为 Topic Specific，必须确认 Apple 配置页明确关联了这两个 topic；如果只能看到或选中主 Bundle ID，先不要切换。
+E聊需要同时发送两个 topic：普通通知使用 `com.tomzeng845.echat`，VoIP 来电使用 `com.tomzeng845.echat.voip`。为降低首次配置失败风险，建议创建 **Production + Team Scoped** Key。以后如改为 Topic Specific，必须确认 Apple 配置页明确关联了这两个 topic；如果只能看到或选中主 Bundle ID，先不要切换。
 
 1. 打开 **Certificates, Identifiers & Profiles → Keys**。
 2. 点击 **+**。
@@ -101,7 +103,7 @@ E聊需要同时发送两个 topic：普通通知使用 `com.echat.app`，VoIP �
 ```text
 APNS_TEAM_ID=<10位Team ID>
 APNS_KEY_ID=<10位APNs Key ID>
-APNS_BUNDLE_ID=com.echat.app
+APNS_BUNDLE_ID=com.tomzeng845.echat
 APNS_PRIVATE_KEY=<由秘密管理服务短时注入的完整 PEM；不要写入配置文件>
 APNS_USE_SANDBOX=false
 ```
@@ -118,14 +120,14 @@ App Store Connect 要求先创建应用记录，再上传任何构建。[2] 打�
 4. 按下表填写。
 5. 点击 Create，检查是否出现缺失字段或权限错误。
 
-| 字段             | E聊建议值                         | 说明                                                                         |
-| ---------------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| Platforms        | `iOS`                             | 当前只创建 iOS 平台                                                          |
-| Name             | `E聊`                             | 2–30 个字符；若已被占用，可使用 `E聊即时通讯`，应用内显示名仍可保留“E聊” [7] |
-| Primary Language | `Chinese (Simplified)`            | 未提供其他本地化时使用的默认元数据语言                                       |
-| Bundle ID        | `com.echat.app` 对应的 Identifier | 必须从下拉框选择，不是自由输入                                               |
-| SKU              | `ECHAT-IOS-001`                   | 内部标识，用户不可见；创建后不可修改 [7]                                     |
-| User Access      | `Full Access`                     | 单人或小团队最简单；有权限隔离要求时选 Limited Access                        |
+| 字段             | E聊建议值                                | 说明                                                                         |
+| ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| Platforms        | `iOS`                                    | 当前只创建 iOS 平台                                                          |
+| Name             | `E聊`                                    | 2–30 个字符；若已被占用，可使用 `E聊即时通讯`，应用内显示名仍可保留“E聊” [7] |
+| Primary Language | `Chinese (Simplified)`                   | 未提供其他本地化时使用的默认元数据语言                                       |
+| Bundle ID        | `com.tomzeng845.echat` 对应的 Identifier | 必须从下拉框选择，不是自由输入                                               |
+| SKU              | `ECHAT-IOS-001`                          | 内部标识，用户不可见；创建后不可修改 [7]                                     |
+| User Access      | `Full Access`                            | 单人或小团队最简单；有权限隔离要求时选 Limited Access                        |
 
 创建成功后，状态应为 **Prepare for Submission**，Apple 会自动生成不可修改的 Apple ID。[2] 立即进入 **App Information** 检查 Bundle ID。如果选错 Bundle ID，且尚未上传构建，可删除记录后重建；上传构建后 Bundle ID 不能更改。
 
@@ -165,7 +167,7 @@ pnpm ios:open
 4. 打开 **Signing & Capabilities**。
 5. 对 Debug 和 Release 均选择正确 Team。
 6. 勾选 **Automatically manage signing**。
-7. 确认 Bundle Identifier 为 `com.echat.app`。
+7. 确认 Bundle Identifier 为 `com.tomzeng845.echat`。
 8. 点击 **+ Capability**，确认存在 **Push Notifications**。
 9. 确认存在 **Background Modes**。按 E聊当前真实功能保留通话期间需要的 **Audio**、推送处理需要的 **Remote notifications**，以及界面中可用时的 **Voice over IP**；不要为了“更稳定”勾选应用没有使用的其他后台模式。
 10. 等待 Xcode 显示签名状态正常，不应有红色 “No profiles” 错误。
@@ -227,7 +229,7 @@ Apple Development 证书用于 Xcode 安装和调试真机版本，不用于 Tes
 
 1. 进入 **Profiles → +**。
 2. 选择 **iOS App Development**。
-3. 选择 `com.echat.app` App ID。
+3. 选择 `com.tomzeng845.echat` App ID。
 4. 选择 Apple Development 证书。
 5. 选择要安装 Debug 版本的 iPhone。
 6. Profile Name 填写 `EChat iOS Development`。
@@ -244,9 +246,9 @@ Apple Development 证书用于 Xcode 安装和调试真机版本，不用于 Tes
 
 1. 进入 **Profiles → +**。
 2. 在 Distribution 下选择 **App Store Connect**。
-3. 选择 `com.echat.app` App ID。
+3. 选择 `com.tomzeng845.echat` App ID。
 4. 选择 Apple Distribution 证书。
-5. Profile Name 填写 `EChat App Store 0.9`。
+5. Profile Name 填写 `EChat App Store 2026`（本次已生成）。
 6. 点击 Generate，再 Download。
 7. 安装 `.mobileprovision`。
 8. 在 Xcode Release 配置中关闭 Automatically manage signing，选择该 profile 和 Apple Distribution 证书。
@@ -261,7 +263,7 @@ security cms -D -i /路径/EChat_App_Store_0_9.mobileprovision > /tmp/echat-prof
 /usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' /tmp/echat-profile.plist
 ```
 
-预期 `application-identifier` 以 `.com.echat.app` 结尾，`aps-environment` 为 `production`，`TeamIdentifier` 包含目标 Team ID。部分旧 Apple 账号的 App ID Prefix 可能不等于 Team ID，不能把二者强制视为相同。[18] 如果之后要恢复仓库自带的 TestFlight 脚本，请先把 Debug/Release 重新设为 Automatic，并移除手工 profile specifier。
+预期 `application-identifier` 以 `.com.tomzeng845.echat` 结尾，`aps-environment` 为 `production`，`TeamIdentifier` 包含目标 Team ID。部分旧 Apple 账号的 App ID Prefix 可能不等于 Team ID，不能把二者强制视为相同。[18] 如果之后要恢复仓库自带的 TestFlight 脚本，请先把 Debug/Release 重新设为 Automatic，并移除手工 profile specifier。
 
 ## 8. 创建 TestFlight 上传 API Key
 
@@ -391,23 +393,23 @@ E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收�
 
 ## 13. 常见问题排查
 
-| 症状                                         | 主要原因                                          | 处理方法                                                             |
-| -------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
-| New App 按钮不可用                           | 角色不足或最新协议未接受                          | 让 Account Holder 接受 Business 协议，并确认账号为 App Manager/Admin |
-| Bundle ID 不在下拉框                         | 选错 Team、App ID 未注册或角色无权访问            | 回 Developer Portal 检查显式 App ID `com.echat.app`                  |
-| App name unavailable                         | 同语言名称已被占用                                | 改用 `E聊即时通讯` 等商店名称；应用内显示名可仍为 E聊                |
-| Xcode 显示 No profiles                       | Team/Bundle ID/capability 不匹配                  | 开启自动签名，确认 Push Notifications 已在 App ID 和 target 同时启用 |
-| Certificate 显示 Missing Private Key         | CSR 在另一台 Mac 生成                             | 从原 Mac 导入含私钥 `.p12`，或重新创建证书                           |
-| Archive 的 `aps-environment` 不为 production | 使用了开发 profile 或 Release 配置错误            | 重新生成 App Store Connect profile，检查 Release build setting       |
-| APNs `InvalidProviderToken`                  | Team ID、Key ID、私钥或服务器时钟错误             | 核对 10 位 ID、`.p8` 与 UTC 时间；撤销泄露 Key                       |
-| APNs `BadDeviceToken`                        | Sandbox/Production 混用或 token 已变化            | TestFlight 使用 production；重新登录并注册 token                     |
-| APNs `DeviceTokenNotForTopic`                | Bundle ID/topic/Team 不一致                       | 普通 topic 用 `com.echat.app`，VoIP 用 `com.echat.app.voip`          |
-| 普通通知可用但 VoIP 失败                     | APNs Key 未覆盖 VoIP topic                        | 首次使用 Production Team Scoped Key，检查 `apns-push-type=voip`      |
-| 上传后看不到构建                             | Bundle ID 不匹配、build 重复或仍在处理            | 检查 Activity/Build 状态，使用新的 build number                      |
-| Missing Compliance                           | 出口合规问卷未完成                                | 在 TestFlight build 详情填写 Export Compliance [15]                  |
-| 内部测试员不在列表                           | 不是 App Store Connect 用户或无 App access        | 先在 Users and Access 邀请并授权目标 App                             |
-| 自动脚本忽略手工 profile                     | 当前脚本固定使用 Automatic signing                | 手工路线用 Organizer；不要混用第 6、7 节                             |
-| 外部组无法添加 build                         | 未建内部组、使用 Internal Only build 或元数据不全 | 先建内部组，换可外部分发 build，并完成 Privacy/Test Information [17] |
+| 症状                                         | 主要原因                                          | 处理方法                                                                  |
+| -------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------- |
+| New App 按钮不可用                           | 角色不足或最新协议未接受                          | 让 Account Holder 接受 Business 协议，并确认账号为 App Manager/Admin      |
+| Bundle ID 不在下拉框                         | 选错 Team、App ID 未注册或角色无权访问            | 回 Developer Portal 检查显式 App ID `com.tomzeng845.echat`                |
+| App name unavailable                         | 同语言名称已被占用                                | 改用 `E聊即时通讯` 等商店名称；应用内显示名可仍为 E聊                     |
+| Xcode 显示 No profiles                       | Team/Bundle ID/capability 不匹配                  | 开启自动签名，确认 Push Notifications 已在 App ID 和 target 同时启用      |
+| Certificate 显示 Missing Private Key         | CSR 在另一台 Mac 生成                             | 从原 Mac 导入含私钥 `.p12`，或重新创建证书                                |
+| Archive 的 `aps-environment` 不为 production | 使用了开发 profile 或 Release 配置错误            | 重新生成 App Store Connect profile，检查 Release build setting            |
+| APNs `InvalidProviderToken`                  | Team ID、Key ID、私钥或服务器时钟错误             | 核对 10 位 ID、`.p8` 与 UTC 时间；撤销泄露 Key                            |
+| APNs `BadDeviceToken`                        | Sandbox/Production 混用或 token 已变化            | TestFlight 使用 production；重新登录并注册 token                          |
+| APNs `DeviceTokenNotForTopic`                | Bundle ID/topic/Team 不一致                       | 普通 topic 用 `com.tomzeng845.echat`，VoIP 用 `com.tomzeng845.echat.voip` |
+| 普通通知可用但 VoIP 失败                     | APNs Key 未覆盖 VoIP topic                        | 首次使用 Production Team Scoped Key，检查 `apns-push-type=voip`           |
+| 上传后看不到构建                             | Bundle ID 不匹配、build 重复或仍在处理            | 检查 Activity/Build 状态，使用新的 build number                           |
+| Missing Compliance                           | 出口合规问卷未完成                                | 在 TestFlight build 详情填写 Export Compliance [15]                       |
+| 内部测试员不在列表                           | 不是 App Store Connect 用户或无 App access        | 先在 Users and Access 邀请并授权目标 App                                  |
+| 自动脚本忽略手工 profile                     | 当前脚本固定使用 Automatic signing                | 手工路线用 Organizer；不要混用第 6、7 节                                  |
+| 外部组无法添加 build                         | 未建内部组、使用 Internal Only build 或元数据不全 | 先建内部组，换可外部分发 build，并完成 Privacy/Test Information [17]      |
 
 ## 14. 最终配置记录表
 
@@ -415,9 +417,9 @@ E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收�
 
 | 项目                            | 值/状态                            |
 | ------------------------------- | ---------------------------------- |
-| Apple Team 名称                 |                                    |
-| Apple Team ID                   |                                    |
-| 最终 Bundle ID                  | `com.echat.app`                    |
+| Apple Team 名称                 | zhihai zeng                        |
+| Apple Team ID                   | `PPY8H6QWB5`                       |
+| 最终 Bundle ID                  | `com.tomzeng845.echat`             |
 | App Store Connect Apple ID      |                                    |
 | App Store Name                  | `E聊`                              |
 | SKU                             | `ECHAT-IOS-001`                    |
@@ -427,7 +429,7 @@ E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收�
 | App Store Connect API Key ID    |                                    |
 | Issuer ID                       |                                    |
 | 上传 `.p8` 安全存储位置         | 只写密码库条目名称，不写路径或内容 |
-| 最终签名路线                    | Automatic 或 Manual（二选一）      |
+| 最终签名路线                    | GitHub Actions Manual              |
 | Debug 签名状态                  |                                    |
 | Release/Archive 签名状态        |                                    |
 | Privacy Policy URL              |                                    |

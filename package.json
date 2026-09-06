@@ -11,7 +11,7 @@
     "android:apk": "pnpm android:sync && cd android && ./gradlew assembleDebug",
     "android:release": "bash scripts/android-release.sh",
     "build:ios:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_IOS_API_URL:-https://echatapp-favrlscm.manus.space} vite build",
-    "ios:sync": "pnpm build:ios:web && cap sync ios",
+    "ios:sync": "ECHAT_CAPACITOR_APP_ID=${ECHAT_IOS_BUNDLE_ID:-com.tomzeng845.echat} pnpm build:ios:web && ECHAT_CAPACITOR_APP_ID=${ECHAT_IOS_BUNDLE_ID:-com.tomzeng845.echat} cap sync ios",
     "ios:validate": "python3 scripts/validate-ios-project.py",
     "ios:push-smoke": "node scripts/ios-push-smoke.mjs",
     "ios:open": "cap open ios",

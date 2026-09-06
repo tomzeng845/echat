@@ -6,6 +6,8 @@
 
 > App Store Connect 分发 IPA 不能像企业包或 Ad Hoc 包一样直接安装。生成后可作为受控发布产物下载、校验，并在 App Store Connect 应用记录准备完成后上传 TestFlight。
 
+**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建；证书/profile Secrets 与首次 workflow 运行待完成。
+
 ## 构建路线与安全边界
 
 | 项目            | 设置                                                                       |
@@ -13,7 +15,7 @@
 | Runner          | GitHub-hosted `macos-26`                                                   |
 | Xcode           | runner 默认 Xcode 26.x，工作流会输出实际版本                               |
 | Node.js / pnpm  | Node.js 22、pnpm 10.4.1                                                    |
-| Bundle ID       | `com.echat.app`                                                            |
+| Bundle ID       | `com.tomzeng845.echat`                                                     |
 | 默认版本        | `0.9.0`                                                                    |
 | 默认 Build      | `18` + GitHub workflow run number，从现有 Build 18 之后开始且随新 run 递增 |
 | API 地址        | 手工触发时填写的生产 HTTPS 地址                                            |
@@ -27,14 +29,14 @@
 
 在运行 workflow 前，必须完成以下 Apple 资源：
 
-| 资源                                   | 要求                                                                                 |
-| -------------------------------------- | ------------------------------------------------------------------------------------ |
-| Apple Developer Team                   | 会员有效，并记录 10 位 Team ID                                                       |
-| App ID                                 | 显式 App ID `com.echat.app`                                                          |
-| Capability                             | App ID 和 Xcode target 均启用 Push Notifications                                     |
-| Apple Distribution 证书                | 证书与私钥同时存在于创建证书的 Mac Keychain                                          |
-| App Store Connect provisioning profile | Bundle ID 为 `com.echat.app`，包含该 Distribution 证书，`aps-environment=production` |
-| GitHub 仓库                            | 必须是私有仓库；Actions 可用                                                         |
+| 资源                                   | 要求                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Apple Developer Team                   | 会员有效，并记录 10 位 Team ID                                                              |
+| App ID                                 | 显式 App ID `com.tomzeng845.echat`                                                          |
+| Capability                             | App ID 和 Xcode target 均启用 Push Notifications                                            |
+| Apple Distribution 证书                | 证书必须与生成 CSR 的私钥配对，并导出为密码保护的 `.p12`                                    |
+| App Store Connect provisioning profile | Bundle ID 为 `com.tomzeng845.echat`，包含该 Distribution 证书，`aps-environment=production` |
+| GitHub 仓库                            | 必须是私有仓库；Actions 可用                                                                |
 
 完整 Apple 操作请参阅 `apple-app-store-connect-setup-guide.md` 的手工签名章节。不要把 Development 证书、开发 profile、Ad Hoc profile 或 sandbox profile 用于本 workflow。
 
@@ -58,9 +60,9 @@
 | 字段              | 值                                   |
 | ----------------- | ------------------------------------ |
 | Distribution 类型 | App Store Connect                    |
-| App ID            | `com.echat.app`                      |
+| App ID            | `com.tomzeng845.echat`               |
 | Certificate       | 上一步对应的 Apple Distribution 证书 |
-| Profile Name      | 建议 `EChat App Store 0.9`           |
+| Profile Name      | `EChat App Store 2026`               |
 
 下载为 `.mobileprovision`。如果 App ID 的 Push Notifications capability 在 profile 创建后才启用，必须重新生成 profile。
 
@@ -73,7 +75,7 @@ security cms -D -i EChat_App_Store_0_9.mobileprovision > /tmp/echat-profile.plis
 /usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' /tmp/echat-profile.plist
 ```
 
-预期依次得到目标 Team ID、以 `.com.echat.app` 结尾的 application identifier，以及 `production`。部分旧 Apple 账号的 App ID Prefix 可能不等于 Team ID，因此只要求 bundle suffix 匹配，Team Identifier 另行精确校验。
+预期依次得到目标 Team ID、以 `.com.tomzeng845.echat` 结尾的 application identifier，以及 `production`。部分旧 Apple 账号的 App ID Prefix 可能不等于 Team ID，因此只要求 bundle suffix 匹配，Team Identifier 另行精确校验。
 
 ## 在 GitHub 创建受保护环境和 Secrets
 
@@ -157,7 +159,7 @@ sha256sum -c EChat-iOS-0.9.0-19.ipa.sha256
 | Missing ios-production environment secret           | Secret 放在错误环境或名称不一致               | 在 `ios-production` 的 Environment secrets 中检查四项名称 |
 | p12 does not contain an Apple Distribution identity | 导出了证书但没有私钥，或使用 Development 证书 | 在原 Mac Keychain 展开证书并重新导出证书+private key      |
 | Provisioning profile Team ID does not match         | Team ID 或 profile 来自不同 Team              | 使用同一 Team 的证书、profile 和 `APPLE_TEAM_ID`          |
-| profile does not match `com.echat.app`              | Bundle ID 选错                                | 重新创建显式 App ID 对应的 App Store profile              |
+| profile does not match `com.tomzeng845.echat`       | Bundle ID 选错                                | 重新创建显式 App ID 对应的 App Store profile              |
 | production APNs profile required                    | 使用了 development/sandbox profile            | 创建 App Store Connect distribution profile               |
 | No signing certificate found                        | `.p12` 密码错误或证书已失效                   | 检查 `P12_PASSWORD`、证书有效期和撤销状态                 |
 | Xcode archive fails in Swift Package resolution     | GitHub 或 Swift Package 网络抖动              | 重新运行一次；持续失败时检查依赖版本与 GitHub 状态        |

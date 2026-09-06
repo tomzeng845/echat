@@ -2,7 +2,7 @@
 
 ## iOS 0.9.0 与 TestFlight
 
-- [x] 安装 `@capacitor/ios` 并生成 Bundle ID `com.echat.app` 的 Capacitor 8 Xcode 工程
+- [x] 安装 `@capacitor/ios` 并生成 Capacitor 8 Xcode 工程；Apple 拒绝已被占用的 `com.echat.app` 后迁移 iOS 至 `com.tomzeng845.echat`
 - [x] 设置 iOS 15、版本 `0.9.0`、build 18、AppIcon、启动图和三类提示音
 - [x] 接入 APNs 普通通知 token 注册、点击路由和个人中心状态
 - [x] 接入 PushKit `ios-voip` token、CallKit 系统来电、接听/拒接/结束桥接
@@ -19,11 +19,12 @@
 - [x] 新增 GitHub-hosted `macos-26` 手工签名 workflow，生成并校验 App Store Connect 分发 IPA
 - [x] workflow 校验 Team、Bundle ID、production APNs entitlement、codesign、版本和 Build，并上传 14 天私有 artifact
 - [x] 提供 `ios-production` Environment Secrets、`.p12`/profile Base64、触发、下载和 SHA-256 说明
-- [ ] 用户授权 GitHub 连接器并指定或允许创建私有仓库
+- [x] 用户授权 GitHub 连接器并创建私有仓库 `tomzeng845/echat`，源码已推送到 `main`
 - [ ] 在私有仓库配置 Apple Distribution `.p12`、密码、Team ID 和 App Store Connect profile Secrets
 - [ ] 运行 `Build signed iOS IPA` workflow 并下载验证 `.ipa` 与 SHA-256
-- [ ] 确认 Apple Developer Team 是否拥有 `com.echat.app`；不可用时统一更换 Bundle ID
-- [ ] 在 Apple Developer 开启 Push Notifications，创建 provisioning profile 与 APNs Key
+- [x] 为 Team `PPY8H6QWB5` 注册 `com.tomzeng845.echat` 显式 App ID 并开启 Push Notifications
+- [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
+- [ ] 创建 APNs Key 并配置服务端生产秘密
 - [ ] 在 App Store Connect 创建应用记录、上传 API Key、隐私信息、隐私政策和 Beta 元数据
 - [ ] 由账号持有人审查 AES-GCM/RSA-OAEP、第三方 SDK 与发布地区后完成 Apple 出口合规问卷，再决定 `ITSAppUsesNonExemptEncryption`
 - [ ] 在 macOS Xcode 26 编译签名并以真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风

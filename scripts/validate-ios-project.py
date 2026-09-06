@@ -34,6 +34,7 @@ def main() -> int:
     entitlements = load_plist("App.entitlements")
     privacy = load_plist("PrivacyInfo.xcprivacy")
     project = PROJECT.read_text(encoding="utf-8")
+    capacitor_config_path = APP / "capacitor.config.json"
     app_delegate = (APP / "AppDelegate.swift").read_text(encoding="utf-8")
     scene_delegate = (APP / "SceneDelegate.swift").read_text(encoding="utf-8")
     storyboard = (APP / "Base.lproj" / "Main.storyboard").read_text(encoding="utf-8")
@@ -82,7 +83,7 @@ def main() -> int:
         "echat_message.wav in Resources",
         "echat_call.wav in Resources",
         "echat_ringback.wav in Resources",
-        "PRODUCT_BUNDLE_IDENTIFIER = com.echat.app;",
+        "PRODUCT_BUNDLE_IDENTIFIER = com.tomzeng845.echat;",
         "MARKETING_VERSION = 0.9.0;",
         "CURRENT_PROJECT_VERSION = 18;",
         "IPHONEOS_DEPLOYMENT_TARGET = 15.0;",
@@ -90,6 +91,10 @@ def main() -> int:
         "APS_ENVIRONMENT = production;",
     ):
         require(value in project, f"Xcode project setting/reference missing: {value}")
+
+    if capacitor_config_path.exists():
+        capacitor_config = json.loads(capacitor_config_path.read_text(encoding="utf-8"))
+        require(capacitor_config.get("appId") == "com.tomzeng845.echat", "Synced Capacitor iOS appId is incorrect")
 
     require("bridge?.registerPluginInstance(MediaPermissionsPlugin())" in app_delegate, "Custom Capacitor plugin is not registered")
     require("PKPushRegistryDelegate" in app_delegate, "PushKit delegate is missing")
@@ -125,7 +130,7 @@ def main() -> int:
     require((ROOT / "scripts" / "ios-testflight.sh").stat().st_mode & 0o111 != 0, "TestFlight script is not executable")
     require((ROOT / "scripts" / "validate-apple-profile.py").stat().st_mode & 0o111 != 0, "Apple profile validator is not executable")
 
-    print("IOS_STATIC_OK bundle=com.echat.app version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready")
+    print("IOS_STATIC_OK bundle=com.tomzeng845.echat version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready")
     return 0
 
 
