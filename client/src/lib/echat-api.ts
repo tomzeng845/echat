@@ -37,6 +37,7 @@ export type Conversation = {
   pinned: boolean;
   keyVersion: number;
   keyEnvelope?: string;
+  peerId?: string;
 };
 export type ConversationKeyEnvelope = {
   conversationId: string;

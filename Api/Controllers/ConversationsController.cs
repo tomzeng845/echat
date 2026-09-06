@@ -21,14 +21,15 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             var member = item.Members.First(x => x.UserId == userId);
             var name = item.Name;
             var avatar = item.AvatarUrl;
+            string? peerId = null;
             if (item.Type == ConversationType.Direct)
             {
-                var peerId = item.Members.First(x => x.UserId != userId).UserId;
+                peerId = item.Members.First(x => x.UserId != userId).UserId;
                 var peer = await repository.GetUserByIdAsync(peerId, ct);
                 name = peer?.DisplayName ?? "未知用户"; avatar = peer?.AvatarUrl ?? "";
             }
             var keyEnvelope = EnvelopeFor(item, userId, deviceId);
-            result.Add(new ConversationView(item.Id, item.Type, name, avatar, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, item.Members.Count(x => x.LeftAtSequence is null), member.ReadSequence, member.Muted, member.Pinned, item.KeyVersion, keyEnvelope));
+            result.Add(new ConversationView(item.Id, item.Type, name, avatar, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, item.Members.Count(x => x.LeftAtSequence is null), member.ReadSequence, member.Muted, member.Pinned, item.KeyVersion, keyEnvelope, peerId));
         }
         return Ok(result);
     }
@@ -63,7 +64,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 hub.Clients.Group($"user:{peer.Id}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct));
         }
         var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
-        return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, item.KeyVersion, keyEnvelope));
+        return Ok(new ConversationView(item.Id, item.Type, peer.DisplayName, peer.AvatarUrl, item.LastSequence, item.LastMessagePreview, item.LastMessageAtUtc, 2, item.Members.First(x => x.UserId == userId).ReadSequence, false, false, item.KeyVersion, keyEnvelope, peer.Id));
     }
 
     [HttpPost("groups")]
@@ -82,7 +83,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var item = await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Name = request.Name.Trim(), CreatedBy = userId, Members = members, KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
         await hub.Clients.Users(members.Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct);
         var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
-        return Ok(new ConversationView(item.Id, item.Type, item.Name, item.AvatarUrl, 0, item.LastMessagePreview, null, members.Count, 0, false, false, item.KeyVersion, keyEnvelope));
+        return Ok(new ConversationView(item.Id, item.Type, item.Name, item.AvatarUrl, 0, item.LastMessagePreview, null, members.Count, 0, false, false, item.KeyVersion, keyEnvelope, null));
     }
 
     [HttpGet("{id}/messages")]

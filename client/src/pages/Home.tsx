@@ -219,9 +219,6 @@ function AuthScreen({
           <div className="mb-16 flex items-center gap-3">
             <img src={LOGO} alt="E聊" className="h-11 w-11 object-contain" />
             <span className="text-2xl font-semibold tracking-tight">E聊</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-teal-200">
-              明文消息
-            </span>
           </div>
           <p className="mb-5 text-sm font-medium tracking-[.22em] text-teal-300">
             CONNECTED · FAST · YOURS
@@ -504,6 +501,13 @@ function Messenger({
   conversationsRef.current = conversations;
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
+  const selectedContact =
+    selected?.type === "Direct"
+      ? contacts.find(
+          contact =>
+            contact.status === "Friend" && contact.user.id === selected.peerId
+        ) ?? null
+      : null;
   const filteredConversations = conversations.filter(item =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -1493,18 +1497,6 @@ function Messenger({
                             @{contact.user.account}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          title="查看资料"
-                          aria-label={`查看${contact.user.displayName}的资料`}
-                          onClick={event => {
-                            event.stopPropagation();
-                            setProfileUser(contact.user);
-                          }}
-                          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-teal-50 hover:text-teal-600"
-                        >
-                          <CircleUserRound size={17} />
-                        </button>
                         <span className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 md:hidden">
                           发消息
                         </span>
@@ -1570,6 +1562,17 @@ function Messenger({
                   </p>
                 </div>
                 <div className="flex gap-1">
+                  {selected.type === "Direct" && (
+                    <HeaderAction
+                      icon={CircleUserRound}
+                      label="好友资料"
+                      onClick={() =>
+                        selectedContact
+                          ? setProfileUser(selectedContact.user)
+                          : toast.info("好友资料正在同步，请稍后重试")
+                      }
+                    />
+                  )}
                   <HeaderAction
                     icon={Phone}
                     label="语音通话"
