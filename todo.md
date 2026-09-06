@@ -26,7 +26,7 @@
 - [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
 - [x] 创建 App Store Connect 记录“E聊即时通讯”，绑定 `com.tomzeng845.echat`，Apple ID `6809145695`
 - [x] 创建 APNs Production Team Scoped Key `35STBCJUCJ`，并验证用户上传的 p8 可被 OpenSSL/APNs 服务导入
-- [ ] 将正确 APNs p8 安全注入正式服务；当前正式 API 健康字段仍为 `iosEnabled=false`
+- [x] 将新 APNs p8 安全注入正式服务；重启后健康测试确认 `iosEnabled=true`、Apple APNs provider
 - [x] 创建 Developer 角色 App Store Connect Team API Key，并加入 GitHub `ios-production` Environment Secrets
 - [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据
 - [x] 由账号持有人确认标准加密算法并声明当前不在法国分发，完成 Build 181 出口合规问卷

@@ -420,3 +420,9 @@ App Store Connect 已处理 Build 181。账号持有人确认应用使用标准 
 Apple Developer 已创建 Production Team Scoped APNs Key `35STBCJUCJ`，覆盖 E聊普通 alert topic `com.tomzeng845.echat` 与 VoIP topic `com.tomzeng845.echat.voip`。用户上传的 `AuthKey_35STBCJUCJ.p8` 未写入仓库；在隔离的本地 API 进程中以完整 PEM 注入后，新增 Vitest `server/apns-production-secret.test.ts` 通过，健康响应确认 `version=0.9.0`、`push.enabled=true`、`push.iosEnabled=true`，provider 为 Apple Push Notification service。
 
 尝试通过 WebDev Secrets 更新正式 `APNS_PRIVATE_KEY` 时，当前服务仍收到无 PEM 头尾的自动生成/旧值，连续健康测试显示 `iosEnabled=false`；WebDev Secrets 的最新更新请求未能保存用户上传文件内容。正式 API 因此没有被误报为 APNs 已启用，也没有把私钥写入代码、GitHub 或日志。其余 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_BUNDLE_ID` 和 `APNS_USE_SANDBOX=false` 配置值已确认；剩余阻断是安全注入正确 p8 私钥后重启服务并再次通过该测试。
+
+## 2026-09-06 APNs Key 更换完成
+
+Apple Developer 页面确认旧 Key `35STBCJUCJ` 实际显示为 Sandbox，已按用户授权撤销。重新创建并下载 APNs Key `5FLA6SLK3N`（`EChat APNs Production 2026 v2`），将匹配的 p8 通过 WebDev Secrets 安全更新为 `APNS_PRIVATE_KEY`，同时更新 `APNS_KEY_ID`，随后重启服务。现正式 `/api/health` 返回 `version=0.9.0`、`push.enabled=true`、`push.iosEnabled=true`、provider 为 Apple Push Notification service；`server/apns-production-secret.test.ts` 通过。项目和日志中没有保存 p8 文件。
+
+Apple Developer 列表当前只保留新 Key；页面仍显示其 APNs 环境标签为 Sandbox，因此后续真机 TestFlight 推送验收若出现 `BadDeviceToken`，应优先在 Apple Developer 重新核对 Key 的 Environment 选项与 TestFlight token 环境，不应把本次健康检查当作真实设备推送成功证明。
