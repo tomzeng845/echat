@@ -17,7 +17,7 @@ public enum ConversationType { Direct, Group, System }
 public enum MemberRole { Owner, Admin, Member }
 public enum MessageKind { Text, Emoji, Image, Voice, Video, File, System }
 public enum MessageState { Accepted, Recalled }
-public enum MediaPurpose { Chat, Moment, Feedback }
+public enum MediaPurpose { Chat, Moment, Feedback, Avatar }
 public enum QrLoginStatus { Pending, Scanned, Approved, Denied, Consumed, Expired }
 public enum MomentVisibility { Friends, Private, Selected, Excluded }
 public enum MomentReportStatus { Submitted, Resolved, Rejected }
@@ -308,6 +308,7 @@ public sealed record LoginRequest(string Account, string Password, string Device
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
 public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web", string? DeviceId = null);
 public sealed record PublicKeyRequest(string PublicKeyJwk, string? DeviceId = null);
+public sealed record UpdateProfileRequest(string DisplayName, string Signature = "", string? AvatarAssetId = null);
 public sealed record AuthResponse(bool Success, string? AccessToken, string? RefreshToken, DateTime? ExpiresAtUtc, UserView? User, bool RequiresTotp = false, string? PendingToken = null, string? Error = null, string? SessionId = null, string? DeviceId = null);
 public sealed record UserView(string Id, string Account, string DisplayName, string AvatarUrl, string Signature, string Region, UserRole Role, UserStatus Status);
 public sealed record FriendRequestInput(string RequestId, string PeerAccount, string Note = "", string Source = "account");

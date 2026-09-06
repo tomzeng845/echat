@@ -136,6 +136,7 @@ app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment enviro
     name = "E聊 API",
     version = "0.9.0",
     realtimeMessageDelivery = "user-group-message-created-v1",
+    profileFeatures = "avatar-actions-v1",
     status = "healthy",
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },

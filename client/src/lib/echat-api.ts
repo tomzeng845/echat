@@ -304,10 +304,16 @@ export async function api<T>(
   return response.json() as Promise<T>;
 }
 
+export async function fetchAuthenticatedBlob(path: string) {
+  const response = await authorizedFetch(path);
+  if (!response.ok) throw new Error(`图片加载失败 (${response.status})`);
+  return response.blob();
+}
+
 export async function uploadMedia(
   file: Blob,
   fileName: string,
-  purpose: "Chat" | "Moment",
+  purpose: "Chat" | "Moment" | "Avatar",
   conversationId?: string
 ) {
   const form = new FormData();
@@ -328,6 +334,7 @@ export type RealtimeHandlers = {
   }) => void;
   onContactRequest?: (event: FriendRequest) => void;
   onContactUpdate?: (event: ContactRealtimeEvent) => void;
+  onProfileUpdate?: (user: User) => void;
   onReceipt?: (event: ReceiptUpdated) => void;
   onMoment?: () => void;
   onAdminNotice?: (notice: {
@@ -361,6 +368,8 @@ export function connectRealtime(handlers: RealtimeHandlers) {
     connection.on("contact.requested", handlers.onContactRequest);
   if (handlers.onContactUpdate)
     connection.on("contact.updated", handlers.onContactUpdate);
+  if (handlers.onProfileUpdate)
+    connection.on("profile.updated", handlers.onProfileUpdate);
   if (handlers.onReceipt) connection.on("receipt.updated", handlers.onReceipt);
   if (handlers.onMoment) connection.on("moment.updated", handlers.onMoment);
   if (handlers.onAdminNotice)

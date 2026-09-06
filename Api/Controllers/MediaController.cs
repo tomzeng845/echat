@@ -19,6 +19,8 @@ public sealed class MediaController(IChatRepository repository, IMediaStorage st
     {
         if (file.Length is <= 0 or > MaxSize) return BadRequest(new { error = "文件为空或超过 25 MB" });
         if (BlockedTypes.Contains(file.ContentType)) return BadRequest(new { error = "不支持此文件类型" });
+        if (purpose == MediaPurpose.Avatar && (file.Length > 5 * 1024 * 1024 || !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { error = "头像必须是 5 MB 以内的图片" });
         if (purpose == MediaPurpose.Chat)
         {
             if (string.IsNullOrWhiteSpace(conversationId)) return BadRequest(new { error = "聊天媒体必须指定会话" });
@@ -75,6 +77,7 @@ public sealed class MediaController(IChatRepository repository, IMediaStorage st
         var relation = await repository.GetRelationAsync(userId, asset.OwnerId, ct);
         var reverse = await repository.GetRelationAsync(asset.OwnerId, userId, ct);
         if (relation?.Status != RelationStatus.Friend || reverse?.Status != RelationStatus.Friend) return false;
+        if (asset.Purpose == MediaPurpose.Avatar) return true;
         var moments = await repository.GetMomentsAsync([asset.OwnerId], null, 200, ct);
         var moment = moments.FirstOrDefault(x => x.MediaAssetIds.Contains(asset.Id));
         if (moment is null || moment.Visibility == MomentVisibility.Private) return false;

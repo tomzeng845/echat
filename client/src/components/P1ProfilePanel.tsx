@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   Bell,
+  Camera,
   Clock3,
   FileText,
   LogOut,
   MonitorSmartphone,
   Phone,
+  Pencil,
   QrCode,
   ScanLine,
   ShieldCheck,
@@ -15,6 +17,7 @@ import {
 import { toast } from "sonner";
 import {
   api,
+  uploadMedia,
   type CallRecord,
   type DeviceSession,
   type RtcConfig,
@@ -35,17 +38,20 @@ import {
   type NativePushState,
 } from "@/lib/mobile-native";
 import { pushStatusLabel } from "@/lib/push-status";
+import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 
 export default function P1ProfilePanel({
   user,
   onLogout,
   onScan,
   onMyQr,
+  onProfileUpdated,
 }: {
   user: User;
   onLogout: () => void;
   onScan: () => void;
   onMyQr: () => void;
+  onProfileUpdated: (user: User) => void;
 }) {
   const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [calls, setCalls] = useState<CallRecord[]>([]);
@@ -58,7 +64,13 @@ export default function P1ProfilePanel({
   );
   const [backgroundSupport, setBackgroundSupport] =
     useState<NativeBackgroundCallSupport | null>(null);
-  const [section, setSection] = useState<"home" | "devices" | "calls">("home");
+  const [section, setSection] = useState<"home" | "devices" | "calls" | "edit-profile">("home");
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [signature, setSignature] = useState(user.signature || "");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState(user.avatarUrl);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const avatarImageUrl = useAuthenticatedImage(avatarPreview);
 
   async function load() {
     const [nextDevices, nextCalls, nextRtc] = await Promise.all([
@@ -93,6 +105,15 @@ export default function P1ProfilePanel({
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, []);
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(user.avatarUrl);
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFile, user.avatarUrl]);
 
   async function revoke(id: string) {
     try {
@@ -118,6 +139,41 @@ export default function P1ProfilePanel({
       await api<void>("/api/auth/logout", { method: "POST" });
     } finally {
       onLogout();
+    }
+  }
+
+  async function saveProfile() {
+    if (!displayName.trim()) return toast.warning("请输入昵称");
+    setProfileBusy(true);
+    try {
+      let avatarAssetId: string | undefined;
+      if (avatarFile) {
+        if (
+          !avatarFile.type.startsWith("image/") ||
+          avatarFile.size > 5 * 1024 * 1024
+        )
+          throw new Error("头像必须是 5 MB 以内的图片");
+        avatarAssetId = (
+          await uploadMedia(avatarFile, avatarFile.name, "Avatar")
+        ).id;
+      }
+      const updated = await api<User>("/api/users/me/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          displayName: displayName.trim(),
+          signature: signature.trim(),
+          avatarAssetId,
+        }),
+      });
+      onProfileUpdated(updated);
+      setAvatarFile(null);
+      setAvatarPreview(updated.avatarUrl);
+      setSection("home");
+      toast.success("个人资料已更新");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "资料更新失败");
+    } finally {
+      setProfileBusy(false);
     }
   }
 
@@ -174,6 +230,78 @@ export default function P1ProfilePanel({
     pushState,
     isNativeIos() ? "ios" : "android"
   );
+
+  if (section === "edit-profile")
+    return (
+      <div className="space-y-4 px-1">
+        <PanelHeader
+          title="修改个人资料"
+          onBack={() => {
+            setDisplayName(user.displayName);
+            setSignature(user.signature || "");
+            setAvatarFile(null);
+            setSection("home");
+          }}
+        />
+        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/60">
+          <label className="group mx-auto block w-fit cursor-pointer text-center">
+            <span className="relative block h-24 w-24 overflow-hidden rounded-[28px] bg-gradient-to-br from-teal-400 to-emerald-600 text-white shadow-lg">
+              {avatarImageUrl ? (
+                <img
+                  src={avatarImageUrl}
+                  alt="头像预览"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="grid h-full w-full place-items-center text-xl font-semibold">
+                  {Array.from(displayName || user.displayName).slice(-2).join("")}
+                </span>
+              )}
+              <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-slate-950/55 py-1.5 text-[10px]">
+                <Camera size={12} /> 更换头像
+              </span>
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              hidden
+              onChange={event => setAvatarFile(event.target.files?.[0] || null)}
+            />
+          </label>
+          <label className="mt-6 block text-xs font-medium text-slate-500">
+            昵称
+            <input
+              value={displayName}
+              maxLength={30}
+              onChange={event => setDisplayName(event.target.value)}
+              className="mt-2 w-full rounded-xl bg-slate-100 px-3 py-3 text-sm text-slate-800 outline-none ring-teal-400/40 focus:ring-2"
+            />
+          </label>
+          <label className="mt-4 block text-xs font-medium text-slate-500">
+            个性签名
+            <textarea
+              value={signature}
+              maxLength={120}
+              rows={3}
+              onChange={event => setSignature(event.target.value)}
+              placeholder="写一句话介绍自己"
+              className="mt-2 w-full resize-none rounded-xl bg-slate-100 px-3 py-3 text-sm text-slate-800 outline-none ring-teal-400/40 focus:ring-2"
+            />
+            <span className="mt-1 block text-right text-[10px] text-slate-400">
+              {signature.length}/120
+            </span>
+          </label>
+          <button
+            type="button"
+            disabled={profileBusy || !displayName.trim()}
+            onClick={saveProfile}
+            className="mt-5 w-full rounded-xl bg-teal-500 py-3 text-sm font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
+          >
+            {profileBusy ? "正在保存…" : "保存修改"}
+          </button>
+        </div>
+      </div>
+    );
 
   if (section === "devices")
     return (
@@ -259,8 +387,12 @@ export default function P1ProfilePanel({
     <div className="space-y-4 px-1">
       <div className="rounded-3xl bg-[#0a1b2b] p-5 text-white shadow-lg">
         <div className="flex items-center gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 font-semibold">
-            {Array.from(user.displayName).slice(-2).join("")}
+          <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 font-semibold">
+            {avatarImageUrl ? (
+              <img src={avatarImageUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              Array.from(user.displayName).slice(-2).join("")
+            )}
           </div>
           <div className="min-w-0">
             <p className="truncate text-lg font-semibold">{user.displayName}</p>
@@ -276,6 +408,12 @@ export default function P1ProfilePanel({
         <Action icon={QrCode} title="我的二维码" onClick={onMyQr} />
         <Action icon={ScanLine} title="扫一扫" onClick={onScan} />
       </div>
+      <Action
+        icon={Pencil}
+        title="修改个人资料"
+        value="头像、昵称、签名"
+        onClick={() => setSection("edit-profile")}
+      />
       <Action
         icon={MonitorSmartphone}
         title="登录设备"

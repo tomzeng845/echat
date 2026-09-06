@@ -25,6 +25,9 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             if (item.Type == ConversationType.Direct)
             {
                 peerId = item.Members.First(x => x.UserId != userId).UserId;
+                var relation = await repository.GetRelationAsync(userId, peerId, ct);
+                var reverseRelation = await repository.GetRelationAsync(peerId, userId, ct);
+                if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend) continue;
                 var peer = await repository.GetUserByIdAsync(peerId, ct);
                 name = peer?.DisplayName ?? "未知用户"; avatar = peer?.AvatarUrl ?? "";
             }
@@ -41,7 +44,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var peer = await repository.GetUserByAccountAsync(request.PeerAccount.Trim().ToLowerInvariant(), ct);
         if (peer is null || peer.Id == userId) return BadRequest(new { error = "联系人无效" });
         var relation = await repository.GetRelationAsync(userId, peer.Id, ct);
-        if (relation?.Status != RelationStatus.Friend) return StatusCode(403, new { error = "只有好友可以创建会话" });
+        var reverseRelation = await repository.GetRelationAsync(peer.Id, userId, ct);
+        if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend) return StatusCode(403, new { error = "只有好友可以创建会话" });
         var existing = await repository.FindDirectConversationAsync(userId, peer.Id, ct);
         var created = existing is null;
         var item = existing ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = userId, Members = [new() { UserId = userId }, new() { UserId = peer.Id }], KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
@@ -157,6 +161,15 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult<MessageView>> Send(string id, SendMessageRequest request, CancellationToken ct)
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
+        if (conversation.Type == ConversationType.Direct)
+        {
+            var userId = User.UserId();
+            var peerId = conversation.Members.First(member => member.UserId != userId).UserId;
+            var relation = await repository.GetRelationAsync(userId, peerId, ct);
+            var reverseRelation = await repository.GetRelationAsync(peerId, userId, ct);
+            if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend)
+                return StatusCode(403, new { error = "你们当前不是好友，无法发送消息" });
+        }
         var plaintext = string.Equals(request.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(request.ClientMessageId)) return BadRequest(new { error = "消息编号不能为空" });
         if (plaintext)

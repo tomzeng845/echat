@@ -27,6 +27,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 import {
   createConversationKey,
   decryptMessage,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/mobile-native";
 import type { HubConnection } from "@microsoft/signalr";
 import {
+  Ban,
   Bell,
   Check,
   ChevronLeft,
@@ -53,6 +55,7 @@ import {
   Compass,
   FileText,
   Image,
+  Maximize2,
   MessageCircleMore,
   Mic,
   MonitorSmartphone,
@@ -67,6 +70,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UserPlus,
   Users,
   Video,
@@ -112,6 +116,7 @@ function Avatar({
   size?: "sm" | "md" | "lg";
   online?: boolean;
 }) {
+  const imageUrl = useAuthenticatedImage(src);
   const dimensions =
     size === "lg"
       ? "h-12 w-12 text-base"
@@ -123,8 +128,8 @@ function Avatar({
       <div
         className={`${dimensions} grid place-items-center overflow-hidden rounded-[16px] bg-gradient-to-br from-teal-400 to-emerald-600 font-semibold text-white shadow-sm`}
       >
-        {src ? (
-          <img src={src} alt="" className="h-full w-full object-cover" />
+        {imageUrl ? (
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
         ) : (
           initials(name)
         )}
@@ -455,9 +460,11 @@ function AuthScreen({
 function Messenger({
   session,
   onLogout,
+  onProfileUpdated,
 }: {
   session: AuthResponse;
   onLogout: () => void;
+  onProfileUpdated: (user: User) => void;
 }) {
   const user = session.user!;
   const [nav, setNav] = useState<NavKey>("chats");
@@ -898,6 +905,30 @@ function Messenger({
           toast.success(`${event.peer?.displayName || "好友"}已加入联系人`);
         loadData().catch(() => undefined);
       },
+      onProfileUpdate: updated => {
+        if (updated.id === user.id) onProfileUpdated(updated);
+        setContacts(current =>
+          current.map(contact =>
+            contact.user.id === updated.id
+              ? { ...contact, user: updated }
+              : contact
+          )
+        );
+        setConversations(current =>
+          current.map(conversation =>
+            conversation.peerId === updated.id
+              ? {
+                  ...conversation,
+                  name: updated.displayName,
+                  avatarUrl: updated.avatarUrl,
+                }
+              : conversation
+          )
+        );
+        setProfileUser(current =>
+          current?.id === updated.id ? updated : current
+        );
+      },
       onReceipt: receipt => {
         if (receipt.userId !== user.id) return;
         if (
@@ -946,7 +977,7 @@ function Messenger({
       setRealtimeConnection(null);
       connection.stop();
     };
-  }, [handleIncomingMessage, identityReady, loadData, user.id]);
+  }, [handleIncomingMessage, identityReady, loadData, onProfileUpdated, user.id]);
 
   useEffect(() => {
     const refresh = () => {
@@ -1202,6 +1233,19 @@ function Messenger({
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "撤回失败");
     }
+  }
+
+  async function updateFriendRelation(peerId: string, action: "delete" | "block") {
+    if (action === "block")
+      await api<void>(`/api/contacts/${peerId}/block`, { method: "POST" });
+    else await api<void>(`/api/contacts/${peerId}`, { method: "DELETE" });
+    setProfileUser(null);
+    if (selected?.peerId === peerId) {
+      setSelectedId(null);
+      setMobileDetail(false);
+    }
+    await loadData();
+    toast.success(action === "block" ? "已将该好友拉黑" : "好友已删除");
   }
 
   async function showAdmin() {
@@ -1524,6 +1568,7 @@ function Messenger({
                 onLogout={onLogout}
                 onScan={() => setShowScanner(true)}
                 onMyQr={() => setShowMyQr(true)}
+                onProfileUpdated={onProfileUpdated}
               />
             )}
             {nav === "admin" && <AdminPanel overview={adminOverview} />}
@@ -1711,6 +1756,8 @@ function Messenger({
         <UserProfileDialog
           user={profileUser}
           onClose={() => setProfileUser(null)}
+          onDelete={() => updateFriendRelation(profileUser.id, "delete")}
+          onBlock={() => updateFriendRelation(profileUser.id, "block")}
         />
       )}
       {showScanner && (
@@ -1939,61 +1986,167 @@ function EmptyState({
 function UserProfileDialog({
   user,
   onClose,
+  onDelete,
+  onBlock,
 }: {
   user: User;
   onClose: () => void;
+  onDelete: () => Promise<void>;
+  onBlock: () => Promise<void>;
 }) {
+  const [confirmAction, setConfirmAction] = useState<"delete" | "block" | null>(
+    null
+  );
+  const [busy, setBusy] = useState(false);
+  const [avatarExpanded, setAvatarExpanded] = useState(false);
+  const avatarUrl = useAuthenticatedImage(user.avatarUrl);
+
+  async function confirm() {
+    if (!confirmAction || busy) return;
+    setBusy(true);
+    try {
+      await (confirmAction === "delete" ? onDelete() : onBlock());
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "操作失败");
+      setBusy(false);
+    }
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="好友个人资料"
-      onClick={onClose}
-    >
+    <>
       <div
-        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
-        onClick={event => event.stopPropagation()}
+        className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="好友个人资料"
+        onClick={() => !busy && onClose()}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-800">个人资料</h2>
-          <button
-            type="button"
-            aria-label="关闭个人资料"
-            onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X size={17} />
-          </button>
-        </div>
-        <div className="px-6 py-7 text-center">
-          <div className="flex justify-center">
-            <Avatar name={user.displayName} src={user.avatarUrl} size="lg" />
+        <div
+          className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <h2 className="text-base font-semibold text-slate-800">个人资料</h2>
+            <button
+              type="button"
+              aria-label="关闭个人资料"
+              disabled={busy}
+              onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+            >
+              <X size={17} />
+            </button>
           </div>
-          <h3 className="mt-3 text-lg font-semibold text-slate-800">
-            {user.displayName}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">@{user.account}</p>
-          <p className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-            {user.signature || "这个人很安静，还没有填写个性签名"}
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-left text-xs">
-            <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-              <p className="text-slate-400">地区</p>
-              <p className="mt-1 truncate font-medium text-slate-700">
-                {user.region || "未设置"}
-              </p>
+          <div className="px-6 py-7 text-center">
+            <button
+              type="button"
+              onClick={() => avatarUrl && setAvatarExpanded(true)}
+              className="group relative mx-auto block rounded-[22px]"
+              title={user.avatarUrl ? "查看高清头像" : undefined}
+            >
+              <Avatar name={user.displayName} src={avatarUrl} size="lg" />
+              {avatarUrl && (
+                <span className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-slate-900 text-white shadow-md transition group-hover:bg-teal-600">
+                  <Maximize2 size={11} />
+                </span>
+              )}
+            </button>
+            <h3 className="mt-3 text-lg font-semibold text-slate-800">
+              {user.displayName}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">@{user.account}</p>
+            <p className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              {user.signature || "这个人很安静，还没有填写个性签名"}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-left text-xs">
+              <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                <p className="text-slate-400">地区</p>
+                <p className="mt-1 truncate font-medium text-slate-700">
+                  {user.region || "未设置"}
+                </p>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                <p className="text-slate-400">状态</p>
+                <p className="mt-1 font-medium text-emerald-600">
+                  {user.status === "Active" ? "正常" : user.status}
+                </p>
+              </div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-              <p className="text-slate-400">状态</p>
-              <p className="mt-1 font-medium text-emerald-600">
-                {user.status === "Active" ? "正常" : user.status}
-              </p>
-            </div>
+            {confirmAction ? (
+              <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-left ring-1 ring-rose-100">
+                <p className="text-sm font-semibold text-rose-700">
+                  {confirmAction === "delete" ? "确认删除好友？" : "确认拉黑该好友？"}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-rose-600/80">
+                  {confirmAction === "delete"
+                    ? "删除后双方将解除好友关系，原单聊不再显示。"
+                    : "拉黑后对方无法向你发送好友申请或单聊消息。"}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 rounded-xl bg-white py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200 disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={confirm}
+                    className="flex-1 rounded-xl bg-rose-600 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {busy ? "正在处理…" : "确认"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction("delete")}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 active:scale-[.98]"
+                >
+                  <Trash2 size={14} /> 删除好友
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction("block")}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-rose-50 py-2.5 text-xs font-medium text-rose-600 transition hover:bg-rose-100 active:scale-[.98]"
+                >
+                  <Ban size={14} /> 拉黑
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </div>
+      {avatarExpanded && avatarUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="高清头像预览"
+          onClick={() => setAvatarExpanded(false)}
+        >
+          <button
+            type="button"
+            aria-label="关闭头像预览"
+            onClick={() => setAvatarExpanded(false)}
+            className="absolute right-5 top-5 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={avatarUrl}
+            alt={`${user.displayName}的头像`}
+            className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
   );
 }
 function EmptyChat() {
@@ -2121,6 +2274,14 @@ export default function Home() {
     setSession(null);
     setCurrentSession(null);
   };
+  const onProfileUpdated = useCallback((user: User) => {
+    setCurrentSession(current => {
+      if (!current) return current;
+      const next = { ...current, user };
+      setSession(next);
+      return next;
+    });
+  }, []);
   useEffect(() => {
     const expire = () => {
       unregisterNativePush().catch(() => undefined);
@@ -2130,7 +2291,11 @@ export default function Home() {
     return () => window.removeEventListener("echat-session-expired", expire);
   }, []);
   return session?.accessToken && session.user ? (
-    <Messenger session={session} onLogout={onLogout} />
+    <Messenger
+      session={session}
+      onLogout={onLogout}
+      onProfileUpdated={onProfileUpdated}
+    />
   ) : (
     <AuthScreen onAuthenticated={setCurrentSession} />
   );

@@ -73,6 +73,7 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         var userId = User.UserId();
         if (await repository.GetUserByIdAsync(peerId, ct) is null) return NotFound();
         await repository.UpsertRelationAsync(new ContactRelation { Id = $"{userId}:{peerId}", UserId = userId, PeerUserId = peerId, Status = RelationStatus.Blocked }, ct);
+        await repository.UpsertRelationAsync(new ContactRelation { Id = $"{peerId}:{userId}", UserId = peerId, PeerUserId = userId, Status = RelationStatus.Deleted }, ct);
         await NotifyContactUpdated(userId, peerId, RelationStatus.Blocked, ct);
         return NoContent();
     }

@@ -1,12 +1,39 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/users")]
-public sealed class UsersController(IChatRepository repository) : ControllerBase
+public sealed class UsersController(IChatRepository repository, IHubContext<ChatHub> hub) : ControllerBase
 {
+    [HttpPut("me/profile")]
+    public async Task<ActionResult<UserView>> UpdateProfile(UpdateProfileRequest request, CancellationToken ct)
+    {
+        var displayName = request.DisplayName.Trim();
+        var signature = request.Signature.Trim();
+        if (displayName.Length is < 1 or > 30) return BadRequest(new { error = "昵称长度需要在 1 到 30 个字符之间" });
+        if (signature.Length > 120) return BadRequest(new { error = "个性签名不能超过 120 个字符" });
+        var user = await repository.GetUserByIdAsync(User.UserId(), ct);
+        if (user is null) return NotFound();
+        if (!string.IsNullOrWhiteSpace(request.AvatarAssetId))
+        {
+            var asset = await repository.GetMediaAssetAsync(request.AvatarAssetId, ct);
+            if (asset is null || asset.OwnerId != user.Id || asset.Purpose != MediaPurpose.Avatar || !asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { error = "头像文件无效" });
+            user.AvatarUrl = $"/api/media/{asset.Id}/content";
+        }
+        user.DisplayName = displayName;
+        user.Signature = signature;
+        await repository.UpdateUserAsync(user, ct);
+        var view = SessionService.View(user);
+        var relations = await repository.GetRelationsAsync(user.Id, ct);
+        var recipients = relations.Where(item => item.Status == RelationStatus.Friend).Select(item => item.PeerUserId).Append(user.Id).Distinct(StringComparer.Ordinal);
+        await Task.WhenAll(recipients.Select(recipientId => hub.Clients.Group($"user:{recipientId}").SendAsync("profile.updated", view, ct)));
+        return Ok(view);
+    }
+
     [HttpPut("me/public-key")]
     public async Task<ActionResult> SetPublicKey(PublicKeyRequest request, CancellationToken ct)
     {
