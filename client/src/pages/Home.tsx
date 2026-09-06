@@ -860,16 +860,12 @@ function Messenger({
         }
       },
       onConversation: event => {
-        loadData()
-          .then(() => {
-            if (event?.conversationId)
-              return connectionRef.current?.invoke(
-                "JoinConversation",
-                event.conversationId
-              );
-            return undefined;
-          })
-          .catch(() => undefined);
+        const conversationId = event?.conversationId;
+        if (conversationId)
+          connectionRef.current
+            ?.invoke("JoinConversation", conversationId)
+            .catch(() => undefined);
+        loadData().catch(() => undefined);
       },
       onContactRequest: request => {
         setRequests(current =>
