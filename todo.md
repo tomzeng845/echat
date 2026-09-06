@@ -26,12 +26,13 @@
 - [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
 - [x] 创建 App Store Connect 记录“E聊即时通讯”，绑定 `com.tomzeng845.echat`，Apple ID `6809145695`
 - [ ] 创建 APNs Key 并配置服务端生产秘密
-- [ ] 创建最小权限 App Store Connect 上传 API Key，并加入 GitHub `ios-production` Environment Secrets
+- [x] 创建 Developer 角色 App Store Connect Team API Key，并加入 GitHub `ios-production` Environment Secrets
 - [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据
-- [ ] 由账号持有人审查 AES-GCM/RSA-OAEP、第三方 SDK 与发布地区后完成 Apple 出口合规问卷，再决定 `ITSAppUsesNonExemptEncryption`
+- [x] 由账号持有人确认标准加密算法并声明当前不在法国分发，完成 Build 181 出口合规问卷
 - [x] 在 GitHub-hosted macOS 26 / Xcode 26 完成 Manual archive、export、codesign、profile、Bundle ID、版本与资源验证
 - [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风
-- [ ] 执行 `pnpm ios:testflight`，等待 Apple 处理并分配内部测试员
+- [x] 执行 GitHub workflow `34028293524`，Apple Delivery `f1b7e7d8-a6e1-4a56-8363-da16ba37cc18` 上传成功
+- [x] Apple 已处理 `0.9.0 (181)`；创建自动分发的“E聊内部测试”组并邀请账号持有人
 - [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收
 - [ ] 如需外部测试，提交首次 Beta App Review
 

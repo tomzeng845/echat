@@ -6,7 +6,7 @@
 
 > App Store Connect 分发 IPA 不能像企业包或 Ad Hoc 包一样直接安装。生成后可作为受控发布产物下载、校验，或通过显式上传开关交付 TestFlight。
 
-**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建。App Store Connect 记录为“E聊即时通讯”（Apple ID `6809145695`）。首次 workflow `34024319750` 已成功完成，生成 `EChat-iOS-0.9.0-181.ipa`；本地最终副本为 `releases/EChat-0.9.0-TestFlight.ipa`。
+**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建。App Store Connect 记录为“E聊即时通讯”（Apple ID `6809145695`）。首次构建 workflow `34024319750` 已成功生成 IPA；上传 workflow `34028293524` 已把 `0.9.0 (181)` 成功交付 TestFlight。Apple 已处理构建并完成出口合规，“E聊内部测试”组已邀请账号持有人。本地最终副本为 `releases/EChat-0.9.0-TestFlight.ipa`。
 
 ## 构建路线与安全边界
 
@@ -34,6 +34,19 @@
 | SHA-256       | `e99ffe0e7b4d658eb9cbc7ef83915cc161fa5dd1ac947b334573b7e2f3eb044d` |
 
 下载后已再次解析 IPA：Bundle ID、版本、build、iOS 15 最低版本、Mach-O 主程序、隐私清单、三类提示音、Assets.car 与内嵌 profile 均正确；内嵌 profile UUID 为 `be3ef7da-d200-4d97-b5df-41cebabdca07`，`aps-environment=production`。短期 GitHub PAT 与两次临时 Deploy Key 已撤销，本地临时私钥、PKCS#12、密码和 Base64 文本已删除；GitHub Environment Secrets 保留供后续可重复构建。
+
+实际 TestFlight 上传结果如下：
+
+| 项目                | 值                                                                 |
+| ------------------- | ------------------------------------------------------------------ |
+| GitHub upload run   | `34028293524`                                                      |
+| 版本 / Build        | `0.9.0 (181)`                                                      |
+| Apple Delivery UUID | `f1b7e7d8-a6e1-4a56-8363-da16ba37cc18`                             |
+| 最终 IPA 大小       | `6,957,997 bytes`                                                  |
+| 最终 IPA SHA-256    | `d2f53d9a4b72387b5c7500c3f7d157b6b1af39f3bbdeb902656e444d8c024542` |
+| Apple 处理状态      | 已处理；出口合规完成；已邀请内部测试员                             |
+
+上传日志明确返回 `UPLOAD SUCCEEDED with no errors`。用于写入 Secrets 和监控上传的一天期 fine-grained token 已永久撤销，GitHub 当前显示无 fine-grained token；上传 `.p8` 附件和本地 Token 副本也已删除。
 
 工作流仅请求 `contents: read`，不会向仓库写代码。Apple 证书、密码和 provisioning profile 只从 GitHub Environment Secrets 读取，写入 runner 临时目录和临时 Keychain，结束时执行清理。GitHub-hosted runner 随任务销毁，签名材料不会进入 artifact。
 
@@ -186,11 +199,11 @@ sha256sum -c EChat-iOS-0.9.0-19.ipa.sha256
 | Xcode archive fails in Swift Package resolution     | GitHub 或 Swift Package 网络抖动              | 重新运行一次；持续失败时检查依赖版本与 GitHub 状态        |
 | artifact not found                                  | Archive/export 或验证步骤失败                 | 先查看第一个红色步骤，而不是重复运行隐藏根因              |
 
-## 后续上传 TestFlight
+## 后续 TestFlight 验收
 
-生成 IPA 只完成了发布构建，不等于已经通过 TestFlight。应用记录已创建；后续仍要创建最小权限上传 Key、完成 App Privacy 和出口合规、上传 IPA、等待处理、分配内部测试员并在真机验证 APNs/PushKit/CallKit。
+签名构建、上传、Apple 处理、出口合规和内部测试员分配已经完成。账号持有人现在需要在 iPhone 安装 TestFlight、接受“E聊即时通讯”邀请并安装 `0.9.0 (181)`。服务端 APNs production Key 尚未配置，因此真机验收必须在该 Key 配置后覆盖普通 APNs、PushKit/CallKit、相机、麦克风和双向音视频；App Privacy 与隐私政策也必须在正式 App Store 提交前完成。
 
-当前仓库另有 `scripts/ios-testflight.sh` 用于受控 Mac 上自动 Archive 与上传。GitHub workflow 的上传开关默认关闭，并只在上传步骤读取 `.p8`；完成后无论成功失败都会删除临时 Key。建议上传 Key 使用 **Developer** 角色，满足 Apple 的构建上传要求且避免 App Manager/Admin 权限。
+当前仓库另有 `scripts/ios-testflight.sh` 用于受控 Mac 上自动 Archive 与上传。GitHub workflow 的上传开关默认关闭，并只在上传步骤读取 `.p8`；完成后无论成功失败都会删除临时 Key。上传 Key 使用 **Developer** 角色，满足 Apple 的构建上传要求且避免 App Manager/Admin 权限。
 
 ## 官方参考资料
 

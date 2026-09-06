@@ -1,6 +1,6 @@
 # E聊 App Store Connect、证书、描述文件与 TestFlight 配置指南
 
-**适用版本：** E聊 iOS 0.9.0（Build 18）
+**适用版本：** E聊 iOS 0.9.0（源码 Build 18；TestFlight Build 181）
 **当前 Bundle ID：** `com.tomzeng845.echat`
 **作者：** Manus AI  
 **更新日期：** 2026-09-06
@@ -23,7 +23,7 @@ Apple 的对象容易混淆。**App ID** 负责绑定 Bundle ID 和 capability�
 
 > **自动签名与手工签名是两条互斥路线。** 当前 E聊 Xcode 工程和 `scripts/ios-testflight.sh` 均配置为 Automatic。选择第 6 节后，不要再在 Release 中固定手工 profile；选择第 7 节后，不要直接运行现有 `pnpm ios:testflight`，因为该脚本会执行 `-allowProvisioningUpdates` 并按自动签名导出。手工 CI 需要另行配置 Manual、签名身份和 `PROVISIONING_PROFILE_SPECIFIER`。
 
-> **本次实际采用手工 CI 路线。** `.github/workflows/ios-ipa.yml` 在 GitHub-hosted macOS 26 runner 中通过命令行覆盖 Manual signing，不会永久修改 Xcode 工程中的 Automatic 配置；workflow 只生成 IPA，不自动上传 TestFlight。
+> **本次实际采用手工 CI 路线。** `.github/workflows/ios-ipa.yml` 在 GitHub-hosted macOS 26 runner 中通过命令行覆盖 Manual signing，不会永久修改 Xcode 工程中的 Automatic 配置。`upload_testflight` 默认关闭；本次经人工明确开启后，run `34028293524` 已把 Build 181 成功上传 TestFlight。
 
 ## 2. 开始前的账户与环境检查
 
@@ -346,14 +346,18 @@ Apple 的 Contacts 类型也包括应用内 social graph。即使 E聊不读取 
 
 E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收到该 Bundle ID 的 build 18，可以使用 18；后续每次上传都必须使用新的 build string。项目脚本默认使用 UTC 到秒生成 build number，但它**不会查询 App Store Connect，也不构成严格唯一保证**。CI 应优先使用单调递增流水线编号；本机重跑前应显式设置未使用的 `ECHAT_IOS_BUILD_NUMBER`。
 
-上传后等待 Apple 处理。若构建显示 **Missing Compliance**，进入 **TestFlight → Builds → iOS → 选择构建 → Provide Export Compliance Information**，按真实加密用途回答。E聊包含 HTTPS、WebCrypto AES-GCM/RSA-OAEP 历史消息兼容逻辑和服务端加密代码；不能仅凭“使用标准算法”预先认定出口合规结论。项目现阶段故意不在 `Info.plist` 固定 `ITSAppUsesNonExemptEncryption`，直到账号持有人完成实际功能、第三方 SDK、发布国家/地区和 Apple 问卷审查。确认属于豁免后再设置；如需文档，应先完成 Apple 流程。[15]
+上传后等待 Apple 处理。若构建显示 **Missing Compliance**，进入 **TestFlight → Builds → iOS → 选择构建 → Provide Export Compliance Information**，按真实加密用途回答。E聊包含 HTTPS、WebCrypto AES-GCM/RSA-OAEP 历史消息兼容逻辑和服务端加密代码；不能仅凭“使用标准算法”预先认定出口合规结论。项目现阶段故意不在 `Info.plist` 固定 `ITSAppUsesNonExemptEncryption`，直到账号持有人完成实际功能、第三方 SDK、发布国家/地区和 Apple 问卷审查。[15]
+
+本次账号持有人在源码审查后确认：E聊使用标准加密算法作为 Apple 操作系统加密能力的补充或替代，并且当前不在法国分发。Apple 接受该回答，Build 181 的 Missing Compliance 状态已移除。若未来改变算法、第三方 SDK 或分发国家/地区，必须重新评估并更新回答。
 
 内部测试员必须先是 App Store Connect 用户。Apple 最多允许 100 名内部测试员，构建可测试 90 天。[14]
+
+本次已创建自动分发的 `E聊内部测试` 组，加入 Build 181，并邀请账号持有人；App Store Connect 显示状态为“已邀请”。
 
 1. 进入 **Users and Access**，邀请内部测试人员并授予目标 App 的访问权限。
 2. 进入 **Apps → E聊 → TestFlight**。
 3. 点击 Internal Testing 旁的 **+**。
-4. Group Name 填写 `E聊 iOS 内部测试`。
+4. Group Name 填写 `E聊内部测试`。
 5. 可勾选 **Enable automatic distribution**。
 6. 进入该组，点击 **Invite Testers**，选择团队用户。
 7. 点击 **Add Builds**，选择处理完成的 0.9.0 构建。
@@ -417,29 +421,29 @@ E聊当前版本为 `0.9.0`、工程 build 18。若 App Store Connect 从未收�
 
 完成操作后，只记录 ID 和状态。私钥本体应放在秘密管理系统，不要写入此表。
 
-| 项目                            | 值/状态                            |
-| ------------------------------- | ---------------------------------- |
-| Apple Team 名称                 | zhihai zeng                        |
-| Apple Team ID                   | `PPY8H6QWB5`                       |
-| 最终 Bundle ID                  | `com.tomzeng845.echat`             |
-| App Store Connect Apple ID      |                                    |
-| App Store Name                  | `E聊`                              |
-| SKU                             | `ECHAT-IOS-001`                    |
-| APNs Key ID                     |                                    |
-| APNs Key Environment/Type       | Production / Team Scoped           |
-| APNs `.p8` 安全存储位置         | 只写密码库条目名称，不写路径或内容 |
-| App Store Connect API Key ID    |                                    |
-| Issuer ID                       |                                    |
-| 上传 `.p8` 安全存储位置         | 只写密码库条目名称，不写路径或内容 |
-| 最终签名路线                    | GitHub Actions Manual              |
-| Debug 签名状态                  |                                    |
-| Release/Archive 签名状态        |                                    |
-| Privacy Policy URL              |                                    |
-| App Privacy 生产环境盘点人/日期 |                                    |
-| 出口合规结论与审查人/日期       |                                    |
-| TestFlight 内部组               | `E聊 iOS 内部测试`                 |
-| 第一个已处理 Build              |                                    |
-| 两台 iPhone 验收结果            |                                    |
+| 项目                            | 值/状态                                |
+| ------------------------------- | -------------------------------------- |
+| Apple Team 名称                 | zhihai zeng                            |
+| Apple Team ID                   | `PPY8H6QWB5`                           |
+| 最终 Bundle ID                  | `com.tomzeng845.echat`                 |
+| App Store Connect Apple ID      | `6809145695`                           |
+| App Store Name                  | `E聊即时通讯`                          |
+| SKU                             | `echat-ios-20260906`                   |
+| APNs Key ID                     |                                        |
+| APNs Key Environment/Type       | Production / Team Scoped               |
+| APNs `.p8` 安全存储位置         | 只写密码库条目名称，不写路径或内容     |
+| App Store Connect API Key ID    |                                        |
+| Issuer ID                       |                                        |
+| 上传 `.p8` 安全存储位置         | 只写密码库条目名称，不写路径或内容     |
+| 最终签名路线                    | GitHub Actions Manual                  |
+| Debug 签名状态                  |                                        |
+| Release/Archive 签名状态        | GitHub macOS 26 / Xcode 26 已通过      |
+| Privacy Policy URL              |                                        |
+| App Privacy 生产环境盘点人/日期 |                                        |
+| 出口合规结论与审查人/日期       | 标准加密；当前不在法国分发；2026-09-06 |
+| TestFlight 内部组               | `E聊内部测试`                          |
+| 第一个已处理 Build              | `0.9.0 (181)`                          |
+| 两台 iPhone 验收结果            |                                        |
 
 完成第 3 至第 8 节、选择且只选择一种签名路线后，即具备在 Mac 上执行第一次 Archive 的前置条件。完成隐私政策、生产数据盘点、出口合规和第 9 至第 11 节后，即可进入相应的内外部 TestFlight 流程。只有第 12 节真机验收全部通过后，才能把本阶段状态标记为“已通过 TestFlight 测试”。
 

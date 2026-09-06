@@ -391,14 +391,26 @@ Capacitor 配置现在通过 `ECHAT_CAPACITOR_APP_ID` 支持平台独立标识�
 
 GitHub-hosted macOS 26 workflow run `34024319750`、attempt 1 在 2 分 6 秒内成功。证书/profile Secret 校验、依赖安装、Capacitor iOS sync、Swift Package resolve、Manual archive/export、codesign、内嵌 profile、Bundle ID、版本/build、artifact 上传、构建摘要和 `always()` 签名清理全部通过。构建时间为 `2026-09-06T09:21:32Z`，API 为 `https://echatapp-favrlscm.manus.space`。
 
-下载的 `EChat-iOS-0.9.0-181.ipa` 和最终副本 `releases/EChat-0.9.0-TestFlight.ipa` 均通过 SHA-256 校验；最终文件大小为 6,957,995 bytes，SHA-256 为 `e99ffe0e7b4d658eb9cbc7ef83915cc161fa5dd1ac947b334573b7e2f3eb044d`。二次解包验证确认 Bundle ID `com.tomzeng845.echat`、版本 `0.9.0`、build `181`、最低 iOS `15.0`、Mach-O 主程序、`PrivacyInfo.xcprivacy`、三类提示音、`Assets.car` 和内嵌 profile 均存在；包内未发现 `.p8`、`.p12`、`.key` 或 `.pem`。
+首次仅构建 run 下载的 `EChat-iOS-0.9.0-181.ipa` 和当时保存的副本均通过 SHA-256 校验；该次文件大小为 6,957,995 bytes，SHA-256 为 `e99ffe0e7b4d658eb9cbc7ef83915cc161fa5dd1ac947b334573b7e2f3eb044d`。二次解包验证确认 Bundle ID `com.tomzeng845.echat`、版本 `0.9.0`、build `181`、最低 iOS `15.0`、Mach-O 主程序、`PrivacyInfo.xcprivacy`、三类提示音、`Assets.car` 和内嵌 profile 均存在；包内未发现 `.p8`、`.p12`、`.key` 或 `.pem`。后续上传 run 重新构建并替换最终交付副本，见本文末尾。
 
 内嵌 profile 再次通过项目校验器：UUID `be3ef7da-d200-4d97-b5df-41cebabdca07`，application identifier `PPY8H6QWB5.com.tomzeng845.echat`，`aps-environment=production`，到期 `2027-09-06T08:27:52Z`。短期 GitHub PAT 与两次临时 Deploy Key 均已从 GitHub 撤销；本地 PAT、Distribution 私钥、CSR、PKCS#12、密码和三个 Base64 Secret 文本已删除。GitHub Environment Secrets 保留供后续可重复构建。
 
-该 IPA 尚未上传 App Store Connect。TestFlight 上传、Apple 处理、出口合规回答、内部测试员分配、APNs production Key 和至少两台 iPhone 的消息/通话真机验收仍为明确待办。
+在首次仅构建 run 完成时，该 IPA 尚未上传 App Store Connect；此历史阶段的 TestFlight 上传、Apple 处理、出口合规回答和内部测试员分配已在后续章节完成。APNs production Key 和至少两台 iPhone 的消息/通话真机验收仍为待办。
 
 ## 2026-09-06 App Store Connect 记录与 TestFlight 上传门控
 
 App Store Connect 已创建绑定 `com.tomzeng845.echat` 的 iOS 应用记录，商店名称为“E聊即时通讯”，Apple ID 为 `6809145695`，主语言为简体中文，SKU 为 `echat-ios-20260906`。原申请名称“E聊”被 Apple 判定已占用；IPA 内 `CFBundleDisplayName` 保持“E聊”，不改变设备桌面显示名。
 
-`.github/workflows/ios-ipa.yml` 新增布尔输入 `upload_testflight`，默认 `false`。关闭时行为与成功的 run `34024319750` 一致，只生成并保存签名 IPA；开启时才要求 `APP_STORE_CONNECT_KEY_ID`、`APP_STORE_CONNECT_ISSUER_ID` 和 `APP_STORE_CONNECT_API_KEY_BASE64`，在独立上传步骤验证 `.p8` 后调用 `xcrun altool --validate-app` 与 `--upload-app`。上传秘密不暴露给依赖安装、编译、签名或 summary 步骤；临时 `AuthKey_*.p8` 无论成功失败都会在清理步骤删除。workflow 已通过 Prettier、actionlint、ShellCheck 和 iOS 静态检查；尚未创建上传 Key 或执行 TestFlight 上传。
+`.github/workflows/ios-ipa.yml` 新增布尔输入 `upload_testflight`，默认 `false`。关闭时行为与成功的 run `34024319750` 一致，只生成并保存签名 IPA；开启时才要求 `APP_STORE_CONNECT_KEY_ID`、`APP_STORE_CONNECT_ISSUER_ID` 和 `APP_STORE_CONNECT_API_KEY_BASE64`，在独立上传步骤验证 `.p8` 后调用 `xcrun altool --validate-app` 与 `--upload-app`。上传秘密不暴露给依赖安装、编译、签名或 summary 步骤；临时 `AuthKey_*.p8` 无论成功失败都会在清理步骤删除。该阶段 workflow 已通过 Prettier、actionlint、ShellCheck 和 iOS 静态检查；上传 Key 创建和实际 TestFlight 上传随后由 run `34028293524` 完成。
+
+## 2026-09-06 TestFlight 实际上传与内部测试开放
+
+App Store Connect API 访问条款经账号持有人确认后提交并即时获批。创建了 Developer 角色 Team API Key `EChat TestFlight CI`，并将 Key ID、Issuer ID 和一次性 `.p8` 的 Base64 安全写入私有仓库 `ios-production` Environment Secrets。`.p8` 上传附件在写入后删除；本地未保留私钥正文。
+
+GitHub-hosted macOS 26 / Xcode 26.6 workflow run `34028293524` 成功完成证书/profile 校验、Capacitor iOS sync、Swift package resolve、Manual archive/export、`codesign`、artifact 上传、`altool --validate-app` 和 `altool --upload-app`。GitHub 全部步骤均为成功；上传日志明确返回 `No errors uploading archive` 和 `UPLOAD SUCCEEDED with no errors`，Apple Delivery UUID 为 `f1b7e7d8-a6e1-4a56-8363-da16ba37cc18`。最初后台任务的非零退出发生在 workflow 成功之后，是本地 `gh run view` JSON 重定向为空造成的结果解析错误，不是 Xcode、签名或 Apple 上传失败。
+
+重新通过 GitHub Actions REST API 下载并验证 artifact。最终 `releases/EChat-0.9.0-TestFlight.ipa` 大小为 6,957,997 bytes，SHA-256 为 `d2f53d9a4b72387b5c7500c3f7d157b6b1af39f3bbdeb902656e444d8c024542`。二次解包确认 Bundle ID `com.tomzeng845.echat`、版本 `0.9.0`、build `181`、设备显示名“E聊”、生产 API `https://echatapp-favrlscm.manus.space`、`PrivacyInfo.xcprivacy`、embedded provisioning profile 和三类提示音均存在。
+
+App Store Connect 已处理 Build 181。账号持有人确认应用使用标准 AES-GCM/RSA-OAEP/SHA-256 加密作为 Apple 操作系统加密能力的补充或替代，并确认当前不在法国分发；Apple 接受答案并移除 Missing Export Compliance。随后创建自动分发的 `E聊内部测试` 组，Build 181 已加入，账号持有人状态为“已邀请”。
+
+用于写入 GitHub Secrets 和监控本次上传的一天期 fine-grained token 已永久撤销，GitHub 显示无 fine-grained token；本地 token、Token 页面 HTML 和 `.p8` 附件均已删除。仍待完成：创建并部署 APNs production Key、在 iPhone 接受 TestFlight 邀请、至少两台真机完成普通推送与 PushKit/CallKit/音视频验收，以及正式发布前完成 App Privacy、隐私政策和需要时的外部 Beta App Review。
