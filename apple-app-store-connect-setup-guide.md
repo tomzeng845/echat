@@ -17,7 +17,7 @@ Apple 的对象容易混淆。**App ID** 负责绑定 Bundle ID 和 capability�
 | 本机真机调试签名              | Xcode 自动签名                 | 由 Xcode 创建 Apple Development 证书和开发描述文件                            |
 | App Store/TestFlight 分发签名 | GitHub Actions 手工签名        | 使用已配对 Apple Distribution `.p12` 与 production profile                    |
 | APNs 服务端认证               | `.p8` token Key                | 第一阶段使用 **Production Team Scoped** Key，确保同时覆盖 alert 与 VoIP topic |
-| TestFlight 自动上传           | App Store Connect Team API Key | 先验证上传角色；签名与 provisioning 权限需单独确认                            |
+| TestFlight 自动上传           | App Store Connect Team API Key | 使用 Developer 角色，仅承担构建上传；签名权限由既有证书/profile 提供          |
 
 > **推荐结论：优先使用 Xcode 的 Automatically manage signing。** Xcode 13 及以后可在 Organizer 分发流程中使用云管理分发证书；若使用自动签名，通常不需要手工创建开发或 App Store Connect 描述文件。[5] [6] 手工流程应只作为团队策略要求或自动签名排错的备用方案。
 
@@ -114,20 +114,22 @@ APNS_USE_SANDBOX=false
 
 App Store Connect 要求先创建应用记录，再上传任何构建。[2] 打开 [App Store Connect](https://appstoreconnect.apple.com/)，完成以下步骤：
 
+> **本次已完成：** 原名称“E聊”被判定已占用，最终 Apple 接受“E聊即时通讯”并创建记录；刷新后确认 Apple ID 为 `6809145695`。IPA 内 `CFBundleDisplayName` 继续保持“E聊”，因此设备桌面显示名不受商店记录名称影响。
+
 1. 进入 **Business**，确认没有待接受协议。
 2. 进入 **Apps**。
 3. 点击左上角 **+**，选择 **New App**。
 4. 按下表填写。
 5. 点击 Create，检查是否出现缺失字段或权限错误。
 
-| 字段             | E聊建议值                                | 说明                                                                         |
-| ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
-| Platforms        | `iOS`                                    | 当前只创建 iOS 平台                                                          |
-| Name             | `E聊`                                    | 2–30 个字符；若已被占用，可使用 `E聊即时通讯`，应用内显示名仍可保留“E聊” [7] |
-| Primary Language | `Chinese (Simplified)`                   | 未提供其他本地化时使用的默认元数据语言                                       |
-| Bundle ID        | `com.tomzeng845.echat` 对应的 Identifier | 必须从下拉框选择，不是自由输入                                               |
-| SKU              | `ECHAT-IOS-001`                          | 内部标识，用户不可见；创建后不可修改 [7]                                     |
-| User Access      | `Full Access`                            | 单人或小团队最简单；有权限隔离要求时选 Limited Access                        |
+| 字段             | E聊建议值                                | 说明                                                  |
+| ---------------- | ---------------------------------------- | ----------------------------------------------------- |
+| Platforms        | `iOS`                                    | 当前只创建 iOS 平台                                   |
+| Name             | `E聊即时通讯`                            | Apple 已接受的商店记录名称；IPA 内显示名仍为“E聊” [7] |
+| Primary Language | `Chinese (Simplified)`                   | 未提供其他本地化时使用的默认元数据语言                |
+| Bundle ID        | `com.tomzeng845.echat` 对应的 Identifier | 必须从下拉框选择，不是自由输入                        |
+| SKU              | `echat-ios-20260906`                     | 已创建记录的内部标识，用户不可见且不可修改 [7]        |
+| User Access      | `Full Access`                            | 单人或小团队最简单；有权限隔离要求时选 Limited Access |
 
 创建成功后，状态应为 **Prepare for Submission**，Apple 会自动生成不可修改的 Apple ID。[2] 立即进入 **App Information** 检查 Bundle ID。如果选错 Bundle ID，且尚未上传构建，可删除记录后重建；上传构建后 Bundle ID 不能更改。
 

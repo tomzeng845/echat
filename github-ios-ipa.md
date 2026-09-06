@@ -2,11 +2,11 @@
 
 ## 当前用途
 
-仓库中的 `.github/workflows/ios-ipa.yml` 使用 GitHub-hosted `macos-26` runner 和 Xcode 26 生成 **App Store Connect 分发签名**的 E聊 IPA。工作流只在手工点击 Run workflow 时执行，不会在普通 push 或 pull request 中自动运行，也不会自动上传 TestFlight。
+仓库中的 `.github/workflows/ios-ipa.yml` 使用 GitHub-hosted `macos-26` runner 和 Xcode 26 生成 **App Store Connect 分发签名**的 E聊 IPA。工作流只在手工点击 Run workflow 时执行，不会在普通 push 或 pull request 中自动运行。`upload_testflight` 默认为 `false`；只有人工切换为 `true` 且上传 Key Secrets 完整时才会上传。
 
-> App Store Connect 分发 IPA 不能像企业包或 Ad Hoc 包一样直接安装。生成后可作为受控发布产物下载、校验，并在 App Store Connect 应用记录准备完成后上传 TestFlight。
+> App Store Connect 分发 IPA 不能像企业包或 Ad Hoc 包一样直接安装。生成后可作为受控发布产物下载、校验，或通过显式上传开关交付 TestFlight。
 
-**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建。首次 workflow `34024319750` 已成功完成，生成 `EChat-iOS-0.9.0-181.ipa`；本地最终副本为 `releases/EChat-0.9.0-TestFlight.ipa`。
+**当前状态：** 私有仓库 `tomzeng845/echat`、`ios-production` 环境、Team `PPY8H6QWB5`、显式 App ID `com.tomzeng845.echat`、Apple Distribution 证书和 `EChat App Store 2026` production profile 已创建。App Store Connect 记录为“E聊即时通讯”（Apple ID `6809145695`）。首次 workflow `34024319750` 已成功完成，生成 `EChat-iOS-0.9.0-181.ipa`；本地最终副本为 `releases/EChat-0.9.0-TestFlight.ipa`。
 
 ## 构建路线与安全边界
 
@@ -21,7 +21,7 @@
 | API 地址        | 手工触发时填写的生产 HTTPS 地址                                            |
 | 签名方式        | Manual，Apple Distribution `.p12` + App Store Connect `.mobileprovision`   |
 | Artifact 保存   | 14 天，仅仓库有权用户可下载                                                |
-| TestFlight 上传 | 不执行；生成 IPA 后另行上传                                                |
+| TestFlight 上传 | 默认不执行；仅在 `upload_testflight=true` 时验证并上传                     |
 
 首次成功构建的实际值如下：
 
@@ -97,7 +97,7 @@ security cms -D -i EChat_App_Store_0_9.mobileprovision > /tmp/echat-profile.plis
 ios-production
 ```
 
-如团队支持审批，可为该环境配置 Required reviewers。然后在 **Environment secrets** 添加以下四项：
+如团队支持审批，可为该环境配置 Required reviewers。然后在 **Environment secrets** 添加以下四项签名 Secret：
 
 | Secret 名称                      | 内容                                      | 来源                       |
 | -------------------------------- | ----------------------------------------- | -------------------------- |
@@ -118,7 +118,15 @@ base64 -i EChat_App_Store_0_9.mobileprovision | pbcopy
 
 请只把值粘贴到 GitHub Encrypted Secrets 表单。不要粘贴到聊天、Issue、Actions input、README、仓库文件或 workflow YAML。完成后删除本机临时 Base64 文本；原始 `.p12` 和 profile 应保存在受控加密位置。
 
-`APNS_PRIVATE_KEY` 和 App Store Connect 上传 `.p8` **不需要**配置到这个“只生成 IPA”的 workflow。APNs Key 只属于服务端推送；上传 Key 只在后续自动上传 TestFlight 时使用。
+如需让同一 workflow 上传 TestFlight，再添加以下三项：
+
+| Secret 名称                        | 内容                                  |
+| ---------------------------------- | ------------------------------------- |
+| `APP_STORE_CONNECT_KEY_ID`         | Developer 角色 Team API Key 的 Key ID |
+| `APP_STORE_CONNECT_ISSUER_ID`      | App Store Connect Issuer ID           |
+| `APP_STORE_CONNECT_API_KEY_BASE64` | `AuthKey_*.p8` 文件的单行 Base64      |
+
+`APNS_PRIVATE_KEY` **不属于**该 workflow。APNs Key 只供服务端发送推送；上传 Key 只供构建机向 App Store Connect 上传，二者必须分开管理。
 
 ## 运行 workflow
 
@@ -129,7 +137,8 @@ base64 -i EChat_App_Store_0_9.mobileprovision | pbcopy
 5. Version 保持 `0.9.0`。
 6. Build number 可留空，工作流使用 `18` 加 GitHub run number（例如首次 run 为 `181`）。若填写，必须是 1–18 位且从未上传过的数字。
 7. API URL 填写生产 HTTPS 地址，例如 `https://echatapp-favrlscm.manus.space`。
-8. 点击绿色 **Run workflow**。
+8. 只生成 IPA 时保持 **Upload TestFlight** 关闭；上传时明确打开。
+9. 点击绿色 **Run workflow**。
 
 workflow 会依次完成：输入与 Secret 校验、依赖安装、临时 Keychain、profile Team/Bundle/APNs 校验、Capacitor iOS sync、TypeScript 检查、Swift Package 解析、Xcode Archive、手工签名 export、IPA 解包和 `codesign` 校验、Bundle ID/版本/Build 校验，以及 artifact 上传。
 
@@ -179,9 +188,9 @@ sha256sum -c EChat-iOS-0.9.0-19.ipa.sha256
 
 ## 后续上传 TestFlight
 
-生成 IPA 只完成了发布构建，不等于已经通过 TestFlight。后续仍要创建 App Store Connect 应用记录、完成 App Privacy 和出口合规、上传 IPA、等待处理、分配内部测试员并在真机验证 APNs/PushKit/CallKit。
+生成 IPA 只完成了发布构建，不等于已经通过 TestFlight。应用记录已创建；后续仍要创建最小权限上传 Key、完成 App Privacy 和出口合规、上传 IPA、等待处理、分配内部测试员并在真机验证 APNs/PushKit/CallKit。
 
-当前仓库另有 `scripts/ios-testflight.sh` 用于受控 Mac 上自动 Archive 与上传。GitHub workflow 目前故意不读取上传 API Key，也不会产生不可逆的外部发布动作。确认 IPA 构建成功、App Store Connect 记录完成后，再为 CI 增加独立的 TestFlight 上传 job。
+当前仓库另有 `scripts/ios-testflight.sh` 用于受控 Mac 上自动 Archive 与上传。GitHub workflow 的上传开关默认关闭，并只在上传步骤读取 `.p8`；完成后无论成功失败都会删除临时 Key。建议上传 Key 使用 **Developer** 角色，满足 Apple 的构建上传要求且避免 App Manager/Admin 权限。
 
 ## 官方参考资料
 

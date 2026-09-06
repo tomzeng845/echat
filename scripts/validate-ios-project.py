@@ -125,8 +125,10 @@ def main() -> int:
         for suffix in ("*.p8", "*.p12", "*.mobileprovision", "*.cer", "*.ipa")
         for path in ROOT.rglob(suffix)
         if "node_modules" not in path.parts
+        if not (suffix == "*.ipa" and path.parent == ROOT / "releases")
     ]
     require(not signing_material, "Apple signing material or IPA must not be stored in the project")
+    require("releases/*.ipa" in (ROOT / ".gitignore").read_text(encoding="utf-8"), "Release IPA files must remain gitignored")
     require((ROOT / "scripts" / "ios-testflight.sh").stat().st_mode & 0o111 != 0, "TestFlight script is not executable")
     require((ROOT / "scripts" / "validate-apple-profile.py").stat().st_mode & 0o111 != 0, "Apple profile validator is not executable")
 

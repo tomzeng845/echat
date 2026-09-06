@@ -4,7 +4,7 @@
 
 E聊 iOS 客户端已基于 Capacitor 8 生成 Xcode 工程，Bundle ID 默认为 `com.tomzeng845.echat`，版本为 `0.9.0 (18)`，最低支持 iOS 15。普通消息、好友申请和测试通知使用 APNs alert；真实音视频来电使用 PushKit VoIP push，并立即交给 CallKit 显示系统来电界面。相机、麦克风、通知、后台音频、刘海屏和 Home Indicator 安全区已经接入应用代码。
 
-> **签名 IPA 已生成，但尚未上传 TestFlight。** Apple Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 并开启 Push Notifications，Apple Distribution 证书和 production profile 已验证。GitHub macOS 26 workflow `34024319750` 已成功完成 `0.9.0 (181)` Archive/export。App Store Connect 应用记录、上传 API Key、上传和 iPhone 真机验收仍未完成。
+> **签名 IPA 已生成，但尚未上传 TestFlight。** Apple Team `PPY8H6QWB5` 已注册 `com.tomzeng845.echat` 并开启 Push Notifications，Apple Distribution 证书和 production profile 已验证。GitHub macOS 26 workflow `34024319750` 已成功完成 `0.9.0 (181)` Archive/export。App Store Connect 记录已创建为“E聊即时通讯”（Apple ID `6809145695`）；上传 API Key、上传和 iPhone 真机验收仍未完成。
 
 ## 实现映射
 
@@ -41,7 +41,7 @@ APNs 发送 Key 与 App Store Connect 上传 Key 是两类用途。即使 Apple 
 | `APP_STORE_CONNECT_ISSUER_ID`    | App Store Connect issuer UUID                  | macOS 构建机 Secret |
 | `APP_STORE_CONNECT_API_KEY_PATH` | 只可下载一次的上传 `.p8` 文件路径              | 项目外安全目录      |
 
-Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，Team `PPY8H6QWB5` 成功注册 `com.tomzeng845.echat`，开启 Push Notifications，并生成含 production APNs entitlement 的 App Store profile。首次上传前仍需创建同 Bundle ID 的 App Store Connect 应用记录、APNs production Key 和上传 API Key。
+Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，Team `PPY8H6QWB5` 成功注册 `com.tomzeng845.echat`，开启 Push Notifications，并生成含 production APNs entitlement 的 App Store profile。App Store Connect 已创建绑定同一 Bundle ID 的“E聊即时通讯”记录（Apple ID `6809145695`）；原名称“E聊”已被占用，但 IPA 内 `CFBundleDisplayName` 仍为“E聊”。首次上传前仍需创建 APNs production Key 和上传 API Key。
 
 ## 构建与上传方案
 

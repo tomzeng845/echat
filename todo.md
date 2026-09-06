@@ -24,8 +24,10 @@
 - [x] 运行 `Build signed iOS IPA` workflow `34024319750`，下载并验证 `0.9.0 (181)` IPA 与 SHA-256
 - [x] 为 Team `PPY8H6QWB5` 注册 `com.tomzeng845.echat` 显式 App ID 并开启 Push Notifications
 - [x] 创建并验证 Apple Distribution 证书和 App Store Connect production provisioning profile
+- [x] 创建 App Store Connect 记录“E聊即时通讯”，绑定 `com.tomzeng845.echat`，Apple ID `6809145695`
 - [ ] 创建 APNs Key 并配置服务端生产秘密
-- [ ] 在 App Store Connect 创建应用记录、上传 API Key、隐私信息、隐私政策和 Beta 元数据
+- [ ] 创建最小权限 App Store Connect 上传 API Key，并加入 GitHub `ios-production` Environment Secrets
+- [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据
 - [ ] 由账号持有人审查 AES-GCM/RSA-OAEP、第三方 SDK 与发布地区后完成 Apple 出口合规问卷，再决定 `ITSAppUsesNonExemptEncryption`
 - [x] 在 GitHub-hosted macOS 26 / Xcode 26 完成 Manual archive、export、codesign、profile、Bundle ID、版本与资源验证
 - [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风

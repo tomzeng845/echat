@@ -396,3 +396,9 @@ GitHub-hosted macOS 26 workflow run `34024319750`、attempt 1 在 2 分 6 秒内
 内嵌 profile 再次通过项目校验器：UUID `be3ef7da-d200-4d97-b5df-41cebabdca07`，application identifier `PPY8H6QWB5.com.tomzeng845.echat`，`aps-environment=production`，到期 `2027-09-06T08:27:52Z`。短期 GitHub PAT 与两次临时 Deploy Key 均已从 GitHub 撤销；本地 PAT、Distribution 私钥、CSR、PKCS#12、密码和三个 Base64 Secret 文本已删除。GitHub Environment Secrets 保留供后续可重复构建。
 
 该 IPA 尚未上传 App Store Connect。TestFlight 上传、Apple 处理、出口合规回答、内部测试员分配、APNs production Key 和至少两台 iPhone 的消息/通话真机验收仍为明确待办。
+
+## 2026-09-06 App Store Connect 记录与 TestFlight 上传门控
+
+App Store Connect 已创建绑定 `com.tomzeng845.echat` 的 iOS 应用记录，商店名称为“E聊即时通讯”，Apple ID 为 `6809145695`，主语言为简体中文，SKU 为 `echat-ios-20260906`。原申请名称“E聊”被 Apple 判定已占用；IPA 内 `CFBundleDisplayName` 保持“E聊”，不改变设备桌面显示名。
+
+`.github/workflows/ios-ipa.yml` 新增布尔输入 `upload_testflight`，默认 `false`。关闭时行为与成功的 run `34024319750` 一致，只生成并保存签名 IPA；开启时才要求 `APP_STORE_CONNECT_KEY_ID`、`APP_STORE_CONNECT_ISSUER_ID` 和 `APP_STORE_CONNECT_API_KEY_BASE64`，在独立上传步骤验证 `.p8` 后调用 `xcrun altool --validate-app` 与 `--upload-app`。上传秘密不暴露给依赖安装、编译、签名或 summary 步骤；临时 `AuthKey_*.p8` 无论成功失败都会在清理步骤删除。workflow 已通过 Prettier、actionlint、ShellCheck 和 iOS 静态检查；尚未创建上传 Key 或执行 TestFlight 上传。
