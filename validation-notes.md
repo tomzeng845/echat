@@ -448,3 +448,10 @@ Apple Developer 后续会话已过期，无法重新核对 Key `5FLA6SLK3N` 的�
 验证结果：p8 为有效 EC P-256 PKCS#8 私钥；正式部署测试 `ECHAT_HEALTH_URL=https://echatapp-favrlscm.manus.space/api/health APNS_BUNDLE_ID=com.tomzeng845.echat pnpm exec vitest run server/apns-production-secret.test.ts` 通过（1 file、1 test）；健康接口确认 `iosEnabled=true`、provider 为 Apple Push Notification service。正式服务 topic 为 `com.tomzeng845.echat`，VoIP topic 为 `com.tomzeng845.echat.voip`，使用 production endpoint。
 
 仍需真机闭环：在 TestFlight iPhone 上完全退出并重新登录 E聊以重新注册普通 APNs 与 `ios-voip` token，然后由另一账号拨打语音和视频电话，分别在前台、后台和锁屏验证系统来电、接听、拒接、挂断、双向音视频。测试期间检查 `/api/push/status` 的 `ios` 与 `ios-voip` 设备记录以及正式服务 APNs 状态码；不得记录 token 或私钥。
+
+
+## 2026-09-07 Apple Developer Production 环境最终确认
+
+重新登录 Apple Developer 后，Key 列表最终显示：`35Z9TC62QQ`（`EChat APNs Production 2026 v4`）的 APNs Environment 为 **Production**；`XYL3YLUA27` 与旧 `5FLA6SLK3N` 均为 Sandbox。正式服务已切换到 `35Z9TC62QQ`，p8 上传副本已从本地删除。
+
+正式健康测试已通过：`server/apns-production-secret.test.ts` 1 file / 1 test，健康返回 `iosEnabled=true`、provider 为 Apple Push Notification service。现在 APNs 环境与 Bundle ID/topic 配置均已闭环，剩余唯一关键验证是 TestFlight 真机重新注册 token 后的普通通知和 PushKit/CallKit 锁屏来电。
