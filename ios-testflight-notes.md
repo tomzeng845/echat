@@ -41,7 +41,7 @@ APNs 发送 Key 与 App Store Connect 上传 Key 是两类用途。即使 Apple 
 | `APP_STORE_CONNECT_ISSUER_ID`    | App Store Connect issuer UUID                  | macOS 构建机 Secret |
 | `APP_STORE_CONNECT_API_KEY_PATH` | 只可下载一次的上传 `.p8` 文件路径              | 项目外安全目录      |
 
-Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，Team `PPY8H6QWB5` 成功注册 `com.tomzeng845.echat`，开启 Push Notifications，并生成含 production APNs entitlement 的 App Store profile。App Store Connect 已创建绑定同一 Bundle ID 的“E聊即时通讯”记录（Apple ID `6809145695`）；原名称“E聊”已被占用，但 IPA 内 `CFBundleDisplayName` 仍为“E聊”。Developer 角色上传 API Key 已安全配置并完成首次上传。旧 APNs Key `35STBCJUCJ` 已撤销，新 Key `5FLA6SLK3N` 的私钥已安全注入正式服务；重启后的 `/api/health` 和部署 Vitest 确认 `iosEnabled=true`、provider 为 Apple APNs。仍待账号持有人的 TestFlight 真机通知与通话验收。
+Apple Developer 侧已经完成：`com.echat.app` 因全局不可用被放弃，Team `PPY8H6QWB5` 成功注册 `com.tomzeng845.echat`，开启 Push Notifications，并生成含 production APNs entitlement 的 App Store profile。App Store Connect 已创建绑定同一 Bundle ID 的“E聊即时通讯”记录（Apple ID `6809145695`）；原名称“E聊”已被占用，但 IPA 内 `CFBundleDisplayName` 仍为“E聊”。Developer 角色上传 API Key 已安全配置并完成首次上传。旧 APNs Key `35STBCJUCJ` 已撤销，新 Key `5FLA6SLK3N` 的私钥已安全加载到正式服务；重启后的 `/api/health` 和部署 Vitest 确认 `iosEnabled=true`、provider 为 Apple APNs。**注意：Apple Developer 会话随后显示新 Key 的环境标签仍需重新核对；在确认其为 Production 前，不能把健康字段等同于 TestFlight 真机投递已成功。** 当前仍待 TestFlight 真机通知与 PushKit/CallKit 通话验收。
 
 ## 构建与上传方案
 

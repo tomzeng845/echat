@@ -4,6 +4,7 @@ const healthUrl = process.env.ECHAT_HEALTH_URL;
 
 describe.skipIf(!healthUrl)("deployed APNs production secret", () => {
   it("loads a valid production APNs key into the EChat API", async () => {
+    expect(process.env.APNS_BUNDLE_ID).toBe("com.tomzeng845.echat");
     const response = await fetch(healthUrl!, {
       headers: { accept: "application/json" },
     });

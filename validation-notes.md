@@ -426,3 +426,14 @@ Apple Developer 已创建 Production Team Scoped APNs Key `35STBCJUCJ`，覆盖 
 Apple Developer 页面确认旧 Key `35STBCJUCJ` 实际显示为 Sandbox，已按用户授权撤销。重新创建并下载 APNs Key `5FLA6SLK3N`（`EChat APNs Production 2026 v2`），将匹配的 p8 通过 WebDev Secrets 安全更新为 `APNS_PRIVATE_KEY`，同时更新 `APNS_KEY_ID`，随后重启服务。现正式 `/api/health` 返回 `version=0.9.0`、`push.enabled=true`、`push.iosEnabled=true`、provider 为 Apple Push Notification service；`server/apns-production-secret.test.ts` 通过。项目和日志中没有保存 p8 文件。
 
 Apple Developer 列表当前只保留新 Key；页面仍显示其 APNs 环境标签为 Sandbox，因此后续真机 TestFlight 推送验收若出现 `BadDeviceToken`，应优先在 Apple Developer 重新核对 Key 的 Environment 选项与 TestFlight token 环境，不应把本次健康检查当作真实设备推送成功证明。
+
+
+## 2026-09-07 iPhone 后台/锁屏来电排查（当前状态）
+
+针对 TestFlight 用户反馈“APP 切到后台或锁屏后收不到语音/视频来电”，已完成代码静态审查、服务端 topic 修正和部署健康验证。正式服务的 `APNS_BUNDLE_ID` 已更新为 `com.tomzeng845.echat`，普通 topic 为 `com.tomzeng845.echat`，VoIP topic 为 `com.tomzeng845.echat.voip`；`APNS_USE_SANDBOX` 未启用，服务使用 production endpoint。重启后的 `/api/health` 返回 `version=0.9.0`、`push.enabled=true`、`iosEnabled=true`、provider 为 Apple Push Notification service；部署 Vitest 通过。
+
+AppDelegate 已在启动时创建 `PKPushRegistry` 并声明 `.voIP`，VoIP push 收到后立即调用 `reportNewIncomingCall`；CallKit 接听、拒接、远端结束按 `callId` 清理。当前尚未完成 iPhone 真机重现，因此不能把健康检查当作来电投递成功证明。
+
+Apple Developer 后续会话已过期，无法重新核对 Key `5FLA6SLK3N` 的环境标签；页面此前显示其环境仍需确认。下一步必须确认该 Key 为 Production，然后让 TestFlight 设备重新登录 E聊并上传新的 `ios-voip` token，再测试锁屏语音和视频来电。若仍失败，检查 `/api/push/status` 是否存在同一设备的 `ios` 与 `ios-voip` 记录，以及服务日志中的 APNs 状态码，但不得记录 token 或私钥。
+
+当前结论：服务端 Bundle ID/topic 已修正、APNs 健康检查通过；真实锁屏来电仍待 Apple Key 环境确认和 iPhone 真机验收。
