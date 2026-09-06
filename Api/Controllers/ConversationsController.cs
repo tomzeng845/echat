@@ -161,7 +161,14 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         }
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? request.Content ?? "" : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
+        var recipientIds = conversation.Members
+            .Where(member => member.LeftAtSequence is null && !member.Muted && member.UserId != message.SenderId)
+            .Select(member => member.UserId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         await hub.Clients.Group($"conversation:{id}").SendAsync("message.created", view, ct);
+        await Task.WhenAll(recipientIds.Select(recipientId =>
+            hub.Clients.Group($"user:{recipientId}").SendAsync("message.available", view, ct)));
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         return Ok(view);
     }

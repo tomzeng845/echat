@@ -67,9 +67,7 @@ try {
   });
   const receivedConversationEvent = await conversationEvent;
   if (receivedConversationEvent.conversationId !== conversation.id || receivedConversationEvent.action !== "created") throw new Error("direct conversation event mismatch");
-  await bobHub.invoke("JoinConversation", conversation.id);
-
-  const receivedMessage = once(bobHub, "message.created");
+  const receivedMessage = once(bobHub, "message.available");
   const sentMessage = await request(`/api/conversations/${conversation.id}/messages`, alice.accessToken, {
     method: "POST",
     body: JSON.stringify({

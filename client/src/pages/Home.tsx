@@ -495,6 +495,7 @@ function Messenger({
   const readFloorRef = useRef(new Map<string, number>());
   const keySyncRef = useRef(new Map<string, Promise<number>>());
   const validatedKeyEnvelopesRef = useRef(new Set<string>());
+  const handledMessageIdsRef = useRef(new Set<string>());
   const chatVisible =
     nav === "chats" &&
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
@@ -809,48 +810,57 @@ function Messenger({
     return () => window.removeEventListener("echat-open-notification", onOpen);
   }, [identityReady, loadData]);
 
+  const handleIncomingMessage = useCallback(
+    async (message: Message) => {
+      if (handledMessageIdsRef.current.has(message.id)) return;
+      handledMessageIdsRef.current.add(message.id);
+      if (handledMessageIdsRef.current.size > 500)
+        handledMessageIdsRef.current.delete(
+          handledMessageIdsRef.current.values().next().value as string
+        );
+      if (message.senderId !== user.id) {
+        const conversation = conversationsRef.current.find(
+          item => item.id === message.conversationId
+        );
+        const labels: Record<Message["kind"], string> = {
+          Text: "新消息",
+          Emoji: "表情消息",
+          Image: "图片消息",
+          Voice: "语音消息",
+          Video: "视频消息",
+          File: "文件消息",
+          System: "系统消息",
+        };
+        notifyIncomingEvent({
+          kind: "message",
+          eventId: message.id,
+          title: conversation?.name || "E聊新消息",
+          body: `收到一条${labels[message.kind]}`,
+          target: { type: "message", conversationId: message.conversationId },
+        }).catch(() => undefined);
+      }
+      if (message.conversationId === selectedRef.current) {
+        const value = await decrypt(message);
+        setMessages(current =>
+          current.some(x => x.id === value.id)
+            ? current
+            : [...current, value].sort((a, b) => a.sequence - b.sequence)
+        );
+        await markConversationRead(
+          message.conversationId,
+          message.sequence
+        ).catch(() => undefined);
+      }
+      loadData().catch(() => undefined);
+    },
+    [decrypt, loadData, markConversationRead, user.id]
+  );
+
   useEffect(() => {
     if (!identityReady) return;
     const connection = connectRealtime({
-      onMessage: async message => {
-        if (message.senderId !== user.id) {
-          const conversation = conversationsRef.current.find(
-            item => item.id === message.conversationId
-          );
-          const labels: Record<Message["kind"], string> = {
-            Text: "新消息",
-            Emoji: "表情消息",
-            Image: "图片消息",
-            Voice: "语音消息",
-            Video: "视频消息",
-            File: "文件消息",
-            System: "系统消息",
-          };
-          notifyIncomingEvent({
-            kind: "message",
-            eventId: message.id,
-            title: conversation?.name || "E聊新消息",
-            body: `收到一条${labels[message.kind]}`,
-            target: {
-              type: "message",
-              conversationId: message.conversationId,
-            },
-          }).catch(() => undefined);
-        }
-        if (message.conversationId === selectedRef.current) {
-          const value = await decrypt(message);
-          setMessages(current =>
-            current.some(x => x.id === value.id)
-              ? current
-              : [...current, value].sort((a, b) => a.sequence - b.sequence)
-          );
-          await markConversationRead(
-            message.conversationId,
-            message.sequence
-          ).catch(() => undefined);
-        }
-        loadData().catch(() => undefined);
-      },
+      onMessage: handleIncomingMessage,
+      onMessageAvailable: handleIncomingMessage,
       onMessageUpdate: async message => {
         if (message.conversationId === selectedRef.current) {
           const value = await decrypt(message);
@@ -931,7 +941,7 @@ function Messenger({
       setRealtimeConnection(null);
       connection.stop();
     };
-  }, [decrypt, identityReady, loadData, markConversationRead, user.id]);
+  }, [handleIncomingMessage, identityReady, loadData, user.id]);
 
   useEffect(() => {
     const refresh = () => {

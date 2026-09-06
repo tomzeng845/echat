@@ -318,6 +318,7 @@ export async function uploadMedia(
 
 export type RealtimeHandlers = {
   onMessage?: (message: Message) => void;
+  onMessageAvailable?: (message: Message) => void;
   onMessageUpdate?: (message: Message) => void;
   onConversation?: (event: {
     conversationId: string;
@@ -349,6 +350,8 @@ export function connectRealtime(handlers: RealtimeHandlers) {
     .configureLogging(signalR.LogLevel.Warning)
     .build();
   if (handlers.onMessage) connection.on("message.created", handlers.onMessage);
+  if (handlers.onMessageAvailable)
+    connection.on("message.available", handlers.onMessageAvailable);
   if (handlers.onMessageUpdate)
     connection.on("message.updated", handlers.onMessageUpdate);
   if (handlers.onConversation)
