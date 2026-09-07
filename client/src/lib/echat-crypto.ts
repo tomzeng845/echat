@@ -1,6 +1,14 @@
 const DB_NAME = "echat-secure-vault";
 const STORE = "keys";
 
+function requireWebCrypto(): Crypto {
+  const webCrypto = globalThis.crypto;
+  if (!webCrypto?.subtle) {
+    throw new Error("聊天加密需要 HTTPS 安全连接，请使用 https:// 域名访问，不要使用 HTTP 或 IP 地址。");
+  }
+  return webCrypto;
+}
+
 function openVault(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -39,10 +47,11 @@ const base64ToBytes = (value: string) =>
   Uint8Array.from(atob(value), char => char.charCodeAt(0));
 
 export async function ensureIdentity(account: string) {
+  const webCrypto = requireWebCrypto();
   const key = `identity:${account}`;
   let pair = await vaultGet<CryptoKeyPair>(key);
   if (!pair) {
-    pair = await crypto.subtle.generateKey(
+    pair = await webCrypto.subtle.generateKey(
       {
         name: "RSA-OAEP",
         modulusLength: 2048,
@@ -54,41 +63,43 @@ export async function ensureIdentity(account: string) {
     );
     await vaultSet(key, pair);
   }
-  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const publicJwk = await webCrypto.subtle.exportKey("jwk", pair.publicKey);
   return { pair, publicJwk: JSON.stringify(publicJwk) };
 }
 
 export async function createConversationKey() {
-  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
+  return requireWebCrypto().subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
     "encrypt",
     "decrypt",
   ]);
 }
 
 export async function sealKeyFor(key: CryptoKey, publicKeyJwk: string) {
-  const publicKey = await crypto.subtle.importKey(
+  const webCrypto = requireWebCrypto();
+  const publicKey = await webCrypto.subtle.importKey(
     "jwk",
     JSON.parse(publicKeyJwk),
     { name: "RSA-OAEP", hash: "SHA-256" },
     false,
     ["encrypt"]
   );
-  const rawKey = await crypto.subtle.exportKey("raw", key);
+  const rawKey = await webCrypto.subtle.exportKey("raw", key);
   return bytesToBase64(
     new Uint8Array(
-      await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, rawKey)
+      await webCrypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, rawKey)
     )
   );
 }
 
 export async function openKeyEnvelope(account: string, envelope: string) {
+  const webCrypto = requireWebCrypto();
   const { pair } = await ensureIdentity(account);
-  const raw = await crypto.subtle.decrypt(
+  const raw = await webCrypto.subtle.decrypt(
     { name: "RSA-OAEP" },
     pair.privateKey,
     base64ToBytes(envelope)
   );
-  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, [
+  return webCrypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, [
     "encrypt",
     "decrypt",
   ]);
@@ -115,8 +126,9 @@ export async function getConversationKey(
 }
 
 export async function encryptMessage(key: CryptoKey, text: string) {
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
+  const webCrypto = requireWebCrypto();
+  const nonce = webCrypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await webCrypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     key,
     new TextEncoder().encode(text)
@@ -133,7 +145,7 @@ export async function decryptMessage(
   ciphertext: string,
   nonce: string
 ) {
-  const plaintext = await crypto.subtle.decrypt(
+  const plaintext = await requireWebCrypto().subtle.decrypt(
     { name: "AES-GCM", iv: base64ToBytes(nonce) },
     key,
     base64ToBytes(ciphertext)
@@ -142,8 +154,9 @@ export async function decryptMessage(
 }
 
 export async function encryptBinary(key: CryptoKey, data: ArrayBuffer) {
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
+  const webCrypto = requireWebCrypto();
+  const nonce = webCrypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await webCrypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     key,
     data
@@ -159,7 +172,7 @@ export async function decryptBinary(
   data: ArrayBuffer,
   nonce: string
 ) {
-  return crypto.subtle.decrypt(
+  return requireWebCrypto().subtle.decrypt(
     { name: "AES-GCM", iv: base64ToBytes(nonce) },
     key,
     data

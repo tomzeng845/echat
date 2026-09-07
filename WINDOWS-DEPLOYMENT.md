@@ -239,6 +239,8 @@ Restart-Service EChat
 
 推荐让 `EChat` Windows Service 只监听本机 `2099`，由 IIS 对外提供 HTTPS。IIS 站点的物理路径可以指向发布目录，但如果 IIS 直接托管 self-contained ASP.NET Core，应使用发布包中的 `web.config` 和 ASP.NET Core Module；更简单稳定的方式是让 IIS 作为反向代理转发到 `http://127.0.0.1:2099`。
 
+聊天端的 RSA/AES 加密依赖浏览器 Web Crypto。**外网访问必须使用有效的 HTTPS 域名**，例如 `https://chat.example.com`；使用 `http://公网IP:2099`、自签名证书未被浏览器信任的地址或其他非安全上下文，会导致 `crypto.subtle.generateKey` 不可用，登录后无法初始化聊天加密密钥。
+
 IIS 配置要点：
 
 1. 绑定正式域名和 TLS 证书。
