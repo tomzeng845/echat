@@ -1,0 +1,72 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: Production EChat HTTPS API URL embedded in the app
+        required: true
+        default: https://echatapp-favrlscm.manus.space
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: echat-android-apk
+  cancel-in-progress: false
+
+jobs:
+  build-debug-apk:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ECHAT_ANDROID_API_URL: ${{ inputs.api_url }}
+
+    steps:
+      - name: Check out EChat source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@249970729cb0ef3584e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.4.1 --activate
+          node --version
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web assets and synchronize Capacitor Android
+        run: pnpm android:sync
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Verify APK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump packagename "$APK" || true
+          sha256sum "$APK" | tee app-debug.apk.sha256
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: EChat-Android-debug-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            app-debug.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
