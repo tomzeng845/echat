@@ -788,7 +788,7 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
       <DocGenericManagedPanel
         refresh={refresh}
         title="角色"
-        description="角色固定为超级管理员、运营管理员、财务管理员、审计员和客服；权限使用中文下拉多选。"
+        description="角色固定为超级管理员、运营管理员、财务管理员、审计员和客服；权限支持中文复选框多选。"
         module="system.roles"
         fixedNames={[
           "超级管理员",

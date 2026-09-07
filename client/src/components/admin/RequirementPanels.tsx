@@ -2016,29 +2016,55 @@ export function GenericManagedPanel({
         )}
         {fields.map(f =>
           f.options ? (
-            <label key={f.key} className="mt-3 block text-sm text-slate-600">
-              {f.label}
-              <select
-                multiple
-                value={String(values[f.key] || "")
-                  .split(",")
-                  .filter(Boolean)}
-                onChange={e => {
-                  const selected = Array.from(e.currentTarget.options)
-                    .filter(option => option.selected)
-                    .map(option => option.value)
-                    .join(",");
-                  setValues(v => ({ ...v, [f.key]: selected }));
-                }}
-                className="admin-input mt-2 min-h-40"
-              >
-                {f.options.map(option => (
-                  <option key={option} value={option}>
-                    {f.optionLabels?.[option] || option}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <fieldset
+              key={f.key}
+              className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <legend className="text-sm font-medium text-slate-700">
+                  {f.label}
+                </legend>
+                <span className="text-xs text-slate-400">
+                  {
+                    String(values[f.key] || "")
+                      .split(",")
+                      .filter(Boolean).length
+                  }{" "}
+                  项已选
+                </span>
+              </div>
+              <div className="grid max-h-56 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                {f.options.map(option => {
+                  const selectedOptions = String(values[f.key] || "")
+                    .split(",")
+                    .filter(Boolean);
+                  const checked = selectedOptions.includes(option);
+                  return (
+                    <label
+                      key={option}
+                      className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs transition ${
+                        checked
+                          ? "border-teal-300 bg-teal-50 text-teal-800"
+                          : "border-transparent bg-white text-slate-600 hover:border-slate-200"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = checked
+                            ? selectedOptions.filter(item => item !== option)
+                            : [...selectedOptions, option];
+                          setValues(v => ({ ...v, [f.key]: next.join(",") }));
+                        }}
+                        className="mt-0.5 accent-teal-600"
+                      />
+                      <span>{f.optionLabels?.[option] || option}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
           ) : f.multiline ? (
             <textarea
               key={f.key}
