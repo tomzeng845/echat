@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build && dotnet publish Api/EChat.Api.csproj -c Release -o dist/dotnet",
-    "build:android:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_ANDROID_API_URL:-https://echatapp-favrlscm.manus.space} vite build",
+    "build:android:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_ANDROID_API_URL:-https://platform.superseller88.com:2099} vite build",
     "android:sync": "pnpm build:android:web && cap sync android",
     "android:apk": "pnpm android:sync && cd android && ./gradlew assembleDebug",
     "android:release": "bash scripts/android-release.sh",
-    "build:ios:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_IOS_API_URL:-https://echatapp-favrlscm.manus.space} vite build",
+    "build:ios:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_IOS_API_URL:-https://platform.superseller88.com:2099} vite build",
     "windows:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-release.ps1",
     "ios:sync": "ECHAT_CAPACITOR_APP_ID=${ECHAT_IOS_BUNDLE_ID:-com.tomzeng845.echat} pnpm build:ios:web && ECHAT_CAPACITOR_APP_ID=${ECHAT_IOS_BUNDLE_ID:-com.tomzeng845.echat} cap sync ios",
     "ios:validate": "python3 scripts/validate-ios-project.py",
