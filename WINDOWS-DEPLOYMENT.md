@@ -160,6 +160,7 @@ C:\Program Files\EChat\echat.env.ps1
 | `JWT_SECRET` | JWT 签名密钥，必须是随机长字符串。 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 首次管理账号密码；不要使用演示密码。 |
 | `ADMIN_SECRET_ENCRYPTION_KEY` | 管理员 TOTP 等敏感信息的加密密钥，必须长期稳定。 |
+| `ADMIN_TOTP_SECRET` | 管理员动态验证码的 Base32 密钥；必须加入 Google Authenticator 或 Microsoft Authenticator。 |
 | `SEED_INVITE_CODE` | 首个注册邀请码。 |
 | `CORS_ALLOWED_ORIGINS` | 正式前端来源，例如 `https://chat.example.com`；多个地址用英文逗号分隔。 |
 
@@ -194,6 +195,23 @@ Set-Location "C:\EChat-release\mongodb"
 ```
 
 也可以直接执行 `mongosh $env:MONGODB_URI --file .\create-default-admin.js`。创建后请立即登录后台修改密码并配置 TOTP；生产环境不建议长期使用默认密码。
+
+### 5.2.2 配置管理员 TOTP
+
+如果登录提示“管理员动态验证码服务尚未配置”，请在管理员 PowerShell 中执行发布包 `security` 目录的初始化脚本：
+
+```powershell
+Set-Location "C:\EChat-release\security"
+.\setup-admin-totp.ps1 -EnvFile "C:\Program Files\EChat\echat.env.ps1"
+```
+
+脚本会生成随机 Base32 密钥并写入环境文件，同时输出密钥和 `otpauth://` 地址。将密钥手动添加到 Google Authenticator 或 Microsoft Authenticator 后，重启服务：
+
+```powershell
+Restart-Service EChat
+```
+
+打开验证器生成 6 位验证码，先用密码登录，再输入动态验证码即可。请将脚本输出的密钥视为密码，不要发到群聊或提交到代码仓库。
 
 如果服务状态为 `Running` 但健康检查失败，优先检查 `MONGODB_URI`、MongoDB 网络连通性、端口占用和事件查看器中的 `StartupDataInitializer` 日志。服务启动后数据库仍不可达时，登录、消息和需要数据库的接口会在数据库恢复后正常工作；不要因为初始化重试就重复创建服务。
 
@@ -242,6 +260,7 @@ IIS 配置要点：
 - [ ] 普通账号可以注册、登录、刷新令牌和退出登录。
 - [ ] 两个账号可以建立会话并通过 SignalR 实时收发消息。
 - [ ] 管理账号已修改为正式密码并完成 Google Authenticator TOTP 绑定。
+- [ ] `ADMIN_TOTP_SECRET` 已写入生产环境文件，管理员登录可完成动态验证码验证。
 - [ ] HTTPS 页面可以建立 `/hubs/chat` 的 `wss://` 连接。
 - [ ] 外网环境下 CORS、DNS、证书、Windows 防火墙和 MongoDB 白名单均已确认。
 - [ ] 已配置 MongoDB 备份、日志保留、服务监控和升级回滚目录。

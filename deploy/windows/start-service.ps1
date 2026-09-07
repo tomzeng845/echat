@@ -13,13 +13,13 @@ if (-not (Test-Path $envFile)) {
 # Windows services inherit machine/user environment values when they start.
 # The environment file is also validated here so configuration mistakes fail early.
 . $envFile
-foreach ($name in @("MONGODB_URI", "JWT_SECRET", "ADMIN_BOOTSTRAP_PASSWORD", "ADMIN_SECRET_ENCRYPTION_KEY", "SEED_INVITE_CODE")) {
+foreach ($name in @("MONGODB_URI", "JWT_SECRET", "ADMIN_BOOTSTRAP_PASSWORD", "ADMIN_SECRET_ENCRYPTION_KEY", "ADMIN_TOTP_SECRET", "SEED_INVITE_CODE")) {
     if ([string]::IsNullOrWhiteSpace((Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value) -or (Get-Item "Env:$name").Value.StartsWith("replace-")) {
         throw "Production variable $name is missing or still uses a placeholder."
     }
 }
 
-foreach ($name in @("MONGODB_URI", "MONGODB_DATABASE", "MONGODB_DIRECT_CONNECTION", "JWT_SECRET", "ADMIN_BOOTSTRAP_PASSWORD", "ADMIN_SECRET_ENCRYPTION_KEY", "SEED_INVITE_CODE", "CORS_ALLOWED_ORIGINS", "TURN_URLS", "TURN_SECRET", "SFU_URL", "FCM_PROJECT_ID", "FCM_SERVICE_ACCOUNT_JSON")) {
+foreach ($name in @("MONGODB_URI", "MONGODB_DATABASE", "MONGODB_DIRECT_CONNECTION", "JWT_SECRET", "ADMIN_BOOTSTRAP_PASSWORD", "ADMIN_SECRET_ENCRYPTION_KEY", "ADMIN_TOTP_SECRET", "SEED_INVITE_CODE", "CORS_ALLOWED_ORIGINS", "TURN_URLS", "TURN_SECRET", "SFU_URL", "FCM_PROJECT_ID", "FCM_SERVICE_ACCOUNT_JSON")) {
     $value = (Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value
     if ($null -ne $value) { [Environment]::SetEnvironmentVariable($name, $value, "Machine") }
 }

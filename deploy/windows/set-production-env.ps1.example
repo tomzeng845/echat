@@ -7,6 +7,7 @@ $env:MONGODB_DIRECT_CONNECTION = "true"
 $env:JWT_SECRET = "replace-with-a-long-random-secret"
 $env:ADMIN_BOOTSTRAP_PASSWORD = "replace-before-first-start"
 $env:ADMIN_SECRET_ENCRYPTION_KEY = "replace-with-a-long-random-secret"
+$env:ADMIN_TOTP_SECRET = "replace-with-a-base32-totp-secret"
 $env:SEED_INVITE_CODE = "replace-with-the-first-invite-code"
 $env:CORS_ALLOWED_ORIGINS = "https://chat.example.com"
 
