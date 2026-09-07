@@ -249,7 +249,7 @@ $env:ECHAT_HTTPS_CERT_PASSWORD = "PFX证书密码"
 $env:ECHAT_HTTPS_PORT = "2099"
 ```
 
-配置后执行：
+配置后必须使用发布包中的 `start-service.ps1`，不要只执行 `Start-Service`；该脚本会加载环境文件、同步机器级环境变量、检查 PFX 文件，并真正停止后重新启动旧进程：
 
 ```powershell
 .\start-service.ps1 -InstallPath "C:\Program Files\EChat" -ServiceName EChat
@@ -261,7 +261,7 @@ API 将直接监听：
 https://platform.superseller88.com:2099
 ```
 
-此模式下必须在防火墙开放 TCP `2099`，DNS 将 `platform.superseller88.com` 解析到服务器公网 IP，并确保 PFX 证书的域名与访问域名一致。证书过期或密码错误会导致服务启动失败；服务账号必须拥有 PFX 文件读取权限。若使用 IIS 终止 TLS，则不要同时配置上述变量，避免重复监听同一端口。
+此模式下必须在防火墙开放 TCP `2099`，DNS 将 `platform.superseller88.com` 解析到服务器公网 IP，并确保 PFX 证书的域名与访问域名一致。证书过期或密码错误会导致服务启动失败；服务账号必须拥有 PFX 文件读取权限。若此前服务已在 HTTP 模式运行，仅编辑环境文件并执行 `Restart-Service` 可能仍无法加载当前会话变量，请始终使用上述 `start-service.ps1`。若使用 IIS 终止 TLS，则不要同时配置上述变量，避免重复监听同一端口。
 
 聊天端的 RSA/AES 加密依赖浏览器 Web Crypto。**外网访问必须使用有效的 HTTPS 域名**，例如 `https://chat.example.com`；使用 `http://公网IP:2099`、自签名证书未被浏览器信任的地址或其他非安全上下文，会导致 `crypto.subtle.generateKey` 不可用，登录后无法初始化聊天加密密钥。
 

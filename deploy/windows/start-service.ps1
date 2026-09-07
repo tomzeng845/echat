@@ -24,6 +24,24 @@ foreach ($name in @("MONGODB_URI", "MONGODB_DATABASE", "MONGODB_DIRECT_CONNECTIO
     if ($null -ne $value) { [Environment]::SetEnvironmentVariable($name, $value, "Machine") }
 }
 
+if (-not [string]::IsNullOrWhiteSpace($env:ECHAT_HTTPS_CERT_PATH)) {
+    if (-not (Test-Path $env:ECHAT_HTTPS_CERT_PATH -PathType Leaf)) {
+        throw "HTTPS certificate file not found: $env:ECHAT_HTTPS_CERT_PATH"
+    }
+    $effectiveHttpsPort = if ([string]::IsNullOrWhiteSpace($env:ECHAT_HTTPS_PORT)) { "2099" } else { $env:ECHAT_HTTPS_PORT }
+    Write-Host "HTTPS certificate: $env:ECHAT_HTTPS_CERT_PATH"
+    Write-Host "HTTPS port: $effectiveHttpsPort"
+}
+
+$service = Get-Service -Name $ServiceName
+if ($service.Status -ne "Stopped") {
+    Stop-Service -Name $ServiceName -Force
+    $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+}
 Start-Service -Name $ServiceName
 Get-Service -Name $ServiceName
-Write-Host "Started $ServiceName. Check http://127.0.0.1:2099/api/health and Windows Event Viewer if needed."
+if ([string]::IsNullOrWhiteSpace($env:ECHAT_HTTPS_CERT_PATH)) {
+    Write-Host "Started $ServiceName in HTTP mode. Check http://127.0.0.1:2099/api/health and Windows Event Viewer if needed."
+} else {
+    Write-Host "Started $ServiceName in HTTPS mode. Check https://127.0.0.1:$effectiveHttpsPort/api/health and Windows Event Viewer if needed."
+}
