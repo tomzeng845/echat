@@ -23,6 +23,7 @@ import {
   shouldPlayOutgoingRingback,
   toggledSpeakerState,
 } from "@/lib/call-audio";
+import { createUuid } from "@/lib/uuid";
 import {
   api,
   type CallEnded,
@@ -295,7 +296,7 @@ const CallManager = forwardRef<
       try {
         await acquire(mode);
         const next: ActiveCall = {
-          callId: crypto.randomUUID(),
+          callId: createUuid(),
           conversationId: conversation.id,
           conversationName: conversation.name,
           mode,

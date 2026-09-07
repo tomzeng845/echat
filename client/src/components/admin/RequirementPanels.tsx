@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import AuthenticatedMedia from "@/components/AuthenticatedMedia";
 import { api } from "@/lib/echat-api";
+import { createUuid } from "@/lib/uuid";
 
 type ModuleRecord = {
   id: string;
@@ -1193,7 +1194,7 @@ export function FundAdjustmentsPanel({ refresh }: { refresh: number }) {
         body: JSON.stringify({
           ...form,
           amount: Number(form.amount),
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: createUuid(),
         }),
       });
       toast.success("额度已调整");

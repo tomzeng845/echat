@@ -1,5 +1,6 @@
 import { api, authorizedFetch, uploadMedia, type Message } from "./echat-api";
 import { decryptBinary, getConversationKey } from "./echat-crypto";
+import { createUuid } from "./uuid";
 
 export type ChatMediaKind = "Image" | "Voice" | "Video" | "File";
 export type ChatMediaPayload = {
@@ -40,7 +41,7 @@ export async function sendChatMedia(
   return api<Message>(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({
-      clientMessageId: crypto.randomUUID(),
+      clientMessageId: createUuid(),
       kind,
       keyVersion: 0,
       algorithm: "PLAINTEXT",

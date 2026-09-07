@@ -1,5 +1,6 @@
 import * as signalR from "@microsoft/signalr";
 import { apiUrl } from "./runtime-config";
+import { createUuid } from "./uuid";
 
 export type User = {
   id: string;
@@ -245,7 +246,7 @@ export const setSession = (session: AuthResponse | null) =>
 export const getDeviceId = () => {
   let value = localStorage.getItem(DEVICE_KEY);
   if (!value) {
-    value = crypto.randomUUID().replaceAll("-", "");
+    value = createUuid().replaceAll("-", "");
     localStorage.setItem(DEVICE_KEY, value);
   }
   return value;

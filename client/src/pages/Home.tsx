@@ -26,6 +26,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { createUuid } from "@/lib/uuid";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 import {
   createConversationKey,
@@ -1013,7 +1014,7 @@ function Messenger({
       await api("/api/contacts/requests", {
         method: "POST",
         body: JSON.stringify({
-          requestId: crypto.randomUUID(),
+          requestId: createUuid(),
           peerAccount: addAccount.trim(),
           note: "你好，我想添加你为好友",
           source: "account",
@@ -1114,7 +1115,7 @@ function Messenger({
         {
           method: "POST",
           body: JSON.stringify({
-            clientMessageId: crypto.randomUUID(),
+            clientMessageId: createUuid(),
             kind: "Text",
             keyVersion: 0,
             algorithm: "PLAINTEXT",
@@ -1153,7 +1154,7 @@ function Messenger({
         {
           method: "POST",
           body: JSON.stringify({
-            clientMessageId: crypto.randomUUID(),
+            clientMessageId: createUuid(),
             kind: "Emoji",
             keyVersion: 0,
             algorithm: "PLAINTEXT",
