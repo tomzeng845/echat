@@ -41,6 +41,13 @@ if ($content -match '(?m)^\$env:ADMIN_TOTP_SECRET\s*=') {
 }
 Set-Content -Path $EnvFile -Value $content -Encoding UTF8
 
+try {
+    [Environment]::SetEnvironmentVariable("ADMIN_TOTP_SECRET", $secret, "Machine")
+    Write-Host "ADMIN_TOTP_SECRET 已写入 Windows 机器级环境变量。"
+} catch {
+    Write-Warning "无法写入机器级环境变量，请使用管理员 PowerShell 重新执行：$($_.Exception.Message)"
+}
+
 Write-Host "ADMIN_TOTP_SECRET 已写入：$EnvFile"
 Write-Host "请将以下密钥添加到 Google Authenticator 或 Microsoft Authenticator："
 Write-Host "Secret: $secret"
