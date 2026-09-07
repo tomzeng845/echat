@@ -12,7 +12,11 @@ if (-not (Test-Path (Join-Path $source "EChat.Api.exe"))) {
 }
 
 New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-Copy-Item (Join-Path $source "*") $InstallPath -Recurse -Force
+$sourceFullPath = [IO.Path]::GetFullPath($source).TrimEnd('\')
+$installFullPath = [IO.Path]::GetFullPath($InstallPath).TrimEnd('\')
+if (-not [string]::Equals($sourceFullPath, $installFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+    Copy-Item (Join-Path $source "*") $InstallPath -Recurse -Force
+}
 
 $envFile = Join-Path $InstallPath "echat.env.ps1"
 if (-not (Test-Path $envFile)) {

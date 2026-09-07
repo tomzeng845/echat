@@ -135,8 +135,8 @@ Get-Content .\releases\EChat-0.9.0-windows-x64.zip.sha256
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-Expand-Archive .\EChat-0.9.0-windows-x64.zip -DestinationPath "C:\Program Files\EChat" -Force
-Set-Location "C:\Program Files\EChat"
+Expand-Archive .\EChat-0.9.0-windows-x64.zip -DestinationPath "C:\EChat-release" -Force
+Set-Location "C:\EChat-release"
 
 .\install-service.ps1 -InstallPath "C:\Program Files\EChat" -ServiceName EChat -Port 2099
 ```
@@ -168,8 +168,7 @@ C:\Program Files\EChat\echat.env.ps1
 先把发布包中的模板复制为实际环境文件：
 
 ```powershell
-Copy-Item .\set-production-env.ps1.example .\echat.env.ps1 -Force
-notepad .\echat.env.ps1
+notepad "C:\Program Files\EChat\echat.env.ps1"
 ```
 
 保存后执行：
