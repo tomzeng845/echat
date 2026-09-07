@@ -183,6 +183,18 @@ Invoke-WebRequest http://127.0.0.1:2099/api/health
 
 健康检查应返回 JSON，包含 `status: healthy`。API 现在会先完成 HTTP/Windows Service 启动握手，再在后台执行 MongoDB 索引、种子数据和管理员初始化；MongoDB 暂时不可达不会再阻塞服务启动，后台会每 5–60 秒自动重试，单次初始化网络操作最多等待 30 秒。相关日志写入 Windows **事件查看器 → Windows 日志 → 应用程序**。
 
+### 5.2.1 创建默认后台管理员
+
+发布包的 `mongodb` 目录包含幂等初始化脚本。它会创建或更新账号 `e-admin`（用户输入的 `E-Admin` 会按 API 规则规范化为小写），密码为 `Heibai@99`，并设置管理员角色。安装 MongoDB Shell（`mongosh`）后，在管理员 PowerShell 中执行：
+
+```powershell
+$env:MONGODB_URI = "mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1&directConnection=true"
+Set-Location "C:\EChat-release\mongodb"
+.\create-default-admin.ps1
+```
+
+也可以直接执行 `mongosh $env:MONGODB_URI --file .\create-default-admin.js`。创建后请立即登录后台修改密码并配置 TOTP；生产环境不建议长期使用默认密码。
+
 如果服务状态为 `Running` 但健康检查失败，优先检查 `MONGODB_URI`、MongoDB 网络连通性、端口占用和事件查看器中的 `StartupDataInitializer` 日志。服务启动后数据库仍不可达时，登录、消息和需要数据库的接口会在数据库恢复后正常工作；不要因为初始化重试就重复创建服务。
 
 ### 5.3 更新版本

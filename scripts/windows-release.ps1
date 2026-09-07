@@ -42,6 +42,9 @@ try {
     Copy-Item (Join-Path $root "deploy\windows\start-service.ps1") (Join-Path $out "start-service.ps1") -Force
     Copy-Item (Join-Path $root "deploy\windows\uninstall-service.ps1") (Join-Path $out "uninstall-service.ps1") -Force
     Copy-Item (Join-Path $root "deploy\windows\set-production-env.ps1.example") (Join-Path $out "set-production-env.ps1.example") -Force
+    New-Item -ItemType Directory -Path (Join-Path $out "mongodb") -Force | Out-Null
+    Copy-Item (Join-Path $root "deploy\mongodb\create-default-admin.js") (Join-Path $out "mongodb\create-default-admin.js") -Force
+    Copy-Item (Join-Path $root "deploy\mongodb\create-default-admin.ps1") (Join-Path $out "mongodb\create-default-admin.ps1") -Force
 
     $manifest = @"
 EChat Windows release
