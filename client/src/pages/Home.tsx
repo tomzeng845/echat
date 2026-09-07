@@ -485,6 +485,7 @@ function Messenger({
   const [showGroup, setShowGroup] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
+  const [showConversationMenu, setShowConversationMenu] = useState(false);
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
@@ -1607,17 +1608,6 @@ function Messenger({
                   </p>
                 </div>
                 <div className="flex gap-1">
-                  {selected.type === "Direct" && (
-                    <HeaderAction
-                      icon={CircleUserRound}
-                      label="好友资料"
-                      onClick={() =>
-                        selectedContact
-                          ? setProfileUser(selectedContact.user)
-                          : toast.info("好友资料正在同步，请稍后重试")
-                      }
-                    />
-                  )}
                   <HeaderAction
                     icon={Phone}
                     label="语音通话"
@@ -1632,11 +1622,43 @@ function Messenger({
                       callManagerRef.current?.start(selected, "video")
                     }
                   />
-                  <HeaderAction
-                    icon={MoreHorizontal}
-                    label="更多"
-                    onClick={() => toast.info("会话设置即将开放")}
-                  />
+                  <div className="relative">
+                    <HeaderAction
+                      icon={MoreHorizontal}
+                      label="更多"
+                      onClick={() => setShowConversationMenu(value => !value)}
+                    />
+                    {showConversationMenu && (
+                      <div className="absolute right-0 top-12 z-30 w-44 overflow-hidden rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-slate-200">
+                        {selected.type === "Direct" && (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              setShowConversationMenu(false);
+                              selectedContact
+                                ? setProfileUser(selectedContact.user)
+                                : toast.info("好友资料正在同步，请稍后重试");
+                            }}
+                          >
+                            <CircleUserRound size={16} className="text-slate-400" />
+                            好友资料
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-500 hover:bg-slate-100"
+                          onClick={() => {
+                            setShowConversationMenu(false);
+                            toast.info("会话设置即将开放");
+                          }}
+                        >
+                          <Settings size={16} className="text-slate-400" />
+                          会话设置
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </header>
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
