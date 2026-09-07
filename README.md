@@ -95,7 +95,7 @@ pnpm dev
 项目 `Api/appsettings.json` 已配置目标 MongoDB 连接地址；运行时如果设置 `MONGODB_URI`，则以环境变量为优先值。未配置 MongoDB 时仅使用进程内存，服务重启后测试数据会消失。生产环境还应设置数据库名称和首次邀请码。
 
 ```bash
-export MONGODB_URI='mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1'
+export MONGODB_URI='mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1&directConnection=true'
 export MONGODB_DATABASE='echat'
 export SEED_INVITE_CODE='your-first-invite'
 ```

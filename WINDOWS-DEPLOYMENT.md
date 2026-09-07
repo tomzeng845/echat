@@ -66,14 +66,15 @@ MongoDB 10.63.125.3:27018 / admin / echat
 项目默认连接地址已经修改为：
 
 ```text
-mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1
+mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1&directConnection=true
 ```
 
-其中 `%40` 是密码中 `@` 的 URL 编码。默认数据库名为 `echat`。运行时环境变量优先级高于 `appsettings.json`，建议在生产服务器设置：
+其中 `%40` 是密码中 `@` 的 URL 编码，`directConnection=true` 用于避免 MongoDB 返回的副本集内部主机名（例如 `yisu-65426b25ec1b7`）无法被 Windows DNS 解析。默认数据库名为 `echat`。运行时环境变量优先级高于 `appsettings.json`，建议在生产服务器设置：
 
 ```powershell
-$env:MONGODB_URI = "mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1"
+$env:MONGODB_URI = "mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1&directConnection=true"
 $env:MONGODB_DATABASE = "echat"
+$env:MONGODB_DIRECT_CONNECTION = "true"
 ```
 
 部署前确认：
@@ -155,6 +156,7 @@ C:\Program Files\EChat\echat.env.ps1
 | --- | --- |
 | `MONGODB_URI` | MongoDB 完整连接串；已给出指定地址。 |
 | `MONGODB_DATABASE` | 业务数据库，默认 `echat`。 |
+| `MONGODB_DIRECT_CONNECTION` | 默认 `true`，避免副本集返回不可解析的内部主机名；只有 DNS 已正确解析全部副本集成员时才建议改为 `false`。 |
 | `JWT_SECRET` | JWT 签名密钥，必须是随机长字符串。 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 首次管理账号密码；不要使用演示密码。 |
 | `ADMIN_SECRET_ENCRYPTION_KEY` | 管理员 TOTP 等敏感信息的加密密钥，必须长期稳定。 |

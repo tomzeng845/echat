@@ -1,8 +1,9 @@
 # Copy this file to C:\Program Files\EChat\echat.env.ps1 and edit it as Administrator.
 # Do not commit the edited copy or send it by email/chat.
 
-$env:MONGODB_URI = "mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1"
+$env:MONGODB_URI = "mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1&directConnection=true"
 $env:MONGODB_DATABASE = "echat"
+$env:MONGODB_DIRECT_CONNECTION = "true"
 $env:JWT_SECRET = "replace-with-a-long-random-secret"
 $env:ADMIN_BOOTSTRAP_PASSWORD = "replace-before-first-start"
 $env:ADMIN_SECRET_ENCRYPTION_KEY = "replace-with-a-long-random-secret"
