@@ -92,15 +92,17 @@ pnpm dev
 
 ## MongoDB 配置
 
-设置 `MONGODB_URI` 后，API 会自动使用 MongoDB 仓库；未设置时仅使用进程内存，服务重启后测试数据会消失。生产环境还应设置数据库名称和首次邀请码。
+项目 `Api/appsettings.json` 已配置目标 MongoDB 连接地址；运行时如果设置 `MONGODB_URI`，则以环境变量为优先值。未配置 MongoDB 时仅使用进程内存，服务重启后测试数据会消失。生产环境还应设置数据库名称和首次邀请码。
 
 ```bash
-export MONGODB_URI='mongodb://localhost:27017'
+export MONGODB_URI='mongodb://root:Heibai%40996666@10.63.125.3:27018/admin?connectTimeoutMS=3000000&timeoutMS=50000&maxIdleTimeMS=600000&authMechanism=SCRAM-SHA-1'
 export MONGODB_DATABASE='echat'
 export SEED_INVITE_CODE='your-first-invite'
 ```
 
 MongoDB 初始化会创建账号唯一索引、发送者与客户端消息号唯一索引，以及会话序号唯一索引。
+
+Windows 自包含发布包、服务安装脚本、IIS/WebSocket 配置和依赖清单见 [Windows 部署方案](WINDOWS-DEPLOYMENT.md)。构建机安装 Node.js 22、pnpm、.NET 8 SDK 和 PowerShell 后执行 `pnpm windows:release`，目标 Windows 服务器不需要安装 Node.js 或 .NET SDK。
 
 ## GeoIP 登录地区
 
@@ -270,6 +272,10 @@ pnpm ios:sync
 `Dockerfile` 会先构建 React 静态资源，再发布 ASP.NET Core 应用，最终由 Kestrel 同时提供 HTML5 前端、REST API 和 SignalR Hub。容器的首个暴露端口为 2099，并继续尊重托管平台注入的 `PORT`。
 
 正式实时通信部署需要支持 WebSocket 长连接、TLS、固定或共享数据存储、滚动发布和连接重建。默认通话使用公共 STUN 与浏览器 P2P；设置 `TURN_URLS`（逗号分隔）和 `TURN_SECRET` 后，`/api/rtc/config` 会为当前用户签发十分钟 TURN 临时凭据。设置 `SFU_URL` 后服务会标记为 `sfu-ready`；没有 SFU 时，服务端限制通话为最多四名参与者。无状态按请求休眠的短时托管环境只能用于演示，不适合作为高并发聊天生产环境。
+
+### Windows 部署
+
+Windows 部署优先使用 `pnpm windows:release` 生成 `releases/EChat-0.9.0-windows-x64.zip`。该包为 ASP.NET Core self-contained single-file 发布，包含前端静态资源和 `install-service.ps1`、`start-service.ps1`、`uninstall-service.ps1`。安装时需要管理员 PowerShell；运行时需要可访问 MongoDB，不需要 Node.js 或 .NET SDK。完整步骤、必须安装的 IIS/WebSocket 组件、环境变量和排障清单见 [WINDOWS-DEPLOYMENT.md](WINDOWS-DEPLOYMENT.md)。
 
 ## 主要接口
 

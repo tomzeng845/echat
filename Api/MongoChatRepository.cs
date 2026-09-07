@@ -26,8 +26,8 @@ public sealed class MongoChatRepository : IChatRepository
 
     public MongoChatRepository(IConfiguration configuration)
     {
-        var connection = configuration["Mongo:ConnectionString"] ?? Environment.GetEnvironmentVariable("MONGODB_URI") ?? throw new InvalidOperationException("Mongo connection string missing");
-        var databaseName = configuration["Mongo:Database"] ?? Environment.GetEnvironmentVariable("MONGODB_DATABASE") ?? "echat";
+        var connection = Environment.GetEnvironmentVariable("MONGODB_URI") ?? configuration["Mongo:ConnectionString"] ?? throw new InvalidOperationException("Mongo connection string missing");
+        var databaseName = Environment.GetEnvironmentVariable("MONGODB_DATABASE") ?? configuration["Mongo:Database"] ?? "echat";
         var db = new MongoClient(connection).GetDatabase(databaseName);
         _users = db.GetCollection<UserAccount>("users");
         _invites = db.GetCollection<InviteCode>("inviteCodes");

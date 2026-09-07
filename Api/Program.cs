@@ -6,7 +6,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
-var port = int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var platformPort) ? platformPort : 2099;
+builder.Host.UseWindowsService();
+var port = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_PORT") ?? Environment.GetEnvironmentVariable("PORT"), out var platformPort) ? platformPort : 2099;
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -26,7 +27,7 @@ builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 
-var mongoConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI"));
+var mongoConfigured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI")) || !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]);
 if (mongoConfigured) builder.Services.AddSingleton<IChatRepository, MongoChatRepository>();
 else builder.Services.AddSingleton<IChatRepository, InMemoryChatRepository>();
 

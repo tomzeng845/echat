@@ -126,6 +126,7 @@ public sealed class AdminSecretProtector(IConfiguration configuration)
 {
     private readonly byte[] _key = SHA256.HashData(Encoding.UTF8.GetBytes(
         configuration["Admin:SecretEncryptionKey"]
+        ?? Environment.GetEnvironmentVariable("ADMIN_SECRET_ENCRYPTION_KEY")
         ?? Environment.GetEnvironmentVariable("ADMIN_SECRET_KEY")
         ?? configuration["Jwt:Key"]
         ?? Environment.GetEnvironmentVariable("JWT_SECRET")
