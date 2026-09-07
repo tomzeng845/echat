@@ -263,6 +263,14 @@ Restart-Service EChat
 
 页面域名和 API 域名都应使用受浏览器信任的 HTTPS 证书，并确保 API 反向代理转发 WebSocket，否则实时消息和通话无法工作。
 
+发布包还包含 `wwwroot/runtime-config.js`。如果不想重新编译前端，可在部署后编辑该文件，将配置改为：
+
+```javascript
+window.__ECHAT_API_BASE_URL__ = "https://api.example.com";
+```
+
+编辑后刷新浏览器即可；该值优先于构建时的 `VITE_ECHAT_API_BASE_URL`。如果 API 与页面同域，保持空字符串即可。
+
 IIS 配置要点：
 
 1. 绑定正式域名和 TLS 证书。

@@ -1,4 +1,8 @@
-const configuredApiBase = String(import.meta.env.VITE_ECHAT_API_BASE_URL || "")
+const runtimeApiBase = String(
+  (globalThis as typeof globalThis & { __ECHAT_API_BASE_URL__?: string })
+    .__ECHAT_API_BASE_URL__ || ""
+).trim();
+const configuredApiBase = String(runtimeApiBase || import.meta.env.VITE_ECHAT_API_BASE_URL || "")
   .trim()
   .replace(/\/$/, "");
 
