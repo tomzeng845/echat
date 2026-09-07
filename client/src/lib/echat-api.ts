@@ -1,5 +1,11 @@
 import * as signalR from "@microsoft/signalr";
 import { apiUrl } from "./runtime-config";
+import {
+  clearPersistedSession,
+  persistSession,
+  readLocalSession,
+  restorePersistedSession,
+} from "./session-storage";
 import { createUuid } from "./uuid";
 
 export type User = {
@@ -221,7 +227,6 @@ export type RtcConfig = {
   maxP2pParticipants: number;
 };
 
-const SESSION_KEY = "echat.session.v1";
 const DEVICE_KEY = "echat.device.v1";
 export class ApiError extends Error {
   constructor(
@@ -234,15 +239,23 @@ export class ApiError extends Error {
 }
 export const getSession = (): AuthResponse | null => {
   try {
-    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    return JSON.parse(readLocalSession() || "null");
   } catch {
     return null;
   }
 };
 export const setSession = (session: AuthResponse | null) =>
-  session
-    ? localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    : localStorage.removeItem(SESSION_KEY);
+  session ? persistSession(JSON.stringify(session)) : clearPersistedSession();
+
+export const restoreSession = async () => {
+  const raw = await restorePersistedSession();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthResponse;
+  } catch {
+    return null;
+  }
+};
 export const getDeviceId = () => {
   let value = localStorage.getItem(DEVICE_KEY);
   if (!value) {
@@ -270,24 +283,32 @@ export async function authorizedFetch(
   headers.set("X-EChat-Device-Id", getDeviceId());
   const response = await fetch(apiUrl(path), { ...init, headers });
   if (response.status === 401 && retry && session?.refreshToken) {
-    const refreshed = await fetch(apiUrl("/api/auth/refresh"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-EChat-Device-Id": getDeviceId(),
-      },
-      body: JSON.stringify({
-        refreshToken: session.refreshToken,
-        deviceName: navigator.userAgent,
-        deviceId: getDeviceId(),
-      }),
-    });
+    let refreshed: Response;
+    try {
+      refreshed = await fetch(apiUrl("/api/auth/refresh"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-EChat-Device-Id": getDeviceId(),
+        },
+        body: JSON.stringify({
+          refreshToken: session.refreshToken,
+          deviceName: navigator.userAgent,
+          deviceId: getDeviceId(),
+        }),
+      });
+    } catch {
+      // A temporary mobile-network failure must not destroy a valid local session.
+      return response;
+    }
     if (refreshed.ok) {
       setSession(await refreshed.json());
       return authorizedFetch(path, init, false);
     }
-    setSession(null);
-    window.dispatchEvent(new Event("echat-session-expired"));
+    if (refreshed.status === 401) {
+      setSession(null);
+      window.dispatchEvent(new Event("echat-session-expired"));
+    }
   }
   return response;
 }

@@ -15,6 +15,7 @@ import {
   connectRealtime,
   getDeviceId,
   getSession,
+  restoreSession,
   setSession,
   type AuthResponse,
   type Contact,
@@ -2304,6 +2305,7 @@ export default function Home() {
   const [session, setCurrentSession] = useState<AuthResponse | null>(() =>
     getSession()
   );
+  const [sessionRestored, setSessionRestored] = useState(() => Boolean(getSession()));
   const onLogout = () => {
     unregisterNativePush().catch(() => undefined);
     setSession(null);
@@ -2318,13 +2320,23 @@ export default function Home() {
     });
   }, []);
   useEffect(() => {
+    let active = true;
+    void restoreSession().then(restored => {
+      if (!active) return;
+      if (restored?.accessToken && restored.user) setCurrentSession(restored);
+      setSessionRestored(true);
+    });
     const expire = () => {
       unregisterNativePush().catch(() => undefined);
       setCurrentSession(null);
     };
     window.addEventListener("echat-session-expired", expire);
-    return () => window.removeEventListener("echat-session-expired", expire);
+    return () => {
+      active = false;
+      window.removeEventListener("echat-session-expired", expire);
+    };
   }, []);
+  if (!sessionRestored) return null;
   return session?.accessToken && session.user ? (
     <Messenger
       session={session}
