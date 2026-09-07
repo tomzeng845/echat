@@ -13,7 +13,8 @@ if (-not (Test-Path $EnvFile)) {
 
 $alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 $bytes = New-Object byte[] 20
-[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$random = [Security.Cryptography.RandomNumberGenerator]::Create()
+try { $random.GetBytes($bytes) } finally { $random.Dispose() }
 $secretBuilder = New-Object System.Text.StringBuilder
 $buffer = 0
 $bits = 0
