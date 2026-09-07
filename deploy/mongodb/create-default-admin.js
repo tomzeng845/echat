@@ -3,7 +3,7 @@
 // 说明：登录账号会按 API 规则规范化为小写：E-Admin -> e-admin。
 
 const account = "e-admin";
-const passwordHash = "AQAAAAIAAYagAAAAEAAAACALuc3AAoUEydSbsjgO0nmud8jHmfRW1INmypPSq09ainNWPT2A41RLjqDKAlHnRAA=";
+const passwordHash = "AQAAAAIAAYagAAAAEBFgf5yaeFJu1AeOA7jqsHWT+uDZz2j3wQrhDfiSMoBb+5EAhfUf9wR4cWKg4Dup5w==";
 const now = new Date();
 const users = db.getSiblingDB("echat").getCollection("users");
 
