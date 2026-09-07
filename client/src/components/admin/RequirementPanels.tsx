@@ -2020,15 +2020,16 @@ export function GenericManagedPanel({
               {f.label}
               <select
                 multiple
-                value={(values[f.key] || "").split(",").filter(Boolean)}
-                onChange={e =>
-                  setValues(v => ({
-                    ...v,
-                    [f.key]: Array.from(e.currentTarget.selectedOptions)
-                      .map(option => option.value)
-                      .join(","),
-                  }))
-                }
+                value={String(values[f.key] || "")
+                  .split(",")
+                  .filter(Boolean)}
+                onChange={e => {
+                  const selected = Array.from(e.currentTarget.options)
+                    .filter(option => option.selected)
+                    .map(option => option.value)
+                    .join(",");
+                  setValues(v => ({ ...v, [f.key]: selected }));
+                }}
                 className="admin-input mt-2 min-h-40"
               >
                 {f.options.map(option => (

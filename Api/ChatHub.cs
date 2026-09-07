@@ -63,6 +63,20 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         await Clients.Group($"conversation:{conversationId}").SendAsync("receipt.updated", new { conversationId, userId, readSequence = member.ReadSequence });
     }
 
+    public async Task SetTyping(string conversationId, bool isTyping)
+    {
+        RequireInteractiveScope();
+        var conversation = await RequireConversationMemberAsync(conversationId);
+        var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
+        await Clients.OthersInGroup($"conversation:{conversation.Id}").SendAsync("typing.updated", new
+        {
+            conversationId,
+            userId = user.Id,
+            displayName = user.DisplayName,
+            isTyping
+        });
+    }
+
     public async Task CallInvite(string conversationId, string callId, string mode)
     {
         RequireInteractiveScope();

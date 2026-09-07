@@ -47,6 +47,19 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         return Ok(result);
     }
 
+    [HttpGet("blocked")]
+    public async Task<ActionResult> Blocked(CancellationToken ct)
+    {
+        var relations = await repository.GetRelationsAsync(User.UserId(), ct);
+        var result = new List<object>();
+        foreach (var relation in relations.Where(x => x.Status == RelationStatus.Blocked))
+        {
+            var peer = await repository.GetUserByIdAsync(relation.PeerUserId, ct);
+            if (peer is not null) result.Add(new { relation.PeerUserId, user = View(peer) });
+        }
+        return Ok(result);
+    }
+
     [HttpPost("requests/{id}/accept")]
     public async Task<ActionResult> Accept(string id, CancellationToken ct)
     {
@@ -85,6 +98,23 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         await repository.UpsertRelationAsync(new ContactRelation { Id = $"{userId}:{peerId}", UserId = userId, PeerUserId = peerId, Status = RelationStatus.Deleted }, ct);
         await repository.UpsertRelationAsync(new ContactRelation { Id = $"{peerId}:{userId}", UserId = peerId, PeerUserId = userId, Status = RelationStatus.Deleted }, ct);
         await NotifyContactUpdated(userId, peerId, RelationStatus.Deleted, ct);
+        return NoContent();
+    }
+
+    [HttpDelete("{peerId}/block")]
+    public async Task<ActionResult> Unblock(string peerId, CancellationToken ct)
+    {
+        var userId = User.UserId();
+        var relation = await repository.GetRelationAsync(userId, peerId, ct);
+        if (relation?.Status != RelationStatus.Blocked) return NotFound(new { error = "该用户不在黑名单中" });
+        await repository.UpsertRelationAsync(new ContactRelation
+        {
+            Id = $"{userId}:{peerId}",
+            UserId = userId,
+            PeerUserId = peerId,
+            Status = RelationStatus.Deleted
+        }, ct);
+        await hub.Clients.Group($"user:{userId}").SendAsync("contact.updated", new { status = RelationStatus.Deleted, peerId }, ct);
         return NoContent();
     }
 

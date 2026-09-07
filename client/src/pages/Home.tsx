@@ -8,7 +8,6 @@ import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
 import MomentsPanel from "@/components/MomentsPanel";
 import P1ProfilePanel from "@/components/P1ProfilePanel";
 import MyContactQrDialog from "@/components/qr/MyContactQrDialog";
-import QrLoginPanel from "@/components/qr/QrLoginPanel";
 import QrScanFlow from "@/components/qr/QrScanFlow";
 import {
   api,
@@ -156,7 +155,6 @@ function AuthScreen({
   const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [showQrLogin, setShowQrLogin] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -413,24 +411,6 @@ function AuthScreen({
                 )}
               </button>
             </form>
-            {mode === "login" && !pendingToken && (
-              <button
-                type="button"
-                onClick={() => setShowQrLogin(true)}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.05] py-3 text-sm text-teal-200 transition hover:bg-white/10"
-              >
-                <QrCode size={17} />
-                使用二维码登录
-              </button>
-            )}
-            {mode === "login" && !pendingToken && (
-              <a
-                href="/admin"
-                className="mt-4 block text-center text-xs text-slate-500 transition hover:text-teal-300"
-              >
-                进入管理后台
-              </a>
-            )}
             {mode === "register" && !pendingToken && (
               <p className="mt-5 text-center text-xs text-slate-500">
                 本地预览邀请码：
@@ -438,21 +418,8 @@ function AuthScreen({
               </p>
             )}
           </div>
-          <div className="mt-6 flex items-center justify-center gap-4 text-[11px] text-slate-500">
-            <span>ASP.NET Core 8</span>
-            <span className="h-1 w-1 rounded-full bg-slate-700" />
-            <span>SignalR</span>
-            <span className="h-1 w-1 rounded-full bg-slate-700" />
-            <span>MongoDB Ready</span>
-          </div>
         </div>
       </section>
-      {showQrLogin && (
-        <QrLoginPanel
-          onAuthenticated={onAuthenticated}
-          onClose={() => setShowQrLogin(false)}
-        />
-      )}
     </main>
   );
 }
@@ -474,6 +441,7 @@ function Messenger({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [typingPeerName, setTypingPeerName] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addAccount, setAddAccount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -511,10 +479,10 @@ function Messenger({
   const selected = conversations.find(item => item.id === selectedId) ?? null;
   const selectedContact =
     selected?.type === "Direct"
-      ? contacts.find(
+      ? (contacts.find(
           contact =>
             contact.status === "Friend" && contact.user.id === selected.peerId
-        ) ?? null
+        ) ?? null)
       : null;
   const filteredConversations = conversations.filter(item =>
     item.name.toLowerCase().includes(search.toLowerCase())
@@ -951,6 +919,14 @@ function Messenger({
           )
         );
       },
+      onTyping: event => {
+        if (
+          event.conversationId !== selectedRef.current ||
+          event.userId === user.id
+        )
+          return;
+        setTypingPeerName(event.isTyping ? event.displayName : null);
+      },
       onMoment: () => window.dispatchEvent(new Event("echat-moment-updated")),
       onAdminNotice: notice => toast.info(notice.content, { duration: 8000 }),
     });
@@ -978,7 +954,33 @@ function Messenger({
       setRealtimeConnection(null);
       connection.stop();
     };
-  }, [handleIncomingMessage, identityReady, loadData, onProfileUpdated, user.id]);
+  }, [
+    handleIncomingMessage,
+    identityReady,
+    loadData,
+    onProfileUpdated,
+    user.id,
+  ]);
+
+  useEffect(() => {
+    setTypingPeerName(null);
+    if (!selectedId || selected?.type === "Group" || !draft.trim()) {
+      if (selectedId && selected?.type === "Direct")
+        connectionRef.current
+          ?.invoke("SetTyping", selectedId, false)
+          .catch(() => undefined);
+      return;
+    }
+    connectionRef.current
+      ?.invoke("SetTyping", selectedId, true)
+      .catch(() => undefined);
+    const timer = window.setTimeout(() => {
+      connectionRef.current
+        ?.invoke("SetTyping", selectedId, false)
+        .catch(() => undefined);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [draft, selected, selectedId]);
 
   useEffect(() => {
     const refresh = () => {
@@ -1236,7 +1238,10 @@ function Messenger({
     }
   }
 
-  async function updateFriendRelation(peerId: string, action: "delete" | "block") {
+  async function updateFriendRelation(
+    peerId: string,
+    action: "delete" | "block"
+  ) {
     if (action === "block")
       await api<void>(`/api/contacts/${peerId}/block`, { method: "POST" });
     else await api<void>(`/api/contacts/${peerId}`, { method: "DELETE" });
@@ -1602,9 +1607,11 @@ function Messenger({
                   </h2>
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-600">
                     <MessageCircleMore size={11} />
-                    {selected.type === "Group"
-                      ? `${selected.memberCount} 位成员`
-                      : "在线"}
+                    {typingPeerName
+                      ? `${typingPeerName}正在输入…`
+                      : selected.type === "Group"
+                        ? `${selected.memberCount} 位成员`
+                        : "在线"}
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -1641,7 +1648,10 @@ function Messenger({
                                 : toast.info("好友资料正在同步，请稍后重试");
                             }}
                           >
-                            <CircleUserRound size={16} className="text-slate-400" />
+                            <CircleUserRound
+                              size={16}
+                              className="text-slate-400"
+                            />
                             好友资料
                           </button>
                         )}
@@ -2097,7 +2107,9 @@ function UserProfileDialog({
             {confirmAction ? (
               <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-left ring-1 ring-rose-100">
                 <p className="text-sm font-semibold text-rose-700">
-                  {confirmAction === "delete" ? "确认删除好友？" : "确认拉黑该好友？"}
+                  {confirmAction === "delete"
+                    ? "确认删除好友？"
+                    : "确认拉黑该好友？"}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-rose-600/80">
                   {confirmAction === "delete"

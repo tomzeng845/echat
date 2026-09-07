@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Ban,
   Bell,
   Camera,
   Clock3,
@@ -55,6 +56,7 @@ export default function P1ProfilePanel({
 }) {
   const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [calls, setCalls] = useState<CallRecord[]>([]);
+  const [blocked, setBlocked] = useState<User[]>([]);
   const [rtc, setRtc] = useState<RtcConfig | null>(null);
   const [pushState, setPushState] = useState<NativePushState>(() =>
     getNativePushState()
@@ -64,7 +66,9 @@ export default function P1ProfilePanel({
   );
   const [backgroundSupport, setBackgroundSupport] =
     useState<NativeBackgroundCallSupport | null>(null);
-  const [section, setSection] = useState<"home" | "devices" | "calls" | "edit-profile">("home");
+  const [section, setSection] = useState<
+    "home" | "devices" | "calls" | "edit-profile" | "blocked"
+  >("home");
   const [displayName, setDisplayName] = useState(user.displayName);
   const [signature, setSignature] = useState(user.signature || "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -73,14 +77,16 @@ export default function P1ProfilePanel({
   const avatarImageUrl = useAuthenticatedImage(avatarPreview);
 
   async function load() {
-    const [nextDevices, nextCalls, nextRtc] = await Promise.all([
+    const [nextDevices, nextCalls, nextRtc, nextBlocked] = await Promise.all([
       api<DeviceSession[]>("/api/devices"),
       api<CallRecord[]>("/api/calls"),
       api<RtcConfig>("/api/rtc/config"),
+      api<Array<{ user: User }>>("/api/contacts/blocked"),
     ]);
     setDevices(nextDevices);
     setCalls(nextCalls);
     setRtc(nextRtc);
+    setBlocked(nextBlocked.map(item => item.user));
   }
   useEffect(() => {
     load().catch(() => undefined);
@@ -139,6 +145,16 @@ export default function P1ProfilePanel({
       await api<void>("/api/auth/logout", { method: "POST" });
     } finally {
       onLogout();
+    }
+  }
+
+  async function unblock(peerId: string) {
+    try {
+      await api<void>(`/api/contacts/${peerId}/block`, { method: "DELETE" });
+      setBlocked(current => current.filter(item => item.id !== peerId));
+      toast.success("已解除拉黑");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "解除拉黑失败");
     }
   }
 
@@ -254,7 +270,9 @@ export default function P1ProfilePanel({
                 />
               ) : (
                 <span className="grid h-full w-full place-items-center text-xl font-semibold">
-                  {Array.from(displayName || user.displayName).slice(-2).join("")}
+                  {Array.from(displayName || user.displayName)
+                    .slice(-2)
+                    .join("")}
                 </span>
               )}
               <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-slate-950/55 py-1.5 text-[10px]">
@@ -383,13 +401,62 @@ export default function P1ProfilePanel({
       </div>
     );
 
+  if (section === "blocked")
+    return (
+      <div className="space-y-3 px-1">
+        <PanelHeader title="黑名单管理" onBack={() => setSection("home")} />
+        {blocked.length ? (
+          blocked.map(item => (
+            <div
+              key={item.id}
+              className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/60"
+            >
+              <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-slate-100 text-sm font-semibold text-slate-500">
+                {item.avatarUrl ? (
+                  <img
+                    src={item.avatarUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  item.displayName.slice(-2)
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">
+                  {item.displayName}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-400">
+                  @{item.account}
+                </p>
+              </div>
+              <button
+                onClick={() => unblock(item.id)}
+                className="rounded-xl bg-teal-50 px-3 py-2 text-xs font-medium text-teal-700"
+              >
+                解除拉黑
+              </button>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-2xl bg-white py-10 text-center text-xs text-slate-400">
+            黑名单为空
+          </p>
+        )}
+      </div>
+    );
+
   return (
     <div className="space-y-4 px-1">
       <div className="rounded-3xl bg-[#0a1b2b] p-5 text-white shadow-lg">
         <div className="flex items-center gap-4">
           <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 font-semibold">
             {avatarImageUrl ? (
-              <img src={avatarImageUrl} alt="" className="h-full w-full object-cover" />
+              <img
+                src={avatarImageUrl}
+                alt=""
+                className="h-full w-full object-cover"
+              />
             ) : (
               Array.from(user.displayName).slice(-2).join("")
             )}
@@ -413,6 +480,12 @@ export default function P1ProfilePanel({
         title="修改个人资料"
         value="头像、昵称、签名"
         onClick={() => setSection("edit-profile")}
+      />
+      <Action
+        icon={Ban}
+        title="黑名单管理"
+        value={`${blocked.length} 人`}
+        onClick={() => setSection("blocked")}
       />
       <Action
         icon={MonitorSmartphone}

@@ -85,6 +85,12 @@ export type ReceiptUpdated = {
   userId: string;
   readSequence: number;
 };
+export type TypingUpdated = {
+  conversationId: string;
+  userId: string;
+  displayName: string;
+  isTyping: boolean;
+};
 export type ConversationMember = {
   userId: string;
   displayName: string;
@@ -336,6 +342,7 @@ export type RealtimeHandlers = {
   onContactUpdate?: (event: ContactRealtimeEvent) => void;
   onProfileUpdate?: (user: User) => void;
   onReceipt?: (event: ReceiptUpdated) => void;
+  onTyping?: (event: TypingUpdated) => void;
   onMoment?: () => void;
   onAdminNotice?: (notice: {
     id: string;
@@ -371,6 +378,7 @@ export function connectRealtime(handlers: RealtimeHandlers) {
   if (handlers.onProfileUpdate)
     connection.on("profile.updated", handlers.onProfileUpdate);
   if (handlers.onReceipt) connection.on("receipt.updated", handlers.onReceipt);
+  if (handlers.onTyping) connection.on("typing.updated", handlers.onTyping);
   if (handlers.onMoment) connection.on("moment.updated", handlers.onMoment);
   if (handlers.onAdminNotice)
     connection.on("admin.notice", handlers.onAdminNotice);
