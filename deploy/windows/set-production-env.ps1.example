@@ -10,6 +10,11 @@ $env:ADMIN_SECRET_ENCRYPTION_KEY = "replace-with-a-long-random-secret"
 $env:ADMIN_TOTP_SECRET = "replace-with-a-base32-totp-secret"
 $env:SEED_INVITE_CODE = "replace-with-the-first-invite-code"
 $env:CORS_ALLOWED_ORIGINS = "https://chat.example.com"
+# Optional: enable direct Kestrel HTTPS instead of HTTP.
+# The PFX file must be readable by the EChat Windows service account.
+# $env:ECHAT_HTTPS_CERT_PATH = "C:\Program Files\EChat\certs\platform.superseller88.com.pfx"
+# $env:ECHAT_HTTPS_CERT_PASSWORD = "replace-with-pfx-password"
+# $env:ECHAT_HTTPS_PORT = "2099"
 
 # Optional features:
 # $env:TURN_URLS = "turn:turn.example.com:3478"

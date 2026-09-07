@@ -8,7 +8,21 @@ using Microsoft.AspNetCore.Identity;
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
 var port = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_PORT") ?? Environment.GetEnvironmentVariable("PORT"), out var platformPort) ? platformPort : 2099;
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+var httpsCertificatePath = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PATH");
+var httpsCertificatePassword = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PASSWORD");
+var httpsEnabled = !string.IsNullOrWhiteSpace(httpsCertificatePath);
+var httpsPort = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_HTTPS_PORT"), out var configuredHttpsPort) ? configuredHttpsPort : port;
+builder.WebHost.ConfigureKestrel(options =>
+{
+    if (httpsEnabled)
+    {
+        options.ListenAnyIP(httpsPort, listen => listen.UseHttps(httpsCertificatePath!, httpsCertificatePassword));
+    }
+    else
+    {
+        options.ListenAnyIP(port);
+    }
+});
 
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));

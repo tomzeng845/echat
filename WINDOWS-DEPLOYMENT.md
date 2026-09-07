@@ -239,6 +239,30 @@ Restart-Service EChat
 
 推荐让 `EChat` Windows Service 只监听本机 `2099`，由 IIS 对外提供 HTTPS。IIS 站点的物理路径可以指向发布目录，但如果 IIS 直接托管 self-contained ASP.NET Core，应使用发布包中的 `web.config` 和 ASP.NET Core Module；更简单稳定的方式是让 IIS 作为反向代理转发到 `http://127.0.0.1:2099`。
 
+### 6.1 API 直接使用 PFX 证书提供 HTTPS
+
+如果不使用 IIS，也可以让 API 自己加载 `.pfx` 证书。将证书放到仅服务账号可读取的目录，例如 `C:\Program Files\EChat\certs\`，然后在 `echat.env.ps1` 中配置：
+
+```powershell
+$env:ECHAT_HTTPS_CERT_PATH = "C:\Program Files\EChat\certs\platform.superseller88.com.pfx"
+$env:ECHAT_HTTPS_CERT_PASSWORD = "PFX证书密码"
+$env:ECHAT_HTTPS_PORT = "2099"
+```
+
+配置后执行：
+
+```powershell
+.\start-service.ps1 -InstallPath "C:\Program Files\EChat" -ServiceName EChat
+```
+
+API 将直接监听：
+
+```text
+https://platform.superseller88.com:2099
+```
+
+此模式下必须在防火墙开放 TCP `2099`，DNS 将 `platform.superseller88.com` 解析到服务器公网 IP，并确保 PFX 证书的域名与访问域名一致。证书过期或密码错误会导致服务启动失败；服务账号必须拥有 PFX 文件读取权限。若使用 IIS 终止 TLS，则不要同时配置上述变量，避免重复监听同一端口。
+
 聊天端的 RSA/AES 加密依赖浏览器 Web Crypto。**外网访问必须使用有效的 HTTPS 域名**，例如 `https://chat.example.com`；使用 `http://公网IP:2099`、自签名证书未被浏览器信任的地址或其他非安全上下文，会导致 `crypto.subtle.generateKey` 不可用，登录后无法初始化聊天加密密钥。
 
 ### 前端域名与 API 域名分离
