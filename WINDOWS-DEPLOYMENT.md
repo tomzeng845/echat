@@ -241,6 +241,28 @@ Restart-Service EChat
 
 聊天端的 RSA/AES 加密依赖浏览器 Web Crypto。**外网访问必须使用有效的 HTTPS 域名**，例如 `https://chat.example.com`；使用 `http://公网IP:2099`、自签名证书未被浏览器信任的地址或其他非安全上下文，会导致 `crypto.subtle.generateKey` 不可用，登录后无法初始化聊天加密密钥。
 
+### 前端域名与 API 域名分离
+
+如果页面地址和 API 地址不同，例如页面使用 `https://chat.example.com`、API 使用 `https://api.example.com`，构建前端时必须显式指定 API 地址：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows-release.ps1 -ApiBaseUrl "https://api.example.com"
+```
+
+上面的命令中的 `https://api.example.com` 会被写入前端构建结果；不要在浏览器中用相对地址访问另一台 API 服务器。API 服务的 `echat.env.ps1` 还必须设置页面来源：
+
+```powershell
+$env:CORS_ALLOWED_ORIGINS = "https://chat.example.com"
+```
+
+修改环境文件后重启 API 服务：
+
+```powershell
+Restart-Service EChat
+```
+
+页面域名和 API 域名都应使用受浏览器信任的 HTTPS 证书，并确保 API 反向代理转发 WebSocket，否则实时消息和通话无法工作。
+
 IIS 配置要点：
 
 1. 绑定正式域名和 TLS 证书。

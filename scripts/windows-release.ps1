@@ -2,7 +2,8 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "0.9.0"
+    [string]$Version = "0.9.0",
+    [string]$ApiBaseUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +20,11 @@ if (-not $dotnet) { throw ".NET 8 SDK was not found. Install the .NET 8 SDK firs
 Write-Host "[2/5] Building the React web client..."
 Push-Location $root
 try {
+    if (-not [string]::IsNullOrWhiteSpace($ApiBaseUrl)) {
+        if ($ApiBaseUrl -notmatch '^https://') { throw "ApiBaseUrl must be an HTTPS URL, for example https://api.example.com" }
+        $env:VITE_ECHAT_API_BASE_URL = $ApiBaseUrl.TrimEnd('/')
+        Write-Host "Using separate API origin: $env:VITE_ECHAT_API_BASE_URL"
+    }
     & pnpm exec vite build
     if ($LASTEXITCODE -ne 0) { throw "Vite build failed with exit code $LASTEXITCODE." }
 
@@ -48,6 +54,7 @@ try {
     Copy-Item (Join-Path $root "deploy\mongodb\create-default-admin.js") (Join-Path $out "mongodb\create-default-admin.js") -Force
     Copy-Item (Join-Path $root "deploy\mongodb\create-default-admin.ps1") (Join-Path $out "mongodb\create-default-admin.ps1") -Force
 
+    $manifestApiBase = if ([string]::IsNullOrWhiteSpace($ApiBaseUrl)) { "same-origin" } else { $ApiBaseUrl.TrimEnd('/') }
     $manifest = @"
 EChat Windows release
 Version: $Version
@@ -56,6 +63,7 @@ Configuration: $Configuration
 Self-contained: true
 Single-file: true
 Default HTTP port: 2099
+Frontend API base URL: $manifestApiBase
 MongoDB database: echat
 Generated UTC: $([DateTime]::UtcNow.ToString("o"))
 
