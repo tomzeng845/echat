@@ -34,6 +34,11 @@ New-Service -Name $ServiceName `
     -Description "E聊即时通讯 ASP.NET Core API、WebSocket/SignalR 和网页前端" `
     -StartupType Automatic
 
+# Give the service enough time to start after reboot and restart it after transient failures.
+sc.exe config $ServiceName start= delayed-auto | Out-Null
+sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
+sc.exe failureflag $ServiceName 1 | Out-Null
+
 # Store the listening port as a machine-level environment variable for the service.
 [Environment]::SetEnvironmentVariable("ECHAT_PORT", [string]$Port, "Machine")
 Write-Host "Installed service $ServiceName at $InstallPath."

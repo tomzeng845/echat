@@ -275,7 +275,7 @@ pnpm ios:sync
 
 ### Windows 部署
 
-Windows 部署优先使用 `pnpm windows:release` 生成 `releases/EChat-0.9.0-windows-x64.zip`。该包为 ASP.NET Core self-contained single-file 发布，包含前端静态资源和 `install-service.ps1`、`start-service.ps1`、`uninstall-service.ps1`。安装时需要管理员 PowerShell；运行时需要可访问 MongoDB，不需要 Node.js 或 .NET SDK。完整步骤、必须安装的 IIS/WebSocket 组件、环境变量和排障清单见 [WINDOWS-DEPLOYMENT.md](WINDOWS-DEPLOYMENT.md)。
+Windows 部署优先使用 `pnpm windows:release` 生成 `releases/EChat-0.9.0-windows-x64.zip`。该包为 ASP.NET Core self-contained single-file 发布，包含前端静态资源和 `install-service.ps1`、`start-service.ps1`、`uninstall-service.ps1`。安装时需要管理员 PowerShell；运行时需要可访问 MongoDB，不需要 Node.js 或 .NET SDK。API 会先完成 Windows Service 启动握手，再在后台重试 MongoDB 初始化，不会因数据库瞬时不可达而阻塞服务启动；安装脚本还配置了延迟自动启动和失败自动重启。完整步骤、必须安装的 IIS/WebSocket 组件、环境变量和排障清单见 [WINDOWS-DEPLOYMENT.md](WINDOWS-DEPLOYMENT.md)。
 
 ## 主要接口
 

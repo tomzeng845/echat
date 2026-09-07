@@ -18,6 +18,7 @@ builder.Services.AddSingleton<TotpService>();
 builder.Services.AddSingleton<AdminSecretProtector>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AdminBootstrapService>();
+builder.Services.AddHostedService<StartupDataInitializer>();
 builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
@@ -84,8 +85,6 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
-await app.Services.GetRequiredService<IChatRepository>().EnsureSeedDataAsync();
-await app.Services.GetRequiredService<AdminBootstrapService>().EnsureAsync();
 
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {

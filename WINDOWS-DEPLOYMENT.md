@@ -141,7 +141,7 @@ Set-Location "C:\Program Files\EChat"
 .\install-service.ps1 -InstallPath "C:\Program Files\EChat" -ServiceName EChat -Port 2099
 ```
 
-安装脚本会创建 `EChat` 服务、设置 `ECHAT_PORT=2099`，并生成：
+安装脚本会创建 `EChat` 服务、设置 `ECHAT_PORT=2099`，配置延迟自动启动和失败自动重启，并生成：
 
 ```text
 C:\Program Files\EChat\echat.env.ps1
@@ -180,7 +180,9 @@ Get-Service EChat
 Invoke-WebRequest http://127.0.0.1:2099/api/health
 ```
 
-健康检查应返回 JSON，包含 `status: healthy`。如果服务启动失败，优先检查 Windows **事件查看器 → Windows 日志 → 应用程序**、`MONGODB_URI`、MongoDB 网络连通性和端口占用。
+健康检查应返回 JSON，包含 `status: healthy`。API 现在会先完成 HTTP/Windows Service 启动握手，再在后台执行 MongoDB 索引、种子数据和管理员初始化；MongoDB 暂时不可达不会再阻塞服务启动，后台会每 5–60 秒自动重试，单次初始化网络操作最多等待 30 秒。相关日志写入 Windows **事件查看器 → Windows 日志 → 应用程序**。
+
+如果服务状态为 `Running` 但健康检查失败，优先检查 `MONGODB_URI`、MongoDB 网络连通性、端口占用和事件查看器中的 `StartupDataInitializer` 日志。服务启动后数据库仍不可达时，登录、消息和需要数据库的接口会在数据库恢复后正常工作；不要因为初始化重试就重复创建服务。
 
 ### 5.3 更新版本
 
@@ -235,7 +237,11 @@ IIS 配置要点：
 
 ### 服务启动后立刻停止
 
-检查 `echat.env.ps1` 是否仍包含 `replace-` 占位符；检查 MongoDB URI、服务器到 `10.63.125.3:27018` 的 TCP 连通性；查看事件查看器中的异常堆栈。
+检查 `EChat.Api.exe` 是否被杀毒软件拦截、2099 端口是否被占用，以及 Windows 事件查看器中的启动异常。当前版本不会在服务启动握手阶段等待 MongoDB；如果仍然出现“服务没有及时响应启动或控制请求”，可先在管理员 PowerShell 中直接运行 `C:\Program Files\EChat\EChat.Api.exe`，观察控制台首个异常，再检查服务的二进制路径和账户权限。
+
+### 服务已运行但 MongoDB 初始化失败
+
+这不再表现为 Windows Service 启动超时。检查 `echat.env.ps1` 是否仍包含 `replace-` 占位符；检查 MongoDB URI、服务器到 `10.63.125.3:27018` 的 TCP 连通性；查看事件查看器中 `StartupDataInitializer` 的重试日志。MongoDB 恢复后最多等待下一次重试即可，无需重启服务。
 
 ### 页面能打开但消息不实时
 
