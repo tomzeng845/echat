@@ -32,6 +32,12 @@ public sealed class CoreTests
     }
 
     [Fact]
+    public void RequestMetadata_NormalizesIpv4MappedIpv6()
+    {
+        Assert.Equal("公网 IP · 136.158.37.208", RequestMetadata.Address("::ffff:136.158.37.208"));
+    }
+
+    [Fact]
     public async Task ConcurrentMessages_ReceiveUniqueIncreasingSequences()
     {
         var repository = new InMemoryChatRepository();
