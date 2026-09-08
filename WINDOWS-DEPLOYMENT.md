@@ -166,6 +166,49 @@ C:\Program Files\EChat\echat.env.ps1
 
 可选变量：`TURN_URLS`、`TURN_SECRET`、`SFU_URL`、`FCM_PROJECT_ID`、`FCM_SERVICE_ACCOUNT_JSON`、`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_BUNDLE_ID`、`APNS_PRIVATE_KEY`、`APNS_USE_SANDBOX`。移动推送和音视频生产能力仍需要对应的第三方账号、证书、TURN/SFU 基础设施。
 
+#### 5.1.1 配置 iOS APNs 生产推送
+
+Windows 发布包中的 APNs 配置是**服务端向 iPhone 发送普通通知和 PushKit 来电通知**的配置，不是 Windows 客户端配置。请先在 Apple Developer 中创建或确认 APNs Auth Key，并将 `.p8` 私钥安全复制到 Windows 服务器；不要把私钥提交到 Git、放入 ZIP 或通过聊天发送。
+
+本项目当前 iOS 参数如下：
+
+| 参数 | 生产值 |
+| --- | --- |
+| `APNS_TEAM_ID` | `PPY8H6QWB5` |
+| `APNS_KEY_ID` | `35Z9TC62QQ` |
+| `APNS_BUNDLE_ID` | `com.tomzeng845.echat` |
+| `APNS_USE_SANDBOX` | `false` |
+
+在管理员 PowerShell 中编辑 `C:\Program Files\EChat\echat.env.ps1`，加入以下内容。示例中的私钥内容必须替换为 Apple 下载的真实 `AuthKey_*.p8` 内容；每一行用 `` `n `` 表示换行：
+
+```powershell
+$env:APNS_TEAM_ID = "PPY8H6QWB5"
+$env:APNS_KEY_ID = "35Z9TC62QQ"
+$env:APNS_BUNDLE_ID = "com.tomzeng845.echat"
+$env:APNS_USE_SANDBOX = "false"
+$env:APNS_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----`n替换为真实私钥内容`n-----END PRIVATE KEY-----"
+```
+
+也可以先从受保护的私钥文件读取，避免在 PowerShell 历史中直接输入完整私钥：
+
+```powershell
+$env:APNS_TEAM_ID = "PPY8H6QWB5"
+$env:APNS_KEY_ID = "35Z9TC62QQ"
+$env:APNS_BUNDLE_ID = "com.tomzeng845.echat"
+$env:APNS_USE_SANDBOX = "false"
+$env:APNS_PRIVATE_KEY = (Get-Content "C:\Program Files\EChat\secrets\AuthKey_35Z9TC62QQ.p8" -Raw)
+```
+
+将 `.p8` 文件 ACL 限制为服务账号和管理员可读，然后使用发布包脚本重新加载环境并重启服务：
+
+```powershell
+Set-Location "C:\EChat-release"
+.\start-service.ps1 -InstallPath "C:\Program Files\EChat" -ServiceName EChat
+Invoke-WebRequest http://127.0.0.1:2099/api/health
+```
+
+健康接口应返回 `status: healthy`。当 APNs 四项配置完整且私钥可导入时，服务的推送状态应显示 iOS APNs 已启用。生产 iPhone 必须安装生产 TestFlight 版本、重新登录并重新注册 `ios`/`ios-voip` token；Sandbox token 不能用于生产 APNs endpoint。若日志出现 `BadDeviceToken`，先确认 `APNS_USE_SANDBOX=false`、Bundle ID 完全匹配，并让用户重新登录 TestFlight 刷新 token。
+
 ### 5.2 设置密钥并启动
 
 先把发布包中的模板复制为实际环境文件：
