@@ -256,6 +256,50 @@ export const restoreSession = async () => {
     return null;
   }
 };
+
+let refreshInFlight: Promise<AuthResponse | null> | null = null;
+
+async function refreshSession(
+  session: AuthResponse
+): Promise<AuthResponse | null> {
+  if (refreshInFlight) return refreshInFlight;
+  const current = getSession();
+  if (current?.refreshToken && current.refreshToken !== session.refreshToken) {
+    return current;
+  }
+  refreshInFlight = (async () => {
+    try {
+      const refreshed = await fetch(apiUrl("/api/auth/refresh"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-EChat-Device-Id": getDeviceId(),
+        },
+        body: JSON.stringify({
+          refreshToken: session.refreshToken,
+          deviceName: navigator.userAgent,
+          deviceId: getDeviceId(),
+        }),
+      });
+      if (refreshed.ok) {
+        const next = (await refreshed.json()) as AuthResponse;
+        setSession(next);
+        return next;
+      }
+      if (refreshed.status === 401) {
+        setSession(null);
+        window.dispatchEvent(new Event("echat-session-expired"));
+      }
+    } catch {
+      // A temporary mobile-network failure must not destroy a valid local session.
+    } finally {
+      refreshInFlight = null;
+    }
+    return null;
+  })();
+  return refreshInFlight;
+}
+
 export const getDeviceId = () => {
   let value = localStorage.getItem(DEVICE_KEY);
   if (!value) {
@@ -283,32 +327,17 @@ export async function authorizedFetch(
   headers.set("X-EChat-Device-Id", getDeviceId());
   const response = await fetch(apiUrl(path), { ...init, headers });
   if (response.status === 401 && retry && session?.refreshToken) {
-    let refreshed: Response;
-    try {
-      refreshed = await fetch(apiUrl("/api/auth/refresh"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-EChat-Device-Id": getDeviceId(),
-        },
-        body: JSON.stringify({
-          refreshToken: session.refreshToken,
-          deviceName: navigator.userAgent,
-          deviceId: getDeviceId(),
-        }),
-      });
-    } catch {
-      // A temporary mobile-network failure must not destroy a valid local session.
-      return response;
-    }
-    if (refreshed.ok) {
-      setSession(await refreshed.json());
+    // Another request may have already rotated this refresh token. Reuse the
+    // newer session instead of submitting the revoked token a second time.
+    const current = getSession();
+    if (
+      current?.refreshToken &&
+      current.refreshToken !== session.refreshToken
+    ) {
       return authorizedFetch(path, init, false);
     }
-    if (refreshed.status === 401) {
-      setSession(null);
-      window.dispatchEvent(new Event("echat-session-expired"));
-    }
+    if (await refreshSession(session))
+      return authorizedFetch(path, init, false);
   }
   return response;
 }

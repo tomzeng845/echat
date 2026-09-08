@@ -6,7 +6,7 @@ on:
       api_url:
         description: Production EChat HTTPS API URL embedded in the app
         required: true
-        default: https://echatapp-favrlscm.manus.space
+        default: https://platform.superseller88.com:2099
         type: string
 
 permissions:
