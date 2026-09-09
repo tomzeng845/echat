@@ -2009,7 +2009,7 @@ function MessageBubble({
               <Check size={11} />
               <button
                 onClick={onRecall}
-                className="opacity-0 transition hover:text-slate-700 group-hover:opacity-100"
+                className="opacity-100 transition hover:text-slate-700 md:opacity-0 md:group-hover:opacity-100"
               >
                 撤回
               </button>
