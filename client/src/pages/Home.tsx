@@ -858,6 +858,8 @@ function Messenger({
           connectionRef.current
             ?.invoke("JoinConversation", conversationId)
             .catch(() => undefined);
+        if (event?.action === "cleared" && conversationId === selectedId)
+          setMessages([]);
         loadData().catch(() => undefined);
       },
       onContactRequest: request => {
@@ -1237,6 +1239,20 @@ function Messenger({
       );
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "撤回失败");
+    }
+  }
+
+  async function clearChatHistory() {
+    if (!selected) return;
+    if (!window.confirm("清空后，当前会话中的聊天记录将对所有成员删除，且无法恢复。确定继续吗？")) return;
+    try {
+      await api(`/api/conversations/${selected.id}/messages`, { method: "DELETE" });
+      setMessages([]);
+      setShowConversationMenu(false);
+      await loadData();
+      toast.success("聊天记录已清空");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "清空聊天记录失败");
     }
   }
 
@@ -1667,6 +1683,14 @@ function Messenger({
                         >
                           <Settings size={16} className="text-slate-400" />
                           会话设置
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-rose-50"
+                          onClick={clearChatHistory}
+                        >
+                          <Trash2 size={16} />
+                          清空聊天记录
                         </button>
                       </div>
                     )}

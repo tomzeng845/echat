@@ -213,6 +213,15 @@ public sealed class InMemoryChatRepository : IChatRepository
         Task.FromResult<IReadOnlyList<ChatMessage>>(_messages.Values.Where(x => x.ConversationId == conversationId && x.Sequence > afterSequence).OrderBy(x => x.Sequence).Take(limit).ToList());
     public Task<ChatMessage?> GetMessageAsync(string id, CancellationToken ct = default) => Task.FromResult(_messages.TryGetValue(id, out var item) ? item : null);
     public Task UpdateMessageAsync(ChatMessage message, CancellationToken ct = default) { _messages[message.Id] = message; return Task.CompletedTask; }
+    public Task ClearMessagesAsync(string conversationId, CancellationToken ct = default)
+    {
+        foreach (var message in _messages.Values.Where(x => x.ConversationId == conversationId).ToList())
+        {
+            _messages.TryRemove(message.Id, out _);
+            _messageIdempotency.TryRemove($"{message.SenderId}:{message.ClientMessageId}", out _);
+        }
+        return Task.CompletedTask;
+    }
 
     public Task<MediaAsset> AddMediaAssetAsync(MediaAsset asset, CancellationToken ct = default) { _mediaAssets[asset.Id] = asset; return Task.FromResult(asset); }
     public Task<MediaAsset?> GetMediaAssetAsync(string id, CancellationToken ct = default) => Task.FromResult(_mediaAssets.TryGetValue(id, out var item) ? item : null);

@@ -260,6 +260,7 @@ public sealed class MongoChatRepository : IChatRepository
     public async Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId, long afterSequence, int limit, CancellationToken ct = default) => await _messages.Find(x => x.ConversationId == conversationId && x.Sequence > afterSequence).SortBy(x => x.Sequence).Limit(limit).ToListAsync(ct);
     public async Task<ChatMessage?> GetMessageAsync(string id, CancellationToken ct = default) => await _messages.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public Task UpdateMessageAsync(ChatMessage message, CancellationToken ct = default) => _messages.ReplaceOneAsync(x => x.Id == message.Id, message, cancellationToken: ct);
+    public Task ClearMessagesAsync(string conversationId, CancellationToken ct = default) => _messages.DeleteManyAsync(x => x.ConversationId == conversationId, ct);
 
     public async Task<MediaAsset> AddMediaAssetAsync(MediaAsset asset, CancellationToken ct = default) { await _mediaAssets.InsertOneAsync(asset, cancellationToken: ct); return asset; }
     public async Task<MediaAsset?> GetMediaAssetAsync(string id, CancellationToken ct = default) => await _mediaAssets.Find(x => x.Id == id).FirstOrDefaultAsync(ct);

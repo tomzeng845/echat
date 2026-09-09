@@ -46,6 +46,7 @@ public interface IChatRepository
     Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId, long afterSequence, int limit, CancellationToken ct = default);
     Task<ChatMessage?> GetMessageAsync(string id, CancellationToken ct = default);
     Task UpdateMessageAsync(ChatMessage message, CancellationToken ct = default);
+    Task ClearMessagesAsync(string conversationId, CancellationToken ct = default);
     Task<MediaAsset> AddMediaAssetAsync(MediaAsset asset, CancellationToken ct = default);
     Task<MediaAsset?> GetMediaAssetAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<MediaAsset>> GetMediaAssetsAsync(IEnumerable<string> ids, CancellationToken ct = default);

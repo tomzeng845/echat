@@ -38,6 +38,26 @@ public sealed class CoreTests
     }
 
     [Fact]
+    public async Task ClearMessages_RemovesConversationHistory()
+    {
+        var repository = new InMemoryChatRepository();
+        var conversation = await repository.AddConversationAsync(new Conversation
+        {
+            Type = ConversationType.Direct,
+            Members = [new() { UserId = "u1" }, new() { UserId = "u2" }]
+        });
+        await repository.AddMessageIdempotentlyAsync(new ChatMessage
+        {
+            ClientMessageId = "clear-1", ConversationId = conversation.Id, SenderId = "u1",
+            Algorithm = "PLAINTEXT", Content = "待清空消息"
+        });
+
+        await repository.ClearMessagesAsync(conversation.Id);
+
+        Assert.Empty(await repository.GetMessagesAsync(conversation.Id, 0, 50));
+    }
+
+    [Fact]
     public async Task ConcurrentMessages_ReceiveUniqueIncreasingSequences()
     {
         var repository = new InMemoryChatRepository();

@@ -225,6 +225,26 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         return NoContent();
     }
 
+    [HttpDelete("{id}/messages")]
+    public async Task<ActionResult> ClearMessages(string id, CancellationToken ct)
+    {
+        var conversation = await RequireMemberAsync(id, ct);
+        if (conversation is null) return Forbid();
+
+        await repository.ClearMessagesAsync(id, ct);
+        conversation.LastMessagePreview = "";
+        conversation.LastMessageAtUtc = null;
+        await repository.UpdateConversationAsync(conversation, ct);
+
+        var memberIds = conversation.Members
+            .Where(member => member.LeftAtSequence is null)
+            .Select(member => member.UserId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        await hub.Clients.Users(memberIds).SendAsync("conversation.updated", new { conversationId = id, action = "cleared" }, ct);
+        return NoContent();
+    }
+
     [HttpPost("{id}/read/{sequence:long}")]
     public async Task<ActionResult> MarkRead(string id, long sequence, CancellationToken ct)
     {
