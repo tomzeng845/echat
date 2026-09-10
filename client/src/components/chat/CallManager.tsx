@@ -119,29 +119,49 @@ function AudioStream({ stream }: { stream: MediaStream }) {
   useEffect(() => {
     if (ref.current) {
       const element = ref.current;
+      let disposed = false;
       const play = () => {
+        if (disposed) return;
         element.muted = false;
         element.volume = 1;
-        if (element.paused) element.play().catch(() => undefined);
+        const needsResume =
+          element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
+        if (needsResume)
+          window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
+        if (needsResume)
+          element.play().catch(() => undefined);
       };
       element.srcObject = stream;
       stream.getAudioTracks().forEach(track => {
         track.enabled = true;
         track.onunmute = play;
+        track.onmute = play;
+        track.onended = play;
       });
       element.onloadedmetadata = play;
       element.oncanplay = play;
       element.onplaying = play;
+      element.onpause = play;
+      element.onstalled = play;
+      element.onwaiting = play;
       const retries = [0, 250, 1000, 2500, 5000].map(delay =>
         window.setTimeout(play, delay)
       );
+      const watchdog = window.setInterval(play, 2000);
       return () => {
+        disposed = true;
         retries.forEach(window.clearTimeout);
+        window.clearInterval(watchdog);
         element.onloadedmetadata = null;
         element.oncanplay = null;
         element.onplaying = null;
+        element.onpause = null;
+        element.onstalled = null;
+        element.onwaiting = null;
         stream.getAudioTracks().forEach(track => {
           track.onunmute = null;
+          track.onmute = null;
+          track.onended = null;
         });
       };
     }
@@ -229,6 +249,16 @@ const CallManager = forwardRef<
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [call?.status, connectedAt]);
+
+  useEffect(() => {
+    const restoreAudioRoute = () => {
+      if (callRef.current?.status !== "connected") return;
+      setNativeCallAudioRoute(speakerOnRef.current).catch(() => undefined);
+    };
+    window.addEventListener("echat-remote-audio-playback", restoreAudioRoute);
+    return () =>
+      window.removeEventListener("echat-remote-audio-playback", restoreAudioRoute);
+  }, []);
 
   useEffect(() => {
     api<RtcConfig>("/api/rtc/config")
@@ -435,10 +465,19 @@ const CallManager = forwardRef<
           }, delay);
           audioRouteTimers.current.push(timer);
         });
-        setRemoteStreams(current => ({
-          ...current,
-          [targetUserId]: event.streams[0] ?? new MediaStream([event.track]),
-        }));
+        setRemoteStreams(current => {
+          const existing = current[targetUserId];
+          const incoming = event.streams[0];
+          if (existing) {
+            if (!existing.getTracks().some(track => track.id === event.track.id))
+              existing.addTrack(event.track);
+            return { ...current };
+          }
+          return {
+            ...current,
+            [targetUserId]: incoming ?? new MediaStream([event.track]),
+          };
+        });
       };
       peer.onconnectionstatechange = () => {
         if (
