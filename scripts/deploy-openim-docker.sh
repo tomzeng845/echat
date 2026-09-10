@@ -99,8 +99,19 @@ existing_env_value() {
 }
 
 clone_official_release() {
-  if [[ -d "$INSTALL_DIR/.git" && "$FORCE" != "true" ]]; then
-    log "复用已有官方 OpenIM Docker 目录：$INSTALL_DIR"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    if [[ "$FORCE" != "true" ]]; then
+      log "复用已有官方 OpenIM Docker 目录：$INSTALL_DIR"
+      return
+    fi
+    log "复用已有官方仓库并刷新稳定 Release：$INSTALL_DIR"
+    pushd "$INSTALL_DIR" >/dev/null
+    git fetch --tags --force
+    local existing_tag
+    existing_tag="$(basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/openimsdk/openim-docker/releases/latest)")"
+    [[ -n "$existing_tag" && "$existing_tag" != "latest" ]] || fail "无法识别 OpenIM 官方稳定 Release 标签。"
+    git checkout "$existing_tag"
+    popd >/dev/null
     return
   fi
   if [[ -e "$INSTALL_DIR" && "$FORCE" == "true" ]]; then
