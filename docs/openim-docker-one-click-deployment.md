@@ -136,6 +136,16 @@ sudo docker compose pull
 sudo docker compose up -d
 ```
 
+修复网络后，优先直接在已有目录重新拉取和启动：
+
+```bash
+cd /opt/openim-docker
+sudo docker compose pull
+sudo docker compose up -d
+```
+
+不要执行 `docker compose down -v`，也不要删除 `components/` 数据目录。只有 `.env` 缺少关键变量时，才重新运行部署脚本；脚本会保留已有密码，只为缺失的变量生成新值。
+
 如果服务器必须保留 IPv6，则应修复服务器供应商的 IPv6 默认路由，而不是删除 Docker 数据。也可以先为 Docker 配置可用的 DNS，例如在 `/etc/docker/daemon.json` 中加入 `"dns": ["1.1.1.1", "8.8.8.8"]`，然后重启 Docker；DNS 修复无法替代缺失的 IPv6 路由。
 
 检查 Docker 网络中的核心容器：

@@ -93,6 +93,11 @@ install_docker() {
 
 random_secret() { openssl rand -hex 24; }
 
+existing_env_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' .env
+}
+
 clone_official_release() {
   if [[ -d "$INSTALL_DIR/.git" && "$FORCE" != "true" ]]; then
     log "复用已有官方 OpenIM Docker 目录：$INSTALL_DIR"
@@ -124,14 +129,14 @@ configure_env() {
   [[ -f .env ]] || fail "官方仓库缺少 .env。"
   cp -n .env .env.original 2>/dev/null || true
   local mongo_secret redis_secret minio_secret openim_secret kafka_username kafka_password etcd_username etcd_password
-  mongo_secret="$(random_secret)"
-  redis_secret="$(random_secret)"
-  minio_secret="$(random_secret)"
-  openim_secret="$(random_secret)"
+  mongo_secret="$(existing_env_value MONGO_PASSWORD)"; mongo_secret="${mongo_secret:-$(random_secret)}"
+  redis_secret="$(existing_env_value REDIS_PASSWORD)"; redis_secret="${redis_secret:-$(random_secret)}"
+  minio_secret="$(existing_env_value MINIO_SECRET_ACCESS_KEY)"; minio_secret="${minio_secret:-$(random_secret)}"
+  openim_secret="$(existing_env_value OPENIM_SECRET)"; openim_secret="${openim_secret:-$(random_secret)}"
   kafka_username="openim_kafka"
-  kafka_password="$(random_secret)"
+  kafka_password="$(existing_env_value KAFKA_PASSWORD)"; kafka_password="${kafka_password:-$(random_secret)}"
   etcd_username="openim_etcd"
-  etcd_password="$(random_secret)"
+  etcd_password="$(existing_env_value ETCD_PASSWORD)"; etcd_password="${etcd_password:-$(random_secret)}"
   local external="${MINIO_SCHEME}://${PUBLIC_IP}:10005"
   python3 - "$DOMAIN" "$PUBLIC_IP" "$TIMEZONE" "$external" "$mongo_secret" "$redis_secret" "$minio_secret" "$openim_secret" "$kafka_username" "$kafka_password" "$etcd_username" "$etcd_password" <<'PY'
 from pathlib import Path
