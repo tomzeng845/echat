@@ -190,6 +190,15 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
                 try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
                 try session.setActive(true)
                 try session.overrideOutputAudioPort(speaker ? .speaker : .none)
+                EChatVoipManager.shared.speakerPreferred = speaker
+                // CallKit may re-activate the audio session immediately after
+                // the route change. Re-apply the selected route once the
+                // system has finished its transition so remote audio does not
+                // remain attached to an inactive output.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    try? session.setActive(true)
+                    try? session.overrideOutputAudioPort(speaker ? .speaker : .none)
+                }
                 call.resolve(["speaker": speaker, "applied": true])
             } catch {
                 call.reject("无法切换通话音频输出", nil, error)
@@ -269,6 +278,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private let activeKey = "echat.ios.active-call.v1"
     private let pendingClearedKey = "echat.ios.pending-cleared-call.v1"
     private let voipTokenKey = "echat.ios.voip-token.v1"
+    var speakerPreferred = true
 
     var voipToken: String? {
         UserDefaults.standard.string(forKey: voipTokenKey)
@@ -416,8 +426,11 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])
+        var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
+        if speakerPreferred { options.insert(.defaultToSpeaker) }
+        try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
         try? audioSession.setActive(true)
+        try? audioSession.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
