@@ -220,6 +220,12 @@ jobs:
             CODE_SIGN_IDENTITY='Apple Distribution' \
             clean archive
 
+          # Embedded frameworks must never carry the app provisioning profile.
+          # Keep the profile on the .app bundle for export signing only.
+          find "$ARCHIVE/Products/Applications" -type f \
+            -path "*/Frameworks/*.framework/embedded.mobileprovision" \
+            -delete
+
           xcodebuild \
             -exportArchive \
             -archivePath "$ARCHIVE" \
