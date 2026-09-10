@@ -120,6 +120,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       element.srcObject = stream;
       stream.getAudioTracks().forEach(track => {
         track.enabled = true;
+        track.onunmute = play;
       });
       element.onloadedmetadata = play;
       element.oncanplay = play;
@@ -132,6 +133,9 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         element.onloadedmetadata = null;
         element.oncanplay = null;
         element.onplaying = null;
+        stream.getAudioTracks().forEach(track => {
+          track.onunmute = null;
+        });
       };
     }
   }, [stream]);
