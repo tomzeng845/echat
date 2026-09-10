@@ -184,6 +184,7 @@ const CallManager = forwardRef<
   const [remoteStreams, setRemoteStreams] = useState<
     Record<string, MediaStream>
   >({});
+  const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
@@ -207,6 +208,7 @@ const CallManager = forwardRef<
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [networkQuality, setNetworkQuality] = useState("检测中");
   callRef.current = call;
+  remoteStreamsRef.current = remoteStreams;
   speakerOnRef.current = speakerOn;
 
   function markConnected() {
@@ -335,7 +337,7 @@ const CallManager = forwardRef<
         packetsLost: 0,
         packetsReceived: audioPackets,
       });
-      const remoteHasAudio = remoteStreams[peerKey]?.getAudioTracks().length;
+      const remoteHasAudio = remoteStreamsRef.current[peerKey]?.getAudioTracks().length;
       if (activeCallIsConnected(callRef.current) && remoteHasAudio) {
         const started = noAudioSince.current.get(peerKey);
         if (audioDelta > 0) noAudioSince.current.delete(peerKey);
@@ -791,6 +793,7 @@ const CallManager = forwardRef<
       const applied = await setNativeCallAudioRoute(next);
       speakerOnRef.current = applied;
       setSpeakerOn(applied);
+      recordOutputDevice({ speaker: applied, label: applied ? "speaker" : "earpiece" });
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "无法切换扬声器");
     }
