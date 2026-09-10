@@ -174,6 +174,11 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         window.setTimeout(play, delay)
       );
       const watchdog = window.setInterval(play, 2000);
+      const resumeFromUserGesture = () => play();
+      window.addEventListener(
+        "echat-resume-remote-audio",
+        resumeFromUserGesture
+      );
       recordAudioState({
         event: "remote-audio-attached",
         streamActive: stream.active,
@@ -188,6 +193,10 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         disposed = true;
         retries.forEach(window.clearTimeout);
         window.clearInterval(watchdog);
+        window.removeEventListener(
+          "echat-resume-remote-audio",
+          resumeFromUserGesture
+        );
         element.onloadedmetadata = null;
         element.oncanplay = null;
         element.onplaying = null;
@@ -874,7 +883,9 @@ const CallManager = forwardRef<
   async function toggleSpeaker() {
     const next = toggledSpeakerState(speakerOn);
     try {
+      window.dispatchEvent(new CustomEvent("echat-resume-remote-audio"));
       const applied = await setNativeCallAudioRoute(next);
+      window.dispatchEvent(new CustomEvent("echat-resume-remote-audio"));
       speakerOnRef.current = applied;
       setSpeakerOn(applied);
       recordOutputDevice({ speaker: applied, label: applied ? "speaker" : "earpiece" });

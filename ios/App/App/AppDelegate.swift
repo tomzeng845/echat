@@ -278,6 +278,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private let activeKey = "echat.ios.active-call.v1"
     private let pendingClearedKey = "echat.ios.pending-cleared-call.v1"
     private let voipTokenKey = "echat.ios.voip-token.v1"
+    private var audioSessionObserversInstalled = false
     var speakerPreferred = false
 
     var voipToken: String? {
@@ -310,7 +311,47 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
                 registry.desiredPushTypes = [.voIP]
                 self.registry = registry
             }
+            self.installAudioSessionObservers()
         }
+    }
+
+    private func installAudioSessionObservers() {
+        guard !audioSessionObserversInstalled else { return }
+        audioSessionObserversInstalled = true
+        let center = NotificationCenter.default
+        center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            let type = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue ?? 0
+            let ended = type == AVAudioSession.InterruptionType.ended.rawValue
+            guard ended, self.activeCall != nil else { return }
+            self.restoreActiveAudioSession(reason: "interruption-ended")
+        }
+        center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.activeCall != nil else { return }
+            self.restoreActiveAudioSession(reason: "route-changed")
+        }
+        center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.activeCall != nil else { return }
+            self.restoreActiveAudioSession(reason: "media-services-reset")
+        }
+    }
+
+    private func restoreActiveAudioSession(reason: String) {
+        let session = AVAudioSession.sharedInstance()
+        applyAudioRoute(to: session)
+        plugin?.notifyListeners("audioSessionRecovered", data: ["reason": reason])
     }
 
     func pushRegistry(
