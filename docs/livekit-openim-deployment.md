@@ -114,6 +114,18 @@ rtc:
 
 ## 6. 先用 Docker 启动测试版
 
+项目已经提供一键脚本：
+
+```bash
+sudo bash deploy-livekit-openim.sh \
+  --domain livekit.superseller88.com \
+  --public-ip 154.83.12.217 \
+  --email tom88cloud@gmail.com \
+  --enable-caddy
+```
+
+脚本位置为 `scripts/deploy-livekit-openim.sh`。如果当前服务器的 80/443 已经由 Jitsi 或现有 Nginx/Caddy 占用，不要添加 `--enable-caddy`；应把 `livekit.superseller88.com` 转发到 `127.0.0.1:7880`，并保留 `7881/TCP` 与 `50000–60000/UDP` 对公网开放。
+
 OpenIM 官方 LiveKit 快速部署示例使用 Docker 运行 LiveKit：[2]
 
 ```bash
