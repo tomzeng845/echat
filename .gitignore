@@ -143,3 +143,7 @@ releases/*.ipa.sha256
 releases/*-testflight.json
 releases/*-build.txt
 releases/*-upload.txt
+# Never commit nested mobile build artifacts downloaded from CI
+releases/**/*.apk
+releases/**/*.aab
+releases/**/*.ipa
