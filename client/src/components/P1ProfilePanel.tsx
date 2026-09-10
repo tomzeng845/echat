@@ -4,6 +4,7 @@ import {
   Bell,
   Camera,
   Clock3,
+  Eye,
   FileText,
   LogOut,
   MonitorSmartphone,
@@ -40,7 +41,12 @@ import {
 } from "@/lib/mobile-native";
 import { pushStatusLabel } from "@/lib/push-status";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
-import { exportDiagnosticLog, info as logInfo } from "@/lib/runtime-diagnostics";
+import {
+  exportDiagnosticLog,
+  info as logInfo,
+  snapshot as snapshotDiagnosticLog,
+  type DiagnosticEntry,
+} from "@/lib/runtime-diagnostics";
 
 export default function P1ProfilePanel({
   user,
@@ -68,13 +74,14 @@ export default function P1ProfilePanel({
   const [backgroundSupport, setBackgroundSupport] =
     useState<NativeBackgroundCallSupport | null>(null);
   const [section, setSection] = useState<
-    "home" | "devices" | "calls" | "edit-profile" | "blocked"
+    "home" | "devices" | "calls" | "edit-profile" | "blocked" | "logs"
   >("home");
   const [displayName, setDisplayName] = useState(user.displayName);
   const [signature, setSignature] = useState(user.signature || "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState(user.avatarUrl);
   const [profileBusy, setProfileBusy] = useState(false);
+  const [logEntries, setLogEntries] = useState<DiagnosticEntry[]>([]);
   const avatarImageUrl = useAuthenticatedImage(avatarPreview);
 
   async function load() {
@@ -253,11 +260,56 @@ export default function P1ProfilePanel({
     }
   }
 
+  function openRuntimeLogPreview() {
+    setLogEntries(snapshotDiagnosticLog().slice(-100).reverse());
+    setSection("logs");
+  }
+
   const pushLabel = pushStatusLabel(
     isNativeMobile(),
     pushState,
     isNativeIos() ? "ios" : "android"
   );
+
+  if (section === "logs")
+    return (
+      <div className="space-y-3 px-1">
+        <PanelHeader title="最近运行日志" onBack={() => setSection("home")} />
+        <div className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 text-xs text-slate-500 shadow-sm ring-1 ring-slate-200/60">
+          <span>显示最近 {logEntries.length} 条记录</span>
+          <button
+            type="button"
+            onClick={exportRuntimeLogs}
+            className="rounded-lg bg-teal-50 px-3 py-2 font-semibold text-teal-700"
+          >
+            导出日志
+          </button>
+        </div>
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto rounded-2xl bg-slate-950 p-3 font-mono text-[10px] text-slate-200 shadow-sm">
+          {logEntries.length ? (
+            logEntries.map((entry, index) => (
+              <div key={`${entry.at}-${index}`} className="border-b border-white/10 pb-2 last:border-0">
+                <div className="flex gap-2 text-slate-400">
+                  <span>{new Date(entry.at).toLocaleTimeString("zh-CN")}</span>
+                  <span className={entry.level === "error" ? "text-rose-300" : entry.level === "warn" ? "text-amber-300" : "text-teal-300"}>
+                    [{entry.level}]
+                  </span>
+                  <span>[{entry.scope}]</span>
+                </div>
+                <p className="mt-1 break-words text-slate-100">{entry.message}</p>
+                {entry.details !== undefined && (
+                  <pre className="mt-1 whitespace-pre-wrap break-words text-slate-400">
+                    {JSON.stringify(entry.details)}
+                  </pre>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="py-10 text-center text-slate-500">暂无运行日志</p>
+          )}
+        </div>
+      </div>
+    );
 
   if (section === "edit-profile")
     return (
@@ -552,6 +604,12 @@ export default function P1ProfilePanel({
         title="导出运行日志"
         value="排查无声音、断连问题"
         onClick={exportRuntimeLogs}
+      />
+      <Action
+        icon={Eye}
+        title="预览运行日志"
+        value="先查看最近记录"
+        onClick={openRuntimeLogPreview}
       />
       <Action
         icon={FileText}

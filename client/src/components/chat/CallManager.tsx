@@ -348,6 +348,9 @@ const CallManager = forwardRef<
             lastIceRestart.current.set(`${peerKey}:audio`, Date.now());
             recordNoAudio({ peerKey, audioPackets });
             recordIceRestart({ peerKey, reason: "no-audio-data" });
+            toast.info("检测到远端音频中断，正在尝试恢复连接…", {
+              duration: 3000,
+            });
             peer.restartIce();
           }
         }
