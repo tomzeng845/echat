@@ -29,7 +29,7 @@ usage() {
 
 参数：
   --domain             OpenIM 对外访问域名或公网 IP。用于 MinIO 外部地址。
-  --public-ip          JVB/MinIO 对外公布的公网 IPv4；未填写时使用 domain。
+  --public-ip          MinIO 对外公布的公网 IPv4；未填写时使用 domain。
   --install-dir        安装目录，默认 /opt/openim-docker。
   --https              将 MinIO 外部地址设置为 https://；需提前配置反向代理和证书。
   --timezone           时区，默认 Asia/Shanghai。
