@@ -242,6 +242,8 @@ function activeCallIsConnected(call: ActiveCall | null) {
 }
 
 function nativeJitsiRoomName(call: Pick<ActiveCall, "conversationId" | "callId">) {
+  // callId is a fresh UUID per call, so repeated calls in one conversation
+  // never reuse a previous Jitsi room.
   const safeConversation = call.conversationId.replace(/[^a-zA-Z0-9_-]/g, "");
   const safeCall = call.callId.replace(/[^a-zA-Z0-9_-]/g, "");
   return `echat-${safeConversation}-${safeCall}`.slice(0, 220);
@@ -259,6 +261,7 @@ const CallManager = forwardRef<
   const [remoteStreams, setRemoteStreams] = useState<
     Record<string, MediaStream>
   >({});
+  const nativeJitsiJoinedCallId = useRef<string | null>(null);
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
@@ -594,6 +597,7 @@ const CallManager = forwardRef<
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
     if (nativeJitsi) await leaveNativeJitsiCall().catch(() => undefined);
+    nativeJitsiJoinedCallId.current = null;
     if (active) await clearNativeCallListenerAlert(active.callId);
     await stopIncomingCallAlert();
     await endNativeCallAudioSession().catch(() => undefined);
@@ -608,6 +612,16 @@ const CallManager = forwardRef<
     setLatencyMs(null);
     setNetworkQuality("检测中");
     setCall(null);
+  }
+
+  async function joinNativeJitsiForCall(active: ActiveCall) {
+    if (!nativeJitsi || nativeJitsiJoinedCallId.current === active.callId)
+      return;
+    await joinNativeJitsiCall({
+      roomName: nativeJitsiRoomName(active),
+      mode: active.mode,
+    });
+    nativeJitsiJoinedCallId.current = active.callId;
   }
 
   useImperativeHandle(ref, () => ({
@@ -636,6 +650,7 @@ const CallManager = forwardRef<
         );
         setCall(next);
         callRef.current = next;
+        await joinNativeJitsiForCall(next);
         if (shouldPlayOutgoingRingback(next.status))
           await playOutgoingCallAlert(next.callId);
         await connection.invoke(
@@ -708,12 +723,8 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
-      if (nativeJitsi) {
-        await joinNativeJitsiCall({
-          roomName: nativeJitsiRoomName(active),
-          mode: active.mode,
-        });
-      } else {
+      if (nativeJitsi) await joinNativeJitsiForCall(connected);
+      else {
         await createPeer(participant.userId, true);
       }
     };
@@ -871,12 +882,7 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
-      if (nativeJitsi) {
-        await joinNativeJitsiCall({
-          roomName: nativeJitsiRoomName(active),
-          mode: active.mode,
-        });
-      }
+      if (nativeJitsi) await joinNativeJitsiForCall(connected);
     } catch (cause) {
       await connection
         .invoke(
