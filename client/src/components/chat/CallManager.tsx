@@ -163,6 +163,9 @@ const CallManager = forwardRef<
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
   const qualityTimer = useRef<number | null>(null);
   const lastIceRestart = useRef(new Map<string, number>());
+  const previousStats = useRef(
+    new Map<string, { packetsLost: number; packetsReceived: number }>()
+  );
   const rtcConfigRef = useRef<RTCConfiguration>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   });
@@ -220,14 +223,32 @@ const CallManager = forwardRef<
     const candidate = reports.find(
       report => report.type === "candidate-pair" && report.state === "succeeded"
     );
-    const packetsLost = inbound.reduce(
+    const totalPacketsLost = inbound.reduce(
       (total, report) => total + Number(report.packetsLost || 0),
       0
     );
-    const packetsReceived = inbound.reduce(
+    const totalPacketsReceived = inbound.reduce(
       (total, report) => total + Number(report.packetsReceived || 0),
       0
     );
+    let peerKey: string | undefined;
+    peers.current.forEach((value, key) => {
+      if (value === peer) peerKey = key;
+    });
+    const previous = peerKey ? previousStats.current.get(peerKey) : undefined;
+    const packetsLost = Math.max(
+      0,
+      totalPacketsLost - (previous?.packetsLost || 0)
+    );
+    const packetsReceived = Math.max(
+      0,
+      totalPacketsReceived - (previous?.packetsReceived || 0)
+    );
+    if (peerKey)
+      previousStats.current.set(peerKey, {
+        packetsLost: totalPacketsLost,
+        packetsReceived: totalPacketsReceived,
+      });
     const jitter = inbound.reduce(
       (max, report) => Math.max(max, Number(report.jitter || 0)),
       0
@@ -271,6 +292,28 @@ const CallManager = forwardRef<
       peer = new RTCPeerConnection(rtcConfigRef.current);
       peers.current.set(targetUserId, peer);
       stream.getTracks().forEach(track => peer!.addTrack(track, stream));
+      const audioCapabilities = RTCRtpReceiver.getCapabilities?.("audio");
+      if (audioCapabilities) {
+        const opus = audioCapabilities.codecs.filter(
+          codec => codec.mimeType.toLowerCase() === "audio/opus"
+        );
+        peer
+          .getTransceivers()
+          .filter(transceiver => transceiver.receiver.track.kind === "audio")
+          .forEach(transceiver => {
+            if (opus.length) transceiver.setCodecPreferences(opus);
+          });
+      }
+      peer
+        .getTransceivers()
+        .filter(transceiver => transceiver.sender.track?.kind === "video")
+        .forEach(transceiver => {
+          const parameters = transceiver.sender.getParameters();
+          for (const encoding of parameters.encodings || [])
+            encoding.maxFramerate = 30;
+          parameters.degradationPreference = "maintain-framerate";
+          transceiver.sender.setParameters(parameters).catch(() => undefined);
+        });
       startQualityMonitor();
       peer.onicecandidate = event => {
         if (event.candidate)
@@ -336,6 +379,7 @@ const CallManager = forwardRef<
       window.clearInterval(qualityTimer.current);
     qualityTimer.current = null;
     lastIceRestart.current.clear();
+    previousStats.current.clear();
     peers.current.forEach(peer => peer.close());
     peers.current.clear();
     pendingIce.current.clear();
