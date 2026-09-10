@@ -18,7 +18,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  adaptiveBitrate,
+  classifyNetworkQuality,
   defaultSpeakerForCallMode,
+  preferredAudioConstraints,
   shouldCloseCallFromNativeClear,
   shouldPlayOutgoingRingback,
   toggledSpeakerState,
@@ -158,6 +161,8 @@ const CallManager = forwardRef<
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
+  const qualityTimer = useRef<number | null>(null);
+  const lastIceRestart = useRef(new Map<string, number>());
   const rtcConfigRef = useRef<RTCConfiguration>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   });
@@ -182,11 +187,7 @@ const CallManager = forwardRef<
       microphone: true,
     });
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+      audio: preferredAudioConstraints(),
       video:
         mode === "video"
           ? {
@@ -207,6 +208,60 @@ const CallManager = forwardRef<
     return stream;
   }
 
+  async function updatePeerQuality(
+    peer: RTCPeerConnection,
+    mode: "audio" | "video"
+  ) {
+    const reports: Array<Record<string, unknown>> = [];
+    (await peer.getStats()).forEach(report =>
+      reports.push(report as Record<string, unknown>)
+    );
+    const inbound = reports.filter(report => report.type === "inbound-rtp");
+    const candidate = reports.find(
+      report => report.type === "candidate-pair" && report.state === "succeeded"
+    );
+    const packetsLost = inbound.reduce(
+      (total, report) => total + Number(report.packetsLost || 0),
+      0
+    );
+    const packetsReceived = inbound.reduce(
+      (total, report) => total + Number(report.packetsReceived || 0),
+      0
+    );
+    const jitter = inbound.reduce(
+      (max, report) => Math.max(max, Number(report.jitter || 0)),
+      0
+    );
+    const quality = classifyNetworkQuality(
+      packetsLost,
+      packetsReceived,
+      jitter,
+      Number(candidate?.currentRoundTripTime || 0)
+    );
+    const bitrate = adaptiveBitrate(quality, mode === "video");
+    for (const sender of peer.getSenders()) {
+      const parameters = sender.getParameters();
+      if (!parameters.encodings?.length) parameters.encodings = [{}];
+      for (const encoding of parameters.encodings) {
+        encoding.maxBitrate = bitrate.maxBitrate;
+        if (mode === "video")
+          encoding.scaleResolutionDownBy = bitrate.scaleDownBy;
+      }
+      await sender.setParameters(parameters).catch(() => undefined);
+    }
+  }
+
+  function startQualityMonitor() {
+    if (qualityTimer.current !== null) return;
+    qualityTimer.current = window.setInterval(() => {
+      const active = callRef.current;
+      if (!active) return;
+      peers.current.forEach(peer =>
+        updatePeerQuality(peer, active.mode).catch(() => undefined)
+      );
+    }, 2500);
+  }
+
   async function createPeer(targetUserId: string, createOffer: boolean) {
     const active = callRef.current;
     const stream = localStreamRef.current;
@@ -216,6 +271,7 @@ const CallManager = forwardRef<
       peer = new RTCPeerConnection(rtcConfigRef.current);
       peers.current.set(targetUserId, peer);
       stream.getTracks().forEach(track => peer!.addTrack(track, stream));
+      startQualityMonitor();
       peer.onicecandidate = event => {
         if (event.candidate)
           connection
@@ -237,7 +293,16 @@ const CallManager = forwardRef<
         }));
       };
       peer.onconnectionstatechange = () => {
-        if (peer?.connectionState === "failed") peer.restartIce();
+        if (
+          peer?.connectionState === "failed" ||
+          peer?.connectionState === "disconnected"
+        ) {
+          const last = lastIceRestart.current.get(targetUserId) || 0;
+          if (Date.now() - last > 3000) {
+            lastIceRestart.current.set(targetUserId, Date.now());
+            peer.restartIce();
+          }
+        }
         if (peer?.connectionState === "closed")
           setRemoteStreams(current => {
             const next = { ...current };
@@ -267,6 +332,10 @@ const CallManager = forwardRef<
       connection
         .invoke("CallEnd", active.conversationId, active.callId)
         .catch(() => undefined);
+    if (qualityTimer.current !== null)
+      window.clearInterval(qualityTimer.current);
+    qualityTimer.current = null;
+    lastIceRestart.current.clear();
     peers.current.forEach(peer => peer.close());
     peers.current.clear();
     pendingIce.current.clear();

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  adaptiveBitrate,
+  classifyNetworkQuality,
   defaultSpeakerForCallMode,
+  preferredAudioConstraints,
   shouldCloseCallFromNativeClear,
   shouldPlayOutgoingRingback,
   toggledSpeakerState,
@@ -36,5 +39,22 @@ describe("Android call audio routing", () => {
     expect(shouldPlayOutgoingRingback("incoming")).toBe(false);
     expect(shouldPlayOutgoingRingback("answering")).toBe(false);
     expect(shouldPlayOutgoingRingback("connected")).toBe(false);
+  });
+
+  it("requests browser hardware echo cancellation, noise suppression and AGC", () => {
+    const constraints = preferredAudioConstraints();
+    expect(constraints.echoCancellation).toEqual({ ideal: true });
+    expect(constraints.noiseSuppression).toEqual({ ideal: true });
+    expect(constraints.autoGainControl).toEqual({ ideal: true });
+  });
+
+  it("lowers bitrate when loss, jitter or RTT become severe", () => {
+    expect(classifyNetworkQuality(1, 999, 0.01, 0.05)).toBe("excellent");
+    expect(classifyNetworkQuality(80, 920, 0.09, 0.5)).toBe("degraded");
+    expect(classifyNetworkQuality(150, 850, 0.3, 1.1)).toBe("poor");
+    expect(adaptiveBitrate("poor", true).maxBitrate).toBeLessThan(
+      adaptiveBitrate("good", true).maxBitrate
+    );
+    expect(adaptiveBitrate("poor", false).maxBitrate).toBe(16_000);
   });
 });
