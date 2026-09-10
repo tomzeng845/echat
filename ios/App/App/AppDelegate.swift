@@ -98,9 +98,12 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
                 let options = JitsiMeetConferenceOptions.fromBuilder { builder in
                     builder.serverURL = url
                     builder.room = roomName
-                    builder.videoMuted = mode != "video"
                     builder.welcomePageEnabled = false
                     builder.setConfigOverride("prejoinPageEnabled", withBoolean: false)
+                    builder.setConfigOverride(
+                        "startWithVideoMuted",
+                        withBoolean: mode != "video"
+                    )
                 }
                 view.join(options)
                 call.resolve(["started": true])
