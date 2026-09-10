@@ -155,7 +155,7 @@ export async function joinNativeJitsiCall(options: {
 }) {
   if (!isNativeJitsiCallAvailable()) return { started: false };
   return JitsiCall.join({
-    serverUrl: "https://meet.jit.si",
+    serverUrl: "https://meet.superseller88.com",
     roomName: options.roomName,
     mode: options.mode,
   });

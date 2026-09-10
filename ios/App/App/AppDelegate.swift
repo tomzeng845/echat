@@ -74,7 +74,7 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
     private weak var hostViewController: UIViewController?
 
     @objc func join(_ call: CAPPluginCall) {
-        let serverURL = call.getString("serverUrl") ?? "https://meet.jit.si"
+        let serverURL = call.getString("serverUrl") ?? "https://meet.superseller88.com"
         let roomName = call.getString("roomName") ?? ""
         let mode = call.getString("mode") ?? "audio"
         guard !roomName.isEmpty, let url = URL(string: serverURL) else {

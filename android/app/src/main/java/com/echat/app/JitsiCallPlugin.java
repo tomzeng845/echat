@@ -15,7 +15,7 @@ import java.net.URL;
 
 @CapacitorPlugin(name = "JitsiCall")
 public class JitsiCallPlugin extends Plugin {
-    private static final String DEFAULT_SERVER_URL = "https://meet.jit.si";
+    private static final String DEFAULT_SERVER_URL = "https://meet.superseller88.com";
 
     @Override
     public void load() {

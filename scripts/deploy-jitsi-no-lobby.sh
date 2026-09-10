@@ -63,7 +63,23 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() { printf '\n[%s] %s\n' "$(date '+%F %T')" "$*"; }
 
+wait_for_package_manager() {
+  local deadline=$((SECONDS + 900))
+  while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
+      /var/cache/apt/archives/lock /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      echo "ERROR: apt/dpkg is still locked after 15 minutes. Check unattended-upgrades before retrying." >&2
+      ps -ef | grep -E '[a]pt|[d]pkg|[u]nattended' >&2 || true
+      exit 1
+    fi
+    log "apt/dpkg is busy; waiting for the system update to finish"
+    sleep 10
+  done
+  dpkg --configure -a
+}
+
 log "Installing required packages"
+wait_for_package_manager
 apt-get update
 apt-get install -y ca-certificates curl gnupg unzip jq ufw openssl dnsutils
 
@@ -77,6 +93,7 @@ if ! command -v docker >/dev/null 2>&1; then
   printf '%s\n' \
     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
     > /etc/apt/sources.list.d/docker.list
+  wait_for_package_manager
   apt-get update
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
@@ -89,17 +106,24 @@ mkdir -p "$INSTALL_DIR"
 if [[ ! -f "$BASE_DIR/docker-compose.yml" ]]; then
   log "Downloading latest official Jitsi Docker release"
   release_json="$(curl -fsSL https://api.github.com/repos/jitsi/docker-jitsi-meet/releases/latest)"
-  release_url="$(jq -r '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' <<<"$release_json" | head -n 1)"
-  [[ -n "$release_url" && "$release_url" != "null" ]] || { echo "ERROR: cannot find Jitsi release zip" >&2; exit 1; }
-  tmp_zip="$(mktemp --suffix=.zip)"
-  curl -fL "$release_url" -o "$tmp_zip"
+  # Recent official releases may contain no uploaded zip asset. The release
+  # source archive is still the official docker-jitsi-meet release tree and
+  # includes docker-compose.yml, env.example and gen-passwords.sh.
+  release_url="$(jq -r '(.assets[]? | select(.name | endswith(".zip")) | .browser_download_url), (.tarball_url // .zipball_url)' <<<"$release_json" | sed '/^null$/d' | head -n 1)"
+  [[ -n "$release_url" && "$release_url" != "null" ]] || { echo "ERROR: cannot find official Jitsi release archive" >&2; exit 1; }
+  tmp_archive="$(mktemp --suffix=.tar.gz)"
+  curl -fL "$release_url" -o "$tmp_archive"
   tmp_dir="$(mktemp -d)"
-  unzip -q "$tmp_zip" -d "$tmp_dir"
+  if [[ "$release_url" == *.zip ]]; then
+    unzip -q "$tmp_archive" -d "$tmp_dir"
+  else
+    tar -xzf "$tmp_archive" -C "$tmp_dir"
+  fi
   extracted="$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  [[ -n "$extracted" ]] || { echo "ERROR: Jitsi release archive is empty" >&2; exit 1; }
+  [[ -n "$extracted" ]] || { echo "ERROR: official Jitsi release archive is empty" >&2; exit 1; }
   rm -rf "$BASE_DIR"
   mv "$extracted" "$BASE_DIR"
-  rm -rf "$tmp_dir" "$tmp_zip"
+  rm -rf "$tmp_dir" "$tmp_archive"
 fi
 
 cd "$BASE_DIR"
