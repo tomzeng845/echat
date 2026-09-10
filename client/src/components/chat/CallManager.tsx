@@ -48,6 +48,13 @@ import {
   setNativeCallAudioRoute,
   stopIncomingCallAlert,
 } from "@/lib/mobile-native";
+import {
+  recordAudioState,
+  recordCallQuality,
+  recordIceRestart,
+  recordNoAudio,
+  recordOutputDevice,
+} from "@/lib/runtime-diagnostics";
 
 export type CallManagerHandle = {
   start: (conversation: Conversation, mode: "audio" | "video") => Promise<void>;
@@ -162,6 +169,10 @@ function formatCallDuration(totalSeconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function activeCallIsConnected(call: ActiveCall | null) {
+  return call?.status === "connected";
+}
+
 const CallManager = forwardRef<
   CallManagerHandle,
   { user: User; connection: HubConnection | null }
@@ -182,6 +193,7 @@ const CallManager = forwardRef<
   const previousStats = useRef(
     new Map<string, { packetsLost: number; packetsReceived: number }>()
   );
+  const noAudioSince = useRef(new Map<string, number>());
   const rtcConfigRef = useRef<RTCConfiguration>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   });
@@ -192,6 +204,8 @@ const CallManager = forwardRef<
   const [connectedAt, setConnectedAt] = useState<number | null>(null);
   const connectedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [networkQuality, setNetworkQuality] = useState("检测中");
   callRef.current = call;
   speakerOnRef.current = speakerOn;
 
@@ -258,6 +272,9 @@ const CallManager = forwardRef<
       reports.push(report as Record<string, unknown>)
     );
     const inbound = reports.filter(report => report.type === "inbound-rtp");
+    const audioInbound = inbound.filter(
+      report => report.kind === "audio" || report.mediaType === "audio"
+    );
     const candidate = reports.find(
       report => report.type === "candidate-pair" && report.state === "succeeded"
     );
@@ -297,6 +314,43 @@ const CallManager = forwardRef<
       jitter,
       Number(candidate?.currentRoundTripTime || 0)
     );
+    const rttMs = Number(candidate?.currentRoundTripTime || 0) * 1000;
+    if (rttMs > 0) setLatencyMs(Math.round(rttMs));
+    setNetworkQuality(
+      quality === "excellent" || quality === "good"
+        ? "良好"
+        : quality === "degraded"
+          ? "一般"
+          : "较差"
+    );
+    recordCallQuality({ quality, rttMs, packetsLost, packetsReceived, jitter });
+    const audioPackets = audioInbound.reduce(
+      (total, report) => total + Number(report.packetsReceived || 0),
+      0
+    );
+    const audioPrevious = previousStats.current.get(`${peerKey}:audio`);
+    const audioDelta = Math.max(0, audioPackets - (audioPrevious?.packetsReceived || 0));
+    if (peerKey) {
+      previousStats.current.set(`${peerKey}:audio`, {
+        packetsLost: 0,
+        packetsReceived: audioPackets,
+      });
+      const remoteHasAudio = remoteStreams[peerKey]?.getAudioTracks().length;
+      if (activeCallIsConnected(callRef.current) && remoteHasAudio) {
+        const started = noAudioSince.current.get(peerKey);
+        if (audioDelta > 0) noAudioSince.current.delete(peerKey);
+        else if (!started) noAudioSince.current.set(peerKey, Date.now());
+        else if (Date.now() - started > 8000) {
+          const last = lastIceRestart.current.get(`${peerKey}:audio`) || 0;
+          if (Date.now() - last > 10000) {
+            lastIceRestart.current.set(`${peerKey}:audio`, Date.now());
+            recordNoAudio({ peerKey, audioPackets });
+            recordIceRestart({ peerKey, reason: "no-audio-data" });
+            peer.restartIce();
+          }
+        }
+      }
+    }
     const bitrate = adaptiveBitrate(quality, mode === "video");
     for (const sender of peer.getSenders()) {
       const parameters = sender.getParameters();
@@ -427,6 +481,7 @@ const CallManager = forwardRef<
     audioRouteTimers.current.forEach(window.clearTimeout);
     audioRouteTimers.current = [];
     lastIceRestart.current.clear();
+    noAudioSince.current.clear();
     previousStats.current.clear();
     peers.current.forEach(peer => peer.close());
     peers.current.clear();
@@ -444,6 +499,8 @@ const CallManager = forwardRef<
     connectedAtRef.current = null;
     setConnectedAt(null);
     setElapsedSeconds(0);
+    setLatencyMs(null);
+    setNetworkQuality("检测中");
     setCall(null);
   }
 
@@ -762,11 +819,23 @@ const CallManager = forwardRef<
           </h2>
         </div>
         <p className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-slate-300">
-          {call.status === "connected"
+        {call.status === "connected"
             ? `${statusText} · ${durationText}`
             : statusText}
         </p>
       </header>
+      {call.status === "connected" && (
+        <div className="flex justify-center gap-2 px-4 text-[11px] text-slate-300">
+          <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1">
+            {speakerOn ? <Volume2 size={13} /> : <Volume1 size={13} />}
+            {speakerOn ? "外放" : "听筒"}
+          </span>
+          <span className="rounded-full bg-white/10 px-2.5 py-1">
+            网络 {networkQuality}
+            {latencyMs === null ? " · 延迟检测中" : ` · ${latencyMs} ms`}
+          </span>
+        </div>
+      )}
       <div className="relative flex flex-1 items-center justify-center overflow-hidden p-4 md:p-8">
         {call.mode === "audio" &&
           remoteEntries.map(([id, stream]) => (

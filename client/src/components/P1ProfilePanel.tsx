@@ -40,6 +40,7 @@ import {
 } from "@/lib/mobile-native";
 import { pushStatusLabel } from "@/lib/push-status";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
+import { exportDiagnosticLog, info as logInfo } from "@/lib/runtime-diagnostics";
 
 export default function P1ProfilePanel({
   user,
@@ -238,6 +239,17 @@ export default function P1ProfilePanel({
       toast.success("后台来电常驻服务已运行");
     } catch {
       toast.error("暂时无法配置后台来电");
+    }
+  }
+
+  async function exportRuntimeLogs() {
+    try {
+      logInfo("settings", "User requested runtime log export");
+      await exportDiagnosticLog();
+      toast.success("运行日志已导出，请将文件发送给技术支持");
+    } catch (cause) {
+      logInfo("settings", "Runtime log export failed", cause);
+      toast.error("运行日志导出失败，请稍后重试");
     }
   }
 
@@ -534,6 +546,12 @@ export default function P1ProfilePanel({
               : "当前使用 P2P；配置 TURN/SFU 后自动升级"
           )
         }
+      />
+      <Action
+        icon={FileText}
+        title="导出运行日志"
+        value="排查无声音、断连问题"
+        onClick={exportRuntimeLogs}
       />
       <Action
         icon={FileText}
