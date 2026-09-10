@@ -396,6 +396,13 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
         if var call = pendingCall,
            let uuid = UUID(uuidString: call["nativeUuid"] as? String ?? ""),
            uuid == action.callUUID {
+            // A CallKit answer can happen while the WebView is still in the
+            // background. Prepare the voice-chat category before JS starts
+            // getUserMedia/RTCPeerConnection; didActivate will make it active
+            // again after CallKit owns the audio session.
+            speakerPreferred = false
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])
             call["answerRequested"] = true
             savePending(call)
             plugin?.emitIncomingCall(call)
