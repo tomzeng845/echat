@@ -225,7 +225,7 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func clearCallListenerAlert(_ call: CAPPluginCall) {
         let callId = call.getString("callId") ?? ""
-        EChatVoipManager.shared.endCall(callId: callId, notifyPlugin: false)
+        EChatVoipManager.shared.clearCallListenerAlert(callId: callId)
         call.resolve()
     }
 
@@ -266,6 +266,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private var registry: PKPushRegistry?
     private var provider: CXProvider?
     private let pendingKey = "echat.ios.pending-call.v1"
+    private let activeKey = "echat.ios.active-call.v1"
     private let pendingClearedKey = "echat.ios.pending-cleared-call.v1"
     private let voipTokenKey = "echat.ios.voip-token.v1"
 
@@ -394,16 +395,21 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         let pending = pendingCall
+        let active = activeCall
         let pendingUuid = UUID(uuidString: pending?["nativeUuid"] as? String ?? "")
-        let callId = pendingUuid == action.callUUID ? pending?["callId"] as? String ?? "" : ""
+        let activeUuid = UUID(uuidString: active?["nativeUuid"] as? String ?? "")
+        let isPending = pendingUuid == action.callUUID
+        let selected = isPending ? pending : active
+        let callId = (isPending ? pending?["callId"] : active?["callId"]) as? String ?? ""
         if !callId.isEmpty {
             let event: [String: Any] = [
                 "callId": callId,
-                "conversationId": pending?["conversationId"] as? String ?? "",
-                "callerId": pending?["callerId"] as? String ?? "",
-                "reason": "declined"
+                "conversationId": selected?["conversationId"] as? String ?? "",
+                "callerId": selected?["callerId"] as? String ?? "",
+                "reason": isPending ? "declined" : "ended"
             ]
             clearPendingCall()
+            clearActiveCall()
             emitOrStoreClearedCall(event)
         }
         action.fulfill()
@@ -420,31 +426,68 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
     func providerDidReset(_ provider: CXProvider) {
         clearPendingCall()
+        clearActiveCall()
     }
 
     func endCall(callId: String, notifyPlugin: Bool) {
         guard !callId.isEmpty else { return }
-        guard let pending = pendingCall,
-              pending["callId"] as? String == callId,
-              let uuid = UUID(uuidString: pending["nativeUuid"] as? String ?? callId)
+        let stored = [pendingCall, activeCall].compactMap { $0 }.first {
+            $0["callId"] as? String == callId
+        }
+        guard let stored,
+              let uuid = UUID(uuidString: stored["nativeUuid"] as? String ?? callId)
         else {
             if notifyPlugin { emitOrStoreClearedCall(["callId": callId, "reason": "ended"]) }
             return
         }
         provider?.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
         clearPendingCall()
+        clearActiveCall()
         if notifyPlugin {
             emitOrStoreClearedCall([
                 "callId": callId,
-                "conversationId": pending["conversationId"] as? String ?? "",
-                "callerId": pending["callerId"] as? String ?? "",
+                "conversationId": stored["conversationId"] as? String ?? "",
+                "callerId": stored["callerId"] as? String ?? "",
                 "reason": "ended"
             ])
         }
     }
 
+    func clearCallListenerAlert(callId: String) {
+        guard !callId.isEmpty else { return }
+        if pendingCall?["callId"] as? String == callId,
+           pendingCall?["answerRequested"] as? Bool == true {
+            acknowledgeAnswer(callId: callId)
+        } else {
+            endCall(callId: callId, notifyPlugin: false)
+        }
+    }
+
+    /// Removes the pending incoming-call payload after the user answers.
+    /// This must not report a CallKit ended reason: the CallKit call remains
+    /// active while WebRTC owns the media session.
+    func acknowledgeAnswer(callId: String) {
+        guard !callId.isEmpty else { return }
+        guard var pending = pendingCall,
+              pending["callId"] as? String == callId else { return }
+        pending["answerRequested"] = true
+        saveActive(pending)
+        clearPendingCall()
+    }
+
     func clearPendingCall() {
         UserDefaults.standard.removeObject(forKey: pendingKey)
+    }
+
+    private var activeCall: [String: Any]? {
+        guard let data = UserDefaults.standard.data(forKey: activeKey),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return value
+    }
+
+    private func clearActiveCall() {
+        UserDefaults.standard.removeObject(forKey: activeKey)
     }
 
     func consumePendingClearedCall() -> [String: Any]? {
@@ -467,5 +510,10 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private func savePending(_ call: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: call) else { return }
         UserDefaults.standard.set(data, forKey: pendingKey)
+    }
+
+    private func saveActive(_ call: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: call) else { return }
+        UserDefaults.standard.set(data, forKey: activeKey)
     }
 }

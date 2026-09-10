@@ -110,7 +110,6 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.accepted", new { conversationId, callId, userId = user.Id, displayName = user.DisplayName, avatarUrl = user.AvatarUrl });
         await NotifyCallListenersClearedAsync(call.ParticipantIds, callId, "accepted");
-        _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
     public async Task CallPrepareAnswer(string conversationId, string callId)
