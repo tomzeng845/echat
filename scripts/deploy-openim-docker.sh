@@ -123,17 +123,21 @@ configure_env() {
   pushd "$INSTALL_DIR" >/dev/null
   [[ -f .env ]] || fail "官方仓库缺少 .env。"
   cp -n .env .env.original 2>/dev/null || true
-  local mongo_secret redis_secret minio_secret openim_secret
+  local mongo_secret redis_secret minio_secret openim_secret kafka_username kafka_password etcd_username etcd_password
   mongo_secret="$(random_secret)"
   redis_secret="$(random_secret)"
   minio_secret="$(random_secret)"
   openim_secret="$(random_secret)"
+  kafka_username="openim_kafka"
+  kafka_password="$(random_secret)"
+  etcd_username="openim_etcd"
+  etcd_password="$(random_secret)"
   local external="${MINIO_SCHEME}://${PUBLIC_IP}:10005"
-  python3 - "$DOMAIN" "$PUBLIC_IP" "$TIMEZONE" "$external" "$mongo_secret" "$redis_secret" "$minio_secret" "$openim_secret" <<'PY'
+  python3 - "$DOMAIN" "$PUBLIC_IP" "$TIMEZONE" "$external" "$mongo_secret" "$redis_secret" "$minio_secret" "$openim_secret" "$kafka_username" "$kafka_password" "$etcd_username" "$etcd_password" <<'PY'
 from pathlib import Path
 import re, sys
 path = Path('.env')
-domain, public_ip, timezone, external, mongo, redis, minio, openim = sys.argv[1:]
+domain, public_ip, timezone, external, mongo, redis, minio, openim, kafka_user, kafka_pass, etcd_user, etcd_pass = sys.argv[1:]
 text = path.read_text()
 values = {
     'DATA_DIR': str(Path.cwd()) + '/',
@@ -142,6 +146,10 @@ values = {
     'MINIO_EXTERNAL_ADDRESS': external,
     'MINIO_SECRET_ACCESS_KEY': minio,
     'OPENIM_SECRET': openim,
+    'KAFKA_USERNAME': kafka_user,
+    'KAFKA_PASSWORD': kafka_pass,
+    'ETCD_USERNAME': etcd_user,
+    'ETCD_PASSWORD': etcd_pass,
     'API_URL': 'http://openim-server:10002',
     'GRAFANA_URL': f'http://{domain}:13000/',
 }

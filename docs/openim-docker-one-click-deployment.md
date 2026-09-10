@@ -60,6 +60,8 @@ sudo bash deploy-openim-docker.sh \
   --install-dir /srv/openim-docker
 ```
 
+脚本会为 MongoDB、Redis、MinIO、OpenIM、Kafka 和 etcd 自动生成随机凭据，并写入 `/opt/openim-docker/.env`。因此正常运行时不应再出现 `KAFKA_USERNAME`、`KAFKA_PASSWORD`、`ETCD_USERNAME` 或 `ETCD_PASSWORD` 未设置的警告。已有部署可先备份 `.env`，再重新运行脚本时使用 `--force`；脚本不会删除数据卷。
+
 如果服务器已有同名目录，脚本默认停止并保护现有数据。确认需要重新获取官方 Release 和重新生成配置时，才使用 `--force`。该选项不会主动删除 Docker 数据卷，但执行前仍应完成备份。
 
 ## 三、HTTPS 和 WSS
@@ -109,6 +111,32 @@ sudo docker compose logs -f openim-server openim-chat
 ```
 
 首次启动需要等待约 30–120 秒。若某个服务短暂出现连接拒绝，先等待依赖服务完成初始化，再重新检查。
+
+如果 `docker compose pull` 报错 `network is unreachable`，并且错误地址是 Docker Hub 的 IPv6 地址，说明服务器没有可用 IPv6 路由。该问题发生在 Docker 拉取镜像阶段，不是 OpenIM 镜像或账号配置错误。可先确认：
+
+```bash
+curl -4 -I --max-time 15 https://registry-1.docker.io/v2/
+curl -6 -I --max-time 15 https://registry-1.docker.io/v2/
+ip -6 route
+```
+
+若 IPv4 正常、IPv6 失败，可临时让 Docker 只使用 IPv4，最简单的方式是关闭 Docker 的 IPv6 配置后重启 Docker（不会删除镜像或数据卷）：
+
+```bash
+sudo mkdir -p /etc/docker
+sudo cp -a /etc/docker/daemon.json /etc/docker/daemon.json.backup.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
+sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+{
+  "ipv6": false
+}
+JSON
+sudo systemctl restart docker
+cd /opt/openim-docker
+sudo docker compose pull
+sudo docker compose up -d
+```
+
+如果服务器必须保留 IPv6，则应修复服务器供应商的 IPv6 默认路由，而不是删除 Docker 数据。也可以先为 Docker 配置可用的 DNS，例如在 `/etc/docker/daemon.json` 中加入 `"dns": ["1.1.1.1", "8.8.8.8"]`，然后重启 Docker；DNS 修复无法替代缺失的 IPv6 路由。
 
 检查 Docker 网络中的核心容器：
 
