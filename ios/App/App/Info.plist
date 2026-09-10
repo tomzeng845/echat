@@ -24,9 +24,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>E聊需要使用摄像头进行视频通话、扫一扫和拍摄图片。</string>
-	<key>NSMicrophoneUsageDescription</key>
+		<key>NSCameraUsageDescription</key>
+		<string>E聊需要使用摄像头进行视频通话、扫一扫和拍摄图片。</string>
+		<key>NSCalendarsUsageDescription</key>
+		<string>E聊不会访问你的日历；此说明用于满足通话组件及其系统依赖的隐私权限声明要求。</string>
+		<key>NSMicrophoneUsageDescription</key>
 	<string>E聊需要使用麦克风发送语音消息并进行语音或视频通话。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>E聊需要读取你选择的图片和视频以发送给聊天联系人。</string>
