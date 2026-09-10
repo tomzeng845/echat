@@ -193,6 +193,20 @@ jobs:
           </plist>
           PLIST
 
+          PROFILE_UUID="$PROFILE_UUID" python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          project = Path("ios/App/App.xcodeproj/project.pbxproj")
+          text = project.read_text()
+          profile = os.environ["PROFILE_UUID"]
+          text = text.replace(
+              "CODE_SIGN_STYLE = Automatic;",
+              f"CODE_SIGN_STYLE = Manual;\\n\\t\\t\\t\\tPROVISIONING_PROFILE_SPECIFIER = {profile};",
+          )
+          project.write_text(text)
+          PY
+
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
@@ -203,9 +217,7 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="$ECHAT_IOS_BUNDLE_ID" \
             MARKETING_VERSION="$ECHAT_IOS_VERSION" \
             CURRENT_PROJECT_VERSION="$ECHAT_IOS_BUILD_NUMBER" \
-            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY='Apple Distribution' \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
             clean archive
 
           xcodebuild \
