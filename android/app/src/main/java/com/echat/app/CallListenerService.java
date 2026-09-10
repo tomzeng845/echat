@@ -111,7 +111,12 @@ public class CallListenerService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        appActive = preferences().getBoolean(EXTRA_ACTIVE, true);
+        // If Harmony/Android recreates this service while the screen is locked,
+        // the last persisted foreground value may still be true. Treat a
+        // process restart as background until the foreground WebView explicitly
+        // configures the listener again; otherwise an incoming call is received
+        // by SignalR but no lock-screen notification is shown.
+        appActive = false;
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "EChat:CallListener");
         wakeLock.setReferenceCounted(false);
@@ -147,7 +152,9 @@ public class CallListenerService extends Service {
                     .putString(EXTRA_HUB_URL, hubUrl)
                     .putString(EXTRA_TOKEN, token)
                     .putString(EXTRA_USER_ID, userId == null ? "" : userId)
+                    .putBoolean(EXTRA_ACTIVE, true)
                     .apply();
+                appActive = true;
                 reconnectNow();
             }
         } else {
