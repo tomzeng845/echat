@@ -98,6 +98,11 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
                 let options = JitsiMeetConferenceOptions.fromBuilder { builder in
                     builder.serverURL = url
                     builder.room = roomName
+                    // The E聊 signaling layer already authenticated the call
+                    // and selected the room. Do not show Jitsi's join form.
+                    builder.setFeatureFlag("welcomepage.enabled", withBoolean: false)
+                    builder.setFeatureFlag("prejoinpage.enabled", withBoolean: false)
+                    builder.setConfigOverride("requireDisplayName", withBoolean: false)
                     builder.setConfigOverride("prejoinPageEnabled", withBoolean: false)
                     builder.setConfigOverride(
                         "startWithVideoMuted",
