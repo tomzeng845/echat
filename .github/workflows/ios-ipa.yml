@@ -137,6 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm ios:sync
+          pod install --project-directory=ios/App --repo-update
           pnpm ios:validate
           pnpm exec tsc --noEmit
 
@@ -145,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -resolvePackageDependencies \
-            -project ios/App/App.xcodeproj \
+            -workspace ios/App/App.xcworkspace \
             -scheme App
 
       - name: Archive and export signed IPA
@@ -193,7 +194,7 @@ jobs:
           PLIST
 
           xcodebuild \
-            -project ios/App/App.xcodeproj \
+            -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \

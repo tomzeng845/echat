@@ -106,8 +106,22 @@ type MediaPermissionsPlugin = {
   }): Promise<{ camera: boolean; microphone: boolean }>;
 };
 
+type JitsiCallPlugin = {
+  join(options: {
+    serverUrl: string;
+    roomName: string;
+    mode: "audio" | "video";
+  }): Promise<{ started: boolean }>;
+  leave(): Promise<{ left: boolean }>;
+  addListener(
+    eventName: "closed",
+    listener: () => void
+  ): Promise<PluginListenerHandle>;
+};
+
 const MediaPermissions =
   registerPlugin<MediaPermissionsPlugin>("MediaPermissions");
+const JitsiCall = registerPlugin<JitsiCallPlugin>("JitsiCall");
 let pushState: NativePushState = Capacitor.isNativePlatform()
   ? "prompt"
   : "web";
@@ -129,6 +143,27 @@ export function isNativeAndroid() {
 
 export function isNativeIos() {
   return Capacitor.getPlatform() === "ios";
+}
+
+export function isNativeJitsiCallAvailable() {
+  return Capacitor.isNativePlatform() && (isNativeIos() || isNativeAndroid());
+}
+
+export async function joinNativeJitsiCall(options: {
+  roomName: string;
+  mode: "audio" | "video";
+}) {
+  if (!isNativeJitsiCallAvailable()) return { started: false };
+  return JitsiCall.join({
+    serverUrl: "https://meet.jit.si",
+    roomName: options.roomName,
+    mode: options.mode,
+  });
+}
+
+export async function leaveNativeJitsiCall() {
+  if (!isNativeJitsiCallAvailable()) return;
+  await JitsiCall.leave();
 }
 
 export function isNativeMobile() {

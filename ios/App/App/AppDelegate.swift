@@ -5,6 +5,7 @@ import AudioToolbox
 import PushKit
 import CallKit
 import UserNotifications
+import JitsiMeetSDK
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -56,6 +57,78 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 public class MyViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(MediaPermissionsPlugin())
+        bridge?.registerPluginInstance(JitsiCallPlugin())
+    }
+}
+
+@objc(JitsiCallPlugin)
+public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate {
+    public let identifier = "JitsiCallPlugin"
+    public let jsName = "JitsiCall"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "join", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "leave", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var jitsiView: JitsiMeetView?
+    private weak var hostViewController: UIViewController?
+
+    @objc func join(_ call: CAPPluginCall) {
+        let serverURL = call.getString("serverUrl") ?? "https://meet.jit.si"
+        let roomName = call.getString("roomName") ?? ""
+        let mode = call.getString("mode") ?? "audio"
+        guard !roomName.isEmpty, let url = URL(string: serverURL) else {
+            call.reject("Jitsi 服务器地址或房间名无效")
+            return
+        }
+        DispatchQueue.main.async {
+            guard let presenter = self.bridge?.viewController else {
+                call.reject("无法获取 iOS 页面")
+                return
+            }
+            let host = UIViewController()
+            host.view.backgroundColor = .black
+            let view = JitsiMeetView(frame: host.view.bounds)
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.delegate = self
+            host.view.addSubview(view)
+            self.hostViewController = host
+            self.jitsiView = view
+            presenter.present(host, animated: true) {
+                let options = JitsiMeetConferenceOptions.fromBuilder { builder in
+                    builder.serverURL = url
+                    builder.room = roomName
+                    builder.audioOnly = mode == "audio"
+                    builder.audioMuted = false
+                    builder.videoMuted = mode != "video"
+                    builder.welcomePageEnabled = false
+                    builder.setConfigOverride("prejoinPageEnabled", withBoolean: false)
+                }
+                view.join(options)
+                call.resolve(["started": true])
+            }
+        }
+    }
+
+    @objc func leave(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.jitsiView?.hangUp()
+            self.jitsiView?.removeFromSuperview()
+            self.jitsiView = nil
+            self.hostViewController?.dismiss(animated: true)
+            self.hostViewController = nil
+            call.resolve(["left": true])
+        }
+    }
+
+    public func conferenceTerminated(_ data: [AnyHashable: Any]!) {
+        DispatchQueue.main.async {
+            self.jitsiView?.removeFromSuperview()
+            self.jitsiView = nil
+            self.hostViewController?.dismiss(animated: true)
+            self.hostViewController = nil
+            self.notifyListeners("closed", data: [:])
+        }
     }
 }
 

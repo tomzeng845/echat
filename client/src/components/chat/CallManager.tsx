@@ -43,6 +43,9 @@ import {
   consumePendingNativeCall,
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
+  isNativeJitsiCallAvailable,
+  joinNativeJitsiCall,
+  leaveNativeJitsiCall,
   notifyIncomingEvent,
   playOutgoingCallAlert,
   setNativeCallAudioRoute,
@@ -238,10 +241,17 @@ function activeCallIsConnected(call: ActiveCall | null) {
   return call?.status === "connected";
 }
 
+function nativeJitsiRoomName(call: Pick<ActiveCall, "conversationId" | "callId">) {
+  const safeConversation = call.conversationId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const safeCall = call.callId.replace(/[^a-zA-Z0-9_-]/g, "");
+  return `echat-${safeConversation}-${safeCall}`.slice(0, 220);
+}
+
 const CallManager = forwardRef<
   CallManagerHandle,
   { user: User; connection: HubConnection | null }
 >(function CallManager({ user, connection }, ref) {
+  const nativeJitsi = isNativeJitsiCallAvailable();
   const [call, setCall] = useState<ActiveCall | null>(null);
   const callRef = useRef<ActiveCall | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -583,6 +593,7 @@ const CallManager = forwardRef<
     pendingIce.current.clear();
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
+    if (nativeJitsi) await leaveNativeJitsiCall().catch(() => undefined);
     if (active) await clearNativeCallListenerAlert(active.callId);
     await stopIncomingCallAlert();
     await endNativeCallAudioSession().catch(() => undefined);
@@ -610,7 +621,6 @@ const CallManager = forwardRef<
         return;
       }
       try {
-        await acquire(mode);
         const next: ActiveCall = {
           callId: createUuid(),
           conversationId: conversation.id,
@@ -618,6 +628,7 @@ const CallManager = forwardRef<
           mode,
           status: "calling",
         };
+        if (!nativeJitsi) await acquire(mode);
         setMembers(
           await api<ConversationMember[]>(
             `/api/conversations/${conversation.id}/members`
@@ -697,7 +708,14 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
-      await createPeer(participant.userId, true);
+      if (nativeJitsi) {
+        await joinNativeJitsiCall({
+          roomName: nativeJitsiRoomName(active),
+          mode: active.mode,
+        });
+      } else {
+        await createPeer(participant.userId, true);
+      }
     };
     const signaled = async (signal: CallSignal) => {
       const active = callRef.current;
@@ -838,7 +856,7 @@ const CallManager = forwardRef<
       );
       await clearNativeCallListenerAlert(active.callId);
       await stopIncomingCallAlert();
-      await acquire(active.mode);
+      if (!nativeJitsi) await acquire(active.mode);
       setMembers(
         await api<ConversationMember[]>(
           `/api/conversations/${active.conversationId}/members`
@@ -853,6 +871,12 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
+      if (nativeJitsi) {
+        await joinNativeJitsiCall({
+          roomName: nativeJitsiRoomName(active),
+          mode: active.mode,
+        });
+      }
     } catch (cause) {
       await connection
         .invoke(
