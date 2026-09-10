@@ -126,10 +126,36 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         element.volume = 1;
         const needsResume =
           element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
+        recordAudioState({
+          event: "play-attempt",
+          paused: element.paused,
+          readyState: element.readyState,
+          streamActive: stream.active,
+          tracks: stream.getAudioTracks().map(track => ({
+            id: track.id,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+          })),
+        });
         if (needsResume)
           window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
-        if (needsResume)
-          element.play().catch(() => undefined);
+        element.play().then(
+          () =>
+            recordAudioState({
+              event: "play-succeeded",
+              paused: element.paused,
+              readyState: element.readyState,
+            }),
+          error =>
+            recordAudioState({
+              event: "play-failed",
+              name: error instanceof DOMException ? error.name : "unknown",
+              message: error instanceof Error ? error.message : String(error),
+              paused: element.paused,
+              readyState: element.readyState,
+            })
+        );
       };
       element.srcObject = stream;
       stream.getAudioTracks().forEach(track => {
@@ -148,6 +174,16 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         window.setTimeout(play, delay)
       );
       const watchdog = window.setInterval(play, 2000);
+      recordAudioState({
+        event: "remote-audio-attached",
+        streamActive: stream.active,
+        tracks: stream.getAudioTracks().map(track => ({
+          id: track.id,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState,
+        })),
+      });
       return () => {
         disposed = true;
         retries.forEach(window.clearTimeout);

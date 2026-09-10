@@ -1,0 +1,8 @@
+bundleId=com.tomzeng845.echat
+version=0.9.0
+build=202
+api=https://platform.superseller88.com:2099
+profileUuid=be3ef7da-d200-4d97-b5df-41cebabdca07
+generatedAtUtc=2026-09-10T12:25:25Z
+githubRunId=34476331799
+githubRunAttempt=1
