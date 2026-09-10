@@ -372,12 +372,16 @@ const CallManager = forwardRef<
         const started = noAudioSince.current.get(peerKey);
         if (audioDelta > 0) noAudioSince.current.delete(peerKey);
         else if (!started) noAudioSince.current.set(peerKey, Date.now());
-        else if (Date.now() - started > 8000) {
+        else if (
+          Date.now() - started > 8000 &&
+          (peer.iceConnectionState === "failed" ||
+            peer.iceConnectionState === "disconnected")
+        ) {
           const last = lastIceRestart.current.get(`${peerKey}:audio`) || 0;
           if (Date.now() - last > 10000) {
             lastIceRestart.current.set(`${peerKey}:audio`, Date.now());
             recordNoAudio({ peerKey, audioPackets });
-            recordIceRestart({ peerKey, reason: "no-audio-data" });
+            recordIceRestart({ peerKey, reason: "no-audio-data-and-ice-failed" });
             toast.info("检测到远端音频中断，正在尝试恢复连接…", {
               duration: 3000,
             });
@@ -386,16 +390,18 @@ const CallManager = forwardRef<
         }
       }
     }
-    const bitrate = adaptiveBitrate(quality, mode === "video");
-    for (const sender of peer.getSenders()) {
-      const parameters = sender.getParameters();
-      if (!parameters.encodings?.length) parameters.encodings = [{}];
-      for (const encoding of parameters.encodings) {
-        encoding.maxBitrate = bitrate.maxBitrate;
-        if (mode === "video")
+    if (mode === "video") {
+      const bitrate = adaptiveBitrate(quality, true);
+      for (const sender of peer.getSenders()) {
+        const parameters = sender.getParameters();
+        if (!parameters.encodings?.length) parameters.encodings = [{}];
+        for (const encoding of parameters.encodings) {
+          if (bitrate.maxBitrate !== undefined)
+            encoding.maxBitrate = bitrate.maxBitrate;
           encoding.scaleResolutionDownBy = bitrate.scaleDownBy;
+        }
+        await sender.setParameters(parameters).catch(() => undefined);
       }
-      await sender.setParameters(parameters).catch(() => undefined);
     }
   }
 

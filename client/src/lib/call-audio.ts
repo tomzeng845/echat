@@ -5,8 +5,6 @@ export type NetworkQuality = "excellent" | "good" | "degraded" | "poor";
 export function preferredAudioConstraints(): MediaTrackConstraints {
   return {
     channelCount: { ideal: 1 },
-    sampleRate: { ideal: 48000 },
-    sampleSize: { ideal: 16 },
     echoCancellation: { ideal: true },
     noiseSuppression: { ideal: true },
     autoGainControl: { ideal: true },
