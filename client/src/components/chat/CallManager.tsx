@@ -616,7 +616,7 @@ const CallManager = forwardRef<
 
   async function accept() {
     const active = callRef.current;
-    if (!active || !connection) return;
+    if (!active || !connection || active.status !== "incoming") return;
     const answering: ActiveCall = { ...active, status: "answering" };
     callRef.current = answering;
     setCall(answering);

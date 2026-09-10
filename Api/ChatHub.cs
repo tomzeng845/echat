@@ -100,6 +100,10 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
+        // CallKit and the foreground UI can both report the same answer. Once
+        // a direct call is active, the second accept is a harmless retry.
+        if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Active)
+            return;
         if (call.Status != CallRecordStatus.Ringing
             && !(conversation.Type == ConversationType.Group && call.Status == CallRecordStatus.Active))
             throw new HubException("CALL_NOT_RINGING");
@@ -117,6 +121,8 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
         var call = await RequireCallAsync(conversationId, callId);
+        if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Active)
+            return;
         if (call.Status != CallRecordStatus.Ringing
             && !(conversation.Type == ConversationType.Group && call.Status == CallRecordStatus.Active))
             throw new HubException("CALL_NOT_RINGING");
