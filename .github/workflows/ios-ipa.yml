@@ -221,14 +221,15 @@ jobs:
           find "$ARCHIVE/Products/Applications" -name embedded.mobileprovision -delete
           cp "$RUNNER_TEMP/app.mobileprovision" "$APP_BUNDLE/embedded.mobileprovision"
 
-          xcodebuild \
-            -exportArchive \
-            -archivePath "$ARCHIVE" \
-            -exportPath "$EXPORT_DIR" \
-            -exportOptionsPlist "$EXPORT_OPTIONS"
-
-          IPA="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.ipa' -print -quit)"
-          [[ -n "$IPA" && -f "$IPA" ]] || { echo "Exported IPA was not found." >&2; exit 4; }
+          # The archive is already signed and contains the app provisioning
+          # profile. Package that signed app directly; Xcode exportArchive
+          # incorrectly tries to apply the app profile to libwebp.framework.
+          rm -rf "$EXPORT_DIR/Payload"
+          mkdir -p "$EXPORT_DIR/Payload"
+          ditto "$APP_BUNDLE" "$EXPORT_DIR/Payload/$(basename "$APP_BUNDLE")"
+          IPA="$EXPORT_DIR/EChat-iOS.ipa"
+          (cd "$EXPORT_DIR" && /usr/bin/zip -qry "$IPA" Payload)
+          [[ -s "$IPA" ]] || { echo "Packaged IPA was not found." >&2; exit 4; }
           ARTIFACT="releases/EChat-iOS-${ECHAT_IOS_VERSION}-${ECHAT_IOS_BUILD_NUMBER}.ipa"
           cp "$IPA" "$ARTIFACT"
           ARTIFACT_BASENAME="$(basename "$ARTIFACT")"
