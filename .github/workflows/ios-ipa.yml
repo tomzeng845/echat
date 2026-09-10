@@ -221,10 +221,12 @@ jobs:
             clean archive
 
           # Embedded frameworks must never carry the app provisioning profile.
-          # Keep the profile on the .app bundle for export signing only.
-          find "$ARCHIVE/Products/Applications" -type f \
-            -path "*/Frameworks/*.framework/embedded.mobileprovision" \
-            -delete
+          # Preserve the profile on the .app bundle, remove every other copy,
+          # then restore the app profile for export signing.
+          APP_BUNDLE="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+          cp "$APP_BUNDLE/embedded.mobileprovision" "$RUNNER_TEMP/app.mobileprovision"
+          find "$ARCHIVE/Products/Applications" -name embedded.mobileprovision -delete
+          cp "$RUNNER_TEMP/app.mobileprovision" "$APP_BUNDLE/embedded.mobileprovision"
 
           xcodebuild \
             -exportArchive \
