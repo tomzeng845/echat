@@ -9,7 +9,16 @@ export function toggledSpeakerState(current: boolean) {
   return !current;
 }
 
-export function shouldCloseCallFromNativeClear(status: CallStatus) {
+export function shouldCloseCallFromNativeClear(
+  status: CallStatus,
+  reason?: string
+) {
+  if (
+    ["ended", "rejected", "declined", "busy", "permission"].includes(
+      reason || ""
+    )
+  )
+    return true;
   return status === "incoming";
 }
 

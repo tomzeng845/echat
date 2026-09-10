@@ -438,7 +438,7 @@ const CallManager = forwardRef<
         delete next[event.userId];
         return next;
       });
-      if (Object.keys(remoteStreams).length <= 1) finish(false);
+      if (peers.current.size <= 1) void finish(false);
     };
     connection.on("call.invited", invited);
     connection.on("call.accepted", accepted);
@@ -467,7 +467,7 @@ const CallManager = forwardRef<
       const active = callRef.current;
       if (
         active?.callId === callId &&
-        shouldCloseCallFromNativeClear(active.status)
+        shouldCloseCallFromNativeClear(active.status, detail.reason)
       ) {
         if (detail.reason === "declined")
           connection

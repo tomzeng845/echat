@@ -62,6 +62,7 @@ public class MediaPermissionsPlugin extends Plugin {
                         pendingIntentCall = null;
                     JSObject data = new JSObject();
                     data.put("callId", callId);
+                    data.put("reason", intent.getStringExtra("reason"));
                     notifyListeners("callListenerCleared", data);
                 }
             }

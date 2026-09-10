@@ -24,6 +24,13 @@ describe("Android call audio routing", () => {
     expect(shouldCloseCallFromNativeClear("calling")).toBe(false);
   });
 
+  it("ends the local call when native cleanup represents a remote hangup", () => {
+    expect(shouldCloseCallFromNativeClear("calling", "ended")).toBe(true);
+    expect(shouldCloseCallFromNativeClear("connected", "rejected")).toBe(true);
+    expect(shouldCloseCallFromNativeClear("calling", "accepted")).toBe(false);
+    expect(shouldCloseCallFromNativeClear("calling", "answering")).toBe(false);
+  });
+
   it("plays ringback only while waiting for the peer to answer", () => {
     expect(shouldPlayOutgoingRingback("calling")).toBe(true);
     expect(shouldPlayOutgoingRingback("incoming")).toBe(false);

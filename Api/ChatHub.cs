@@ -109,7 +109,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         await repository.UpsertCallAsync(call);
         var user = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.accepted", new { conversationId, callId, userId = user.Id, displayName = user.DisplayName, avatarUrl = user.AvatarUrl });
-        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId, "accepted");
         _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
@@ -125,7 +125,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         call.AnsweringAtUtc ??= [];
         call.AnsweringAtUtc[userId] = DateTime.UtcNow;
         await repository.UpsertCallAsync(call);
-        await Clients.Group($"user:{userId}").SendAsync("call.listener.cleared", new { callId });
+        await Clients.Group($"user:{userId}").SendAsync("call.listener.cleared", new { callId, reason = "answering" });
     }
 
     public async Task CallReject(string conversationId, string callId, string callerId, string reason = "declined")
@@ -136,7 +136,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         if (!conversation.Members.Any(x => x.UserId == callerId && x.LeftAtSequence is null)) throw new HubException("CALLER_NOT_IN_CONVERSATION");
         if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Ringing) { call.Status = CallRecordStatus.Rejected; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = reason; await repository.UpsertCallAsync(call); }
         await Clients.User(callerId).SendAsync("call.rejected", new { conversationId, callId, userId = Context.User!.UserId(), reason });
-        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId, "rejected");
         _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
@@ -157,14 +157,14 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var call = await RequireCallAsync(conversationId, callId);
         if (call.Status is CallRecordStatus.Ringing or CallRecordStatus.Active) { call.Status = CallRecordStatus.Ended; call.EndedAtUtc = DateTime.UtcNow; call.EndReason = "ended"; await repository.UpsertCallAsync(call); }
         await Clients.OthersInGroup($"conversation:{conversationId}").SendAsync("call.ended", new { conversationId, callId, userId = Context.User!.UserId() });
-        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId);
+        await NotifyCallListenersClearedAsync(call.ParticipantIds, callId, "ended");
         _ = push.SendCallEndedAsync(call.ParticipantIds, callId, CancellationToken.None);
     }
 
-    private async Task NotifyCallListenersClearedAsync(IEnumerable<string> participantIds, string callId)
+    private async Task NotifyCallListenersClearedAsync(IEnumerable<string> participantIds, string callId, string reason)
     {
         foreach (var participantId in participantIds.Distinct())
-            await Clients.Group($"user:{participantId}").SendAsync("call.listener.cleared", new { callId });
+            await Clients.Group($"user:{participantId}").SendAsync("call.listener.cleared", new { callId, reason });
     }
 
     private void RequireInteractiveScope()

@@ -135,7 +135,7 @@ public class CallListenerService extends Service {
             return START_STICKY;
         }
         if (ACTION_CLEAR.equals(action)) {
-            clearCall(intent.getStringExtra(EXTRA_CALL_ID));
+            clearCall(intent.getStringExtra(EXTRA_CALL_ID), "answering");
             return START_STICKY;
         }
         if (ACTION_CONFIGURE.equals(action)) {
@@ -180,10 +180,10 @@ public class CallListenerService extends Service {
         hubConnection.setKeepAliveInterval(15_000L);
         hubConnection.setServerTimeout(45_000L);
         hubConnection.on("call.invited", this::handleInvite, IncomingCallPayload.class);
-        hubConnection.on("call.accepted", payload -> clearCall(payload.callId), CallStatePayload.class);
-        hubConnection.on("call.rejected", payload -> clearCall(payload.callId), CallStatePayload.class);
-        hubConnection.on("call.ended", payload -> clearCall(payload.callId), CallStatePayload.class);
-        hubConnection.on("call.listener.cleared", payload -> clearCall(payload.callId), CallStatePayload.class);
+        hubConnection.on("call.accepted", payload -> clearCall(payload.callId, "accepted"), CallStatePayload.class);
+        hubConnection.on("call.rejected", payload -> clearCall(payload.callId, "rejected"), CallStatePayload.class);
+        hubConnection.on("call.ended", payload -> clearCall(payload.callId, "ended"), CallStatePayload.class);
+        hubConnection.on("call.listener.cleared", payload -> clearCall(payload.callId, payload.reason), CallStatePayload.class);
         hubConnection.onClosed(error -> {
             if (generation.get() == currentGeneration && !stopping) scheduleReconnect();
         });
@@ -253,7 +253,7 @@ public class CallListenerService extends Service {
         startRingtone();
     }
 
-    private void clearCall(String callId) {
+    private void clearCall(String callId, String reason) {
         if (callId == null || callId.isBlank()) return;
         boolean duplicateClear = wasRecentlyCleared(callId);
         rememberCleared(callId);
@@ -266,7 +266,9 @@ public class CallListenerService extends Service {
             clearPendingCall();
         }
         if (duplicateClear) return;
-        Intent event = new Intent(ACTION_CLEARED).setPackage(getPackageName()).putExtra(EXTRA_CALL_ID, callId);
+        Intent event = new Intent(ACTION_CLEARED).setPackage(getPackageName())
+            .putExtra(EXTRA_CALL_ID, callId)
+            .putExtra("reason", reason == null ? "ended" : reason);
         sendBroadcast(event);
     }
 
@@ -504,5 +506,6 @@ public class CallListenerService extends Service {
 
     public static class CallStatePayload {
         public String callId;
+        public String reason;
     }
 }
