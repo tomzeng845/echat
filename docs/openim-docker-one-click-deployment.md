@@ -148,6 +148,23 @@ sudo docker compose up -d
 
 如果服务器必须保留 IPv6，则应修复服务器供应商的 IPv6 默认路由，而不是删除 Docker 数据。也可以先为 Docker 配置可用的 DNS，例如在 `/etc/docker/daemon.json` 中加入 `"dns": ["1.1.1.1", "8.8.8.8"]`，然后重启 Docker；DNS 修复无法替代缺失的 IPv6 路由。
 
+如果 Docker 重启后仍然尝试连接 `registry-1.docker.io` 的 IPv6 地址，可在确认该服务器不需要 IPv6 出站业务后，临时禁用宿主机 IPv6：
+
+```bash
+sudo tee /etc/sysctl.d/99-echat-docker-ipv4-only.conf >/dev/null <<'EOF'
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+EOF
+sudo sysctl --system
+sudo systemctl restart docker
+sudo docker pull openim/openim-web-front:release-v3.8.3
+cd /opt/openim-docker
+sudo docker compose pull
+sudo docker compose up -d
+```
+
+该操作只改变网络协议栈偏好，不删除 Docker 镜像、容器、OpenIM 数据或 `.env`。如果服务器还承载必须使用 IPv6 的其他业务，不要执行此回退方案，应修复云服务器的 IPv6 默认路由。
+
 检查 Docker 网络中的核心容器：
 
 ```bash
