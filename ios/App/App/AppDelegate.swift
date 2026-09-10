@@ -278,7 +278,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private let activeKey = "echat.ios.active-call.v1"
     private let pendingClearedKey = "echat.ios.pending-cleared-call.v1"
     private let voipTokenKey = "echat.ios.voip-token.v1"
-    var speakerPreferred = true
+    var speakerPreferred = false
 
     var voipToken: String? {
         UserDefaults.standard.string(forKey: voipTokenKey)

@@ -60,7 +60,9 @@ export function adaptiveBitrate(quality: NetworkQuality, video: boolean) {
 }
 
 export function defaultSpeakerForCallMode(mode: CallMode) {
-  return mode === "video";
+  // Keep both voice and video calls on the earpiece until the user taps
+  // the speaker control.
+  return false;
 }
 
 export function toggledSpeakerState(current: boolean) {

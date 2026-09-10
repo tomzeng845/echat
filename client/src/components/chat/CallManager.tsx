@@ -147,6 +147,12 @@ async function waitForRealtimeConnection(
   return true;
 }
 
+function formatCallDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 const CallManager = forwardRef<
   CallManagerHandle,
   { user: User; connection: HubConnection | null }
@@ -173,8 +179,30 @@ const CallManager = forwardRef<
   const [cameraOn, setCameraOn] = useState(true);
   const [speakerOn, setSpeakerOn] = useState(false);
   const speakerOnRef = useRef(false);
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
+  const connectedAtRef = useRef<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   callRef.current = call;
   speakerOnRef.current = speakerOn;
+
+  function markConnected() {
+    if (connectedAtRef.current !== null) return;
+    const timestamp = Date.now();
+    connectedAtRef.current = timestamp;
+    setConnectedAt(timestamp);
+    setElapsedSeconds(0);
+  }
+
+  useEffect(() => {
+    if (call?.status !== "connected" || connectedAt === null) return;
+    const update = () =>
+      setElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - connectedAt) / 1000))
+      );
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [call?.status, connectedAt]);
 
   useEffect(() => {
     api<RtcConfig>("/api/rtc/config")
@@ -393,6 +421,9 @@ const CallManager = forwardRef<
     setMembers([]);
     setSpeakerOn(false);
     speakerOnRef.current = false;
+    connectedAtRef.current = null;
+    setConnectedAt(null);
+    setElapsedSeconds(0);
     setCall(null);
   }
 
@@ -493,6 +524,7 @@ const CallManager = forwardRef<
       const connected: ActiveCall = { ...active, status: "connected" };
       callRef.current = connected;
       setCall(connected);
+      markConnected();
       await createPeer(participant.userId, true);
     };
     const signaled = async (signal: CallSignal) => {
@@ -648,6 +680,7 @@ const CallManager = forwardRef<
       const connected: ActiveCall = { ...active, status: "connected" };
       callRef.current = connected;
       setCall(connected);
+      markConnected();
     } catch (cause) {
       await connection
         .invoke(
@@ -696,6 +729,7 @@ const CallManager = forwardRef<
         : call.status === "calling"
           ? "正在等待对方接听…"
           : `通话中 · ${remoteEntries.length + 1} 人`;
+  const durationText = formatCallDuration(elapsedSeconds);
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#06111d] text-white">
       <header className="flex h-20 items-center justify-between px-5 md:px-8">
@@ -708,7 +742,9 @@ const CallManager = forwardRef<
           </h2>
         </div>
         <p className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-slate-300">
-          {statusText}
+          {call.status === "connected"
+            ? `${statusText} · ${durationText}`
+            : statusText}
         </p>
       </header>
       <div className="relative flex flex-1 items-center justify-center overflow-hidden p-4 md:p-8">
