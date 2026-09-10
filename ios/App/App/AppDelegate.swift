@@ -98,7 +98,6 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
                 let options = JitsiMeetConferenceOptions.fromBuilder { builder in
                     builder.serverURL = url
                     builder.room = roomName
-                    builder.audioOnly = mode == "audio"
                     builder.audioMuted = false
                     builder.videoMuted = mode != "video"
                     builder.welcomePageEnabled = false
