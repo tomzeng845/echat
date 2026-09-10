@@ -102,8 +102,11 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
                     // and selected the room. Do not show Jitsi's join form.
                     builder.setFeatureFlag("welcomepage.enabled", withBoolean: false)
                     builder.setFeatureFlag("prejoinpage.enabled", withBoolean: false)
+                    builder.setFeatureFlag("lobby-mode.enabled", withBoolean: false)
                     builder.setConfigOverride("requireDisplayName", withBoolean: false)
                     builder.setConfigOverride("prejoinPageEnabled", withBoolean: false)
+                    builder.setConfigOverride("autoKnockLobby", withBoolean: false)
+                    builder.setConfigOverride("lobby.autoKnock", withBoolean: false)
                     builder.setConfigOverride(
                         "startWithVideoMuted",
                         withBoolean: mode != "video"

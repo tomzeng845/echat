@@ -24,6 +24,7 @@ public class JitsiCallPlugin extends Plugin {
                 .setServerURL(new URL(DEFAULT_SERVER_URL))
                 .setFeatureFlag("welcomepage.enabled", false)
                 .setFeatureFlag("prejoinpage.enabled", false)
+                .setFeatureFlag("lobby-mode.enabled", false)
                 .build();
             JitsiMeet.setDefaultConferenceOptions(defaults);
         } catch (MalformedURLException ignored) {
@@ -49,6 +50,7 @@ public class JitsiCallPlugin extends Plugin {
                 .setVideoMuted(!"video".equals(mode))
                 .setFeatureFlag("welcomepage.enabled", false)
                 .setFeatureFlag("prejoinpage.enabled", false)
+                .setFeatureFlag("lobby-mode.enabled", false)
                 .build();
             getActivity().runOnUiThread(() -> {
                 JitsiMeetActivity.launch(getActivity(), options);
