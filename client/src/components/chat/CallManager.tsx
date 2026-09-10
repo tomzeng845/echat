@@ -115,18 +115,23 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       const play = () => {
         element.muted = false;
         element.volume = 1;
-        element.play().catch(() => undefined);
+        if (element.paused) element.play().catch(() => undefined);
       };
       element.srcObject = stream;
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
       element.onloadedmetadata = play;
       element.oncanplay = play;
-      const retries = [0, 250, 1000, 2500].map(delay =>
+      element.onplaying = play;
+      const retries = [0, 250, 1000, 2500, 5000].map(delay =>
         window.setTimeout(play, delay)
       );
       return () => {
         retries.forEach(window.clearTimeout);
         element.onloadedmetadata = null;
         element.oncanplay = null;
+        element.onplaying = null;
       };
     }
   }, [stream]);
@@ -168,6 +173,7 @@ const CallManager = forwardRef<
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
   const qualityTimer = useRef<number | null>(null);
+  const audioRouteTimers = useRef<number[]>([]);
   const lastIceRestart = useRef(new Map<string, number>());
   const previousStats = useRef(
     new Map<string, { packetsLost: number; packetsReceived: number }>()
@@ -357,7 +363,15 @@ const CallManager = forwardRef<
             .catch(() => undefined);
       };
       peer.ontrack = event => {
-        setNativeCallAudioRoute(speakerOnRef.current).catch(() => undefined);
+        event.track.enabled = true;
+        [0, 250, 1000, 2500].forEach(delay => {
+          const timer = window.setTimeout(() => {
+            setNativeCallAudioRoute(speakerOnRef.current).catch(
+              () => undefined
+            );
+          }, delay);
+          audioRouteTimers.current.push(timer);
+        });
         setRemoteStreams(current => ({
           ...current,
           [targetUserId]: event.streams[0] ?? new MediaStream([event.track]),
@@ -406,6 +420,8 @@ const CallManager = forwardRef<
     if (qualityTimer.current !== null)
       window.clearInterval(qualityTimer.current);
     qualityTimer.current = null;
+    audioRouteTimers.current.forEach(window.clearTimeout);
+    audioRouteTimers.current = [];
     lastIceRestart.current.clear();
     previousStats.current.clear();
     peers.current.forEach(peer => peer.close());

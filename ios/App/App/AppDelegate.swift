@@ -426,6 +426,16 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        applyAudioRoute(to: audioSession)
+        [0.15, 0.5, 1.2].forEach { delay in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak audioSession] in
+                guard let self, let audioSession else { return }
+                self.applyAudioRoute(to: audioSession)
+            }
+        }
+    }
+
+    private func applyAudioRoute(to audioSession: AVAudioSession) {
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speakerPreferred { options.insert(.defaultToSpeaker) }
         try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
