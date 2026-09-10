@@ -25,6 +25,8 @@ public class JitsiCallPlugin extends Plugin {
                 .setFeatureFlag("welcomepage.enabled", false)
                 .setFeatureFlag("prejoinpage.enabled", false)
                 .setFeatureFlag("lobby-mode.enabled", false)
+                .setConfigOverride("prejoinConfig.enabled", false)
+                .setConfigOverride("requireDisplayName", false)
                 .build();
             JitsiMeet.setDefaultConferenceOptions(defaults);
         } catch (MalformedURLException ignored) {
@@ -51,6 +53,8 @@ public class JitsiCallPlugin extends Plugin {
                 .setFeatureFlag("welcomepage.enabled", false)
                 .setFeatureFlag("prejoinpage.enabled", false)
                 .setFeatureFlag("lobby-mode.enabled", false)
+                .setConfigOverride("prejoinConfig.enabled", false)
+                .setConfigOverride("requireDisplayName", false)
                 .build();
             getActivity().runOnUiThread(() -> {
                 JitsiMeetActivity.launch(getActivity(), options);

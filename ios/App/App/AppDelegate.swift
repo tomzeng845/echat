@@ -104,6 +104,7 @@ public class JitsiCallPlugin: CAPPlugin, CAPBridgedPlugin, JitsiMeetViewDelegate
                     builder.setFeatureFlag("prejoinpage.enabled", withBoolean: false)
                     builder.setFeatureFlag("lobby-mode.enabled", withBoolean: false)
                     builder.setConfigOverride("requireDisplayName", withBoolean: false)
+                    builder.setConfigOverride("prejoinConfig.enabled", withBoolean: false)
                     builder.setConfigOverride("prejoinPageEnabled", withBoolean: false)
                     builder.setConfigOverride("autoKnockLobby", withBoolean: false)
                     builder.setConfigOverride("lobby.autoKnock", withBoolean: false)
