@@ -680,7 +680,7 @@ const CallManager = forwardRef<
       const videoCapabilities = RTCRtpSender.getCapabilities?.("video");
       if (videoCapabilities) {
         const preferredVideoCodecs = videoCapabilities.codecs.filter(codec =>
-          ["video/VP9", "video/AV1", "video/H264", "video/VP8"].includes(
+          ["video/H264", "video/VP8"].includes(
             codec.mimeType
           )
         );
@@ -688,8 +688,15 @@ const CallManager = forwardRef<
           .getTransceivers()
           .filter(transceiver => transceiver.receiver.track.kind === "video")
           .forEach(transceiver => {
-            if (preferredVideoCodecs.length)
+            if (!preferredVideoCodecs.length) return;
+            try {
               transceiver.setCodecPreferences(preferredVideoCodecs);
+            } catch (error) {
+              recordAudioState({
+                event: "video-codec-preference-failed",
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
           });
       }
       peer
