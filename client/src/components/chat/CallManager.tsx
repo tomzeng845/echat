@@ -123,6 +123,8 @@ function AudioStream({ stream }: { stream: MediaStream }) {
     if (ref.current) {
       const element = ref.current;
       let disposed = false;
+      let playInFlight: Promise<void> | null = null;
+      let rebindTimer: number | null = null;
       const play = () => {
         if (disposed) return;
         element.muted = false;
@@ -141,24 +143,39 @@ function AudioStream({ stream }: { stream: MediaStream }) {
             readyState: track.readyState,
           })),
         });
-        if (needsResume)
-          window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
-        element.play().then(
+        if (!needsResume || playInFlight) return;
+        window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
+        playInFlight = element.play();
+        playInFlight.then(
           () =>
             recordAudioState({
               event: "play-succeeded",
               paused: element.paused,
               readyState: element.readyState,
             }),
-          error =>
+          error => {
+            const name = error instanceof DOMException ? error.name : "unknown";
             recordAudioState({
               event: "play-failed",
-              name: error instanceof DOMException ? error.name : "unknown",
+              name,
               message: error instanceof Error ? error.message : String(error),
               paused: element.paused,
               readyState: element.readyState,
-            })
-        );
+            });
+            if (!disposed && name === "AbortError") {
+              if (rebindTimer !== null) window.clearTimeout(rebindTimer);
+              rebindTimer = window.setTimeout(() => {
+                rebindTimer = null;
+                if (disposed) return;
+                element.srcObject = null;
+                element.srcObject = stream;
+                play();
+              }, 120);
+            }
+          }
+        ).finally(() => {
+          playInFlight = null;
+        });
       };
       element.srcObject = stream;
       stream.getAudioTracks().forEach(track => {
@@ -196,6 +213,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         disposed = true;
         retries.forEach(window.clearTimeout);
         window.clearInterval(watchdog);
+        if (rebindTimer !== null) window.clearTimeout(rebindTimer);
         window.removeEventListener(
           "echat-resume-remote-audio",
           resumeFromUserGesture
