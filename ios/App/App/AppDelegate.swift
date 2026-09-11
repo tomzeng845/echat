@@ -187,7 +187,11 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
                 let session = AVAudioSession.sharedInstance()
                 var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
                 if speaker { options.insert(.defaultToSpeaker) }
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: EChatVoipManager.shared.currentAudioMode,
+                    options: options
+                )
                 try session.setPreferredSampleRate(48_000)
                 try session.setPreferredIOBufferDuration(0.01)
                 try session.setActive(true)
@@ -282,6 +286,11 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private let voipTokenKey = "echat.ios.voip-token.v1"
     private var audioSessionObserversInstalled = false
     var speakerPreferred = false
+
+    var currentAudioMode: AVAudioSession.Mode {
+        let call = activeCall ?? pendingCall
+        return (call?["mode"] as? String) == "video" ? .videoChat : .voiceChat
+    }
 
     var voipToken: String? {
         UserDefaults.standard.string(forKey: voipTokenKey)
@@ -445,7 +454,11 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             // again after CallKit owns the audio session.
             speakerPreferred = false
             let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])
+            try? session.setCategory(
+                .playAndRecord,
+                mode: currentAudioMode,
+                options: [.allowBluetoothHFP]
+            )
             call["answerRequested"] = true
             savePending(call)
             plugin?.emitIncomingCall(call)
@@ -488,7 +501,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private func applyAudioRoute(to audioSession: AVAudioSession) {
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speakerPreferred { options.insert(.defaultToSpeaker) }
-        try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+        try? audioSession.setCategory(.playAndRecord, mode: currentAudioMode, options: options)
         try? audioSession.setPreferredSampleRate(48_000)
         try? audioSession.setPreferredIOBufferDuration(0.01)
         try? audioSession.setActive(true)

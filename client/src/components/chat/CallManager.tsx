@@ -127,6 +127,20 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       let rebindTimer: number | null = null;
       const play = () => {
         if (disposed) return;
+        const tracks = stream.getAudioTracks();
+        if (!tracks.some(track => track.readyState === "live")) {
+          recordAudioState({
+            event: "remote-audio-track-ended",
+            streamActive: stream.active,
+            tracks: tracks.map(track => ({
+              id: track.id,
+              enabled: track.enabled,
+              muted: track.muted,
+              readyState: track.readyState,
+            })),
+          });
+          return;
+        }
         element.muted = false;
         element.volume = 1;
         const needsResume =
@@ -136,7 +150,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
           paused: element.paused,
           readyState: element.readyState,
           streamActive: stream.active,
-          tracks: stream.getAudioTracks().map(track => ({
+          tracks: tracks.map(track => ({
             id: track.id,
             enabled: track.enabled,
             muted: track.muted,
@@ -182,7 +196,12 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         track.enabled = true;
         track.onunmute = play;
         track.onmute = play;
-        track.onended = play;
+        track.onended = () =>
+          recordAudioState({
+            event: "remote-audio-track-ended",
+            trackId: track.id,
+            streamActive: stream.active,
+          });
       });
       element.onloadedmetadata = play;
       element.oncanplay = play;
@@ -608,14 +627,12 @@ const CallManager = forwardRef<
         setRemoteStreams(current => {
           const existing = current[targetUserId];
           const incoming = event.streams[0];
-          if (existing) {
-            if (!existing.getTracks().some(track => track.id === event.track.id))
-              existing.addTrack(event.track);
-            return { ...current };
-          }
+          const tracks = (existing || incoming)?.getTracks() || [];
+          if (!tracks.some(track => track.id === event.track.id))
+            tracks.push(event.track);
           return {
             ...current,
-            [targetUserId]: incoming ?? new MediaStream([event.track]),
+            [targetUserId]: new MediaStream(tracks),
           };
         });
       };
