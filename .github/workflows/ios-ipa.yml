@@ -197,7 +197,7 @@ jobs:
           profile = os.environ["PROFILE_UUID"]
           text = text.replace(
               "CODE_SIGN_STYLE = Automatic;",
-              f"CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGN_IDENTITY = Apple Distribution;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = {profile};",
+              f"CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGN_IDENTITY = \"Apple Distribution\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = {profile};",
           )
           project.write_text(text)
           PY
