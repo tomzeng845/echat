@@ -209,6 +209,11 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       element.onpause = play;
       element.onstalled = play;
       element.onwaiting = play;
+      stream.onaddtrack = play;
+      stream.onremovetrack = () => {
+        if (stream.getAudioTracks().some(track => track.readyState === "live"))
+          play();
+      };
       const retries = [0, 250, 1000, 2500, 5000].map(delay =>
         window.setTimeout(play, delay)
       );
@@ -243,6 +248,8 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         element.onpause = null;
         element.onstalled = null;
         element.onwaiting = null;
+        stream.onaddtrack = null;
+        stream.onremovetrack = null;
         stream.getAudioTracks().forEach(track => {
           track.onunmute = null;
           track.onmute = null;
@@ -627,12 +634,19 @@ const CallManager = forwardRef<
         setRemoteStreams(current => {
           const existing = current[targetUserId];
           const incoming = event.streams[0];
-          const tracks = (existing || incoming)?.getTracks() || [];
-          if (!tracks.some(track => track.id === event.track.id))
-            tracks.push(event.track);
+          if (existing) {
+            const previous = existing.getTracks().find(
+              track => track.id === event.track.id
+            );
+            if (previous && previous.readyState === "ended")
+              existing.removeTrack(previous);
+            if (!existing.getTracks().some(track => track.id === event.track.id))
+              existing.addTrack(event.track);
+            return { ...current };
+          }
           return {
             ...current,
-            [targetUserId]: new MediaStream(tracks),
+            [targetUserId]: incoming ?? new MediaStream([event.track]),
           };
         });
       };
