@@ -5,7 +5,6 @@ import AudioToolbox
 import PushKit
 import CallKit
 import UserNotifications
-import LiveKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -57,7 +56,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 public class MyViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(MediaPermissionsPlugin())
-        bridge?.registerPluginInstance(LiveKitCallPocPlugin())
+        // Keep the experimental LiveKit POC out of the production startup path.
+        // It can be re-enabled explicitly after the real-device launch check.
     }
 }
 
@@ -538,7 +538,6 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         applyAudioRoute(to: audioSession)
-        LiveKitCallPocManager.shared.callKitDidActivate(audioSession)
         var state = audioSessionSnapshot()
         state["reason"] = "callkit-did-activate"
         plugin?.notifyListeners("audioSessionState", data: state)
@@ -568,7 +567,6 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
         callAudioSessionRequested = false
-        LiveKitCallPocManager.shared.callKitDidDeactivate()
         var state = audioSessionSnapshot()
         state["reason"] = "callkit-did-deactivate"
         plugin?.notifyListeners("audioSessionState", data: state)
@@ -666,213 +664,5 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private func saveActive(_ call: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: call) else { return }
         UserDefaults.standard.set(data, forKey: activeKey)
-    }
-}
-
-
-// MARK: - LiveKit iOS native voice POC
-// This path is intentionally opt-in. It does not replace or alter the existing
-// SignalR + WebRTC call manager until the real-device POC passes acceptance.
-@objc(LiveKitCallPocPlugin)
-public final class LiveKitCallPocPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "LiveKitCallPocPlugin"
-    public let jsName = "LiveKitCallPoc"
-    public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setSpeaker", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
-    ]
-
-    @objc func start(_ call: CAPPluginCall) {
-        guard let url = call.getString("url"), !url.isEmpty,
-              let token = call.getString("token"), !token.isEmpty else {
-            call.reject("LiveKit POC 需要 url 和 token")
-            return
-        }
-        let speaker = call.getBool("speaker") ?? false
-        LiveKitCallPocManager.shared.start(url: url, token: token, speaker: speaker) { result in
-            switch result {
-            case .success(let state): call.resolve(state)
-            case .failure(let error): call.reject("LiveKit POC 启动失败", nil, error)
-            }
-        }
-    }
-
-    @objc func stop(_ call: CAPPluginCall) {
-        LiveKitCallPocManager.shared.stop { state in
-            call.resolve(state)
-        }
-    }
-
-    @objc func setSpeaker(_ call: CAPPluginCall) {
-        let enabled = call.getBool("enabled") ?? false
-        LiveKitCallPocManager.shared.setSpeaker(enabled) { result in
-            switch result {
-            case .success(let state): call.resolve(state)
-            case .failure(let error): call.reject("LiveKit POC 切换音频路由失败", nil, error)
-            }
-        }
-    }
-
-    @objc func getState(_ call: CAPPluginCall) {
-        call.resolve(LiveKitCallPocManager.shared.state())
-    }
-}
-
-private final class LiveKitCallPocManager {
-    static let shared = LiveKitCallPocManager()
-
-    private var room: Room?
-    private var roomURL: String?
-    private var speakerPreferred = false
-    private var connected = false
-    private var audioInterrupted = false
-    private var callKitActive = false
-    private var observers: [NSObjectProtocol] = []
-
-    private init() {
-        // CallKit owns activation timing. LiveKit must not race it by configuring
-        // AVAudioSession or starting its engine automatically.
-        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
-        try? AudioManager.shared.setEngineAvailability(.none)
-        installAudioObservers()
-    }
-
-    func start(
-        url: String,
-        token: String,
-        speaker: Bool,
-        completion: @escaping (Result<[String: Any], Error>) -> Void
-    ) {
-        DispatchQueue.main.async {
-            self.speakerPreferred = speaker
-            self.roomURL = url
-            self.stop { _ in
-                do {
-                    // The POC is deliberately a voice-only room. CallKit must have
-                    // activated the session before the microphone is published.
-                    AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
-                    try AudioManager.shared.setEngineAvailability(self.callKitActive ? .default : .none)
-                    let room = Room()
-                    self.room = room
-                    Task { @MainActor in
-                        do {
-                            try await room.connect(url: url, token: token)
-                            try await room.localParticipant.setMicrophone(enabled: true)
-                            self.connected = true
-                            self.applyRoute()
-                            completion(.success(self.state()))
-                        } catch {
-                            await room.disconnect()
-                            try? AudioManager.shared.setEngineAvailability(.none)
-                            self.room = nil
-                            self.connected = false
-                            completion(.failure(error))
-                        }
-                    }
-                } catch {
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-
-    func stop(completion: @escaping ([String: Any]) -> Void) {
-        DispatchQueue.main.async {
-            let currentRoom = self.room
-            self.room = nil
-            self.connected = false
-            self.roomURL = nil
-            Task { @MainActor in
-                await currentRoom?.disconnect()
-                try? AudioManager.shared.setEngineAvailability(.none)
-                self.deactivateAudioSession()
-                completion(self.state())
-            }
-        }
-    }
-
-    func setSpeaker(_ enabled: Bool, completion: @escaping (Result<[String: Any], Error>) -> Void) {
-        DispatchQueue.main.async {
-            do {
-                self.speakerPreferred = enabled
-                let session = AVAudioSession.sharedInstance()
-                var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
-                if enabled { options.insert(.defaultToSpeaker) }
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try session.overrideOutputAudioPort(enabled ? .speaker : .none)
-                completion(.success(self.state()))
-            } catch {
-                completion(.failure(error))
-            }
-        }
-    }
-
-    func state() -> [String: Any] {
-        let session = AVAudioSession.sharedInstance()
-        return [
-            "running": room != nil,
-            "connected": connected,
-            "url": roomURL ?? "",
-            "speaker": speakerPreferred,
-            "interrupted": audioInterrupted,
-            "category": session.category.rawValue,
-            "mode": session.mode.rawValue,
-            "outputs": session.currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" },
-            "inputs": session.currentRoute.inputs.map { "\($0.portType.rawValue):\($0.portName)" }
-        ]
-    }
-
-    private func applyRoute() {
-        let session = AVAudioSession.sharedInstance()
-        var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
-        if speakerPreferred { options.insert(.defaultToSpeaker) }
-        try? session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-        try? session.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
-    }
-
-    func callKitDidActivate(_ session: AVAudioSession) {
-        DispatchQueue.main.async {
-            self.callKitActive = true
-            guard self.room != nil else { return }
-            self.applyRoute()
-            try? AudioManager.shared.setEngineAvailability(.default)
-        }
-    }
-
-    func callKitDidDeactivate() {
-        DispatchQueue.main.async {
-            self.callKitActive = false
-            try? AudioManager.shared.setEngineAvailability(.none)
-        }
-    }
-
-    private func deactivateAudioSession() {
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-    }
-
-    private func installAudioObservers() {
-        let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), queue: .main) { [weak self] note in
-            guard let self else { return }
-            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue ?? 0
-            if type == AVAudioSession.InterruptionType.began.rawValue {
-                self.audioInterrupted = true
-                try? AudioManager.shared.setEngineAvailability(.none)
-            } else if type == AVAudioSession.InterruptionType.ended.rawValue, self.room != nil {
-                self.audioInterrupted = false
-                self.applyRoute()
-                try? AudioManager.shared.setEngineAvailability(.default)
-            }
-        })
-        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance(), queue: .main) { [weak self] _ in
-            guard let self, self.room != nil else { return }
-            self.applyRoute()
-        })
-        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: AVAudioSession.sharedInstance(), queue: .main) { [weak self] _ in
-            guard let self, self.room != nil else { return }
-            self.applyRoute()
-        })
     }
 }
