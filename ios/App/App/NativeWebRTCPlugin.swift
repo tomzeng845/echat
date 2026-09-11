@@ -829,14 +829,22 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         guard let window = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow }),
+            .first(where: { $0.isKeyWindow })
+            ?? UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { !$0.isHidden && $0.windowLevel == .normal }),
               let rootView = window.rootViewController?.view
-        else { return }
+        else {
+            emitDiagnostic("native-video-window-unavailable")
+            return
+        }
 
         let overlay = UIView()
         overlay.translatesAutoresizingMaskIntoConstraints = false
         overlay.backgroundColor = .black
         overlay.isUserInteractionEnabled = false
+        overlay.layer.zPosition = 1000
 
         let remote = LKRTCMTLVideoView()
         remote.translatesAutoresizingMaskIntoConstraints = false
@@ -853,6 +861,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         overlay.addSubview(local)
 
         rootView.addSubview(overlay)
+        rootView.bringSubviewToFront(overlay)
         NSLayoutConstraint.activate([
             overlay.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 16),
             overlay.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -16),
@@ -870,6 +879,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         videoOverlay = overlay
         remoteRenderer = remote
         localRenderer = local
+        emitDiagnostic("native-video-overlay-installed", details: [
+            "window": window.isKeyWindow,
+            "rootViewWidth": rootView.bounds.width,
+            "rootViewHeight": rootView.bounds.height
+        ])
     }
 
     private func removeVideoOverlay() {
