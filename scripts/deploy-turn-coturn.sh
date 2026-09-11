@@ -46,6 +46,9 @@ while [[ $# -gt 0 ]]; do
     --realm) REALM="${2:?缺少 --realm 值}"; shift 2;;
     --email) EMAIL="${2:?缺少 --email 值}"; shift 2;;
     --enable-tls) ENABLE_TLS="true"; shift;;
+    --enable-tl)
+      usage
+      fail "参数写成了 --enable-tl；正确参数是 --enable-tls。";;
     --min-port) MIN_PORT="${2:?缺少 --min-port 值}"; shift 2;;
     --max-port) MAX_PORT="${2:?缺少 --max-port 值}"; shift 2;;
     --force) FORCE="true"; shift;;
