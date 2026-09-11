@@ -228,6 +228,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             self.closeLocked(deactivateSession: true)
             self.mode = mode
             self.speaker = speaker
+            self.callKitAudioActive = false
             self.microphoneEnabled = true
             self.cameraEnabled = true
             self.remoteDescriptionReady = false
@@ -236,6 +237,10 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             let rtcAudioSession = LKRTCAudioSession.sharedInstance()
             rtcAudioSession.useManualAudio = true
             rtcAudioSession.isAudioEnabled = false
+            if EChatVoipManager.shared.callKitAudioActive {
+                rtcAudioSession.audioSessionDidActivate(AVAudioSession.sharedInstance())
+                self.callKitAudioActive = true
+            }
 
             let factory = LKRTCPeerConnectionFactory()
             let config = LKRTCConfiguration()
