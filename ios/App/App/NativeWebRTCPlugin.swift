@@ -132,8 +132,9 @@ public final class NativeWebRTCPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func close(_ call: CAPPluginCall) {
-        NativeIosWebRTCManager.shared.close()
-        call.resolve()
+        NativeIosWebRTCManager.shared.close {
+            DispatchQueue.main.async { call.resolve() }
+        }
     }
 
     @objc func getState(_ call: CAPPluginCall) {
@@ -191,6 +192,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var factory: LKRTCPeerConnectionFactory?
     private var peer: LKRTCPeerConnection?
     private var localAudioTrack: LKRTCAudioTrack?
+    private var remoteAudioTrack: LKRTCAudioTrack?
+    private var remoteAudioReceiver: LKRTCRtpReceiver?
+    private var audioStatsTimer: DispatchSourceTimer?
     private var localVideoTrack: LKRTCVideoTrack?
     private var remoteVideoTrack: LKRTCVideoTrack?
     private var cameraCapturer: LKRTCCameraVideoCapturer?
@@ -564,8 +568,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         }
     }
 
-    func close() {
-        queue.async { self.closeLocked(deactivateSession: true) }
+    func close(completion: (() -> Void)? = nil) {
+        queue.async {
+            self.closeLocked(deactivateSession: true)
+            completion?()
+        }
     }
 
     func stateSnapshot() -> [String: Any] {
@@ -594,32 +601,47 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     }
 
     private func configureAudioSessionLocked(activate: Bool) {
-        let session = AVAudioSession.sharedInstance()
+        let rtcSession = LKRTCAudioSession.sharedInstance()
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speaker { options.insert(.defaultToSpeaker) }
+        let configuration = LKRTCAudioSessionConfiguration.webRTC()
+        configuration.category = AVAudioSession.Category.playAndRecord.rawValue
+        configuration.categoryOptions = options
+        configuration.mode = (mode == "video"
+            ? AVAudioSession.Mode.videoChat
+            : AVAudioSession.Mode.voiceChat).rawValue
+        configuration.sampleRate = 48_000
+        configuration.ioBufferDuration = 0.01
+        configuration.inputNumberOfChannels = 1
+        configuration.outputNumberOfChannels = 1
+        rtcSession.ignoresPreferredAttributeConfigurationErrors = true
+        rtcSession.lockForConfiguration()
+        defer { rtcSession.unlockForConfiguration() }
         do {
-            try session.setCategory(
-                .playAndRecord,
-                mode: mode == "video" ? .videoChat : .voiceChat,
-                options: options
-            )
-            try session.setPreferredSampleRate(48_000)
-            try session.setPreferredIOBufferDuration(0.01)
-            if activate {
-                try session.setActive(true)
+            if activate && !activatedByApp {
+                try rtcSession.setConfiguration(configuration, active: true)
                 activatedByApp = true
+            } else {
+                try rtcSession.setConfiguration(configuration)
             }
-            let hasBluetooth = session.currentRoute.outputs.contains {
+            let hasBluetooth = rtcSession.currentRoute.outputs.contains {
                 [.bluetoothHFP, .bluetoothA2DP, .bluetoothLE].contains($0.portType)
             }
             if speaker {
-                try session.overrideOutputAudioPort(.speaker)
+                try rtcSession.overrideOutputAudioPort(.speaker)
             } else if !hasBluetooth {
-                try session.overrideOutputAudioPort(.none)
+                try rtcSession.overrideOutputAudioPort(.none)
             }
         } catch {
+            let nsError = error as NSError
             emitDiagnostic("native-audio-session-error", details: [
-                "message": error.localizedDescription
+                "message": error.localizedDescription,
+                "domain": nsError.domain,
+                "code": nsError.code,
+                "activateRequested": activate,
+                "activatedByApp": activatedByApp,
+                "rtcActivationCount": rtcSession.activationCount,
+                "rtcSessionCount": rtcSession.webRTCSessionCount
             ])
         }
     }
@@ -647,22 +669,38 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         localAudioTrack?.isEnabled = false
         localVideoTrack?.isEnabled = false
         remoteVideoTrack?.isEnabled = false
+        remoteAudioTrack?.isEnabled = false
+        audioStatsTimer?.cancel()
+        audioStatsTimer = nil
         cameraCapturer?.stopCapture(completionHandler: nil)
         peer?.close()
         peer = nil
         factory = nil
         localAudioTrack = nil
+        remoteAudioTrack = nil
+        remoteAudioReceiver = nil
         localVideoTrack = nil
         remoteVideoTrack = nil
         cameraCapturer = nil
         pendingCandidates.removeAll()
         remoteDescriptionReady = false
-        LKRTCAudioSession.sharedInstance().isAudioEnabled = false
+        let rtcAudioSession = LKRTCAudioSession.sharedInstance()
+        rtcAudioSession.isAudioEnabled = false
         if deactivateSession && activatedByApp && !callKitAudioActive {
-            try? AVAudioSession.sharedInstance().setActive(
-                false,
-                options: [.notifyOthersOnDeactivation]
-            )
+            rtcAudioSession.lockForConfiguration()
+            defer { rtcAudioSession.unlockForConfiguration() }
+            do {
+                try rtcAudioSession.setActive(false)
+            } catch {
+                let nsError = error as NSError
+                emitDiagnostic("native-audio-session-deactivate-error", details: [
+                    "message": error.localizedDescription,
+                    "domain": nsError.domain,
+                    "code": nsError.code,
+                    "rtcActivationCount": rtcAudioSession.activationCount,
+                    "rtcSessionCount": rtcAudioSession.webRTCSessionCount
+                ])
+            }
         }
         activatedByApp = false
         DispatchQueue.main.async { self.removeVideoOverlay() }
@@ -802,6 +840,21 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     ) {
         let state = connectionStateName(newState)
         DispatchQueue.main.async { self.plugin?.emitConnectionState(state) }
+        if newState == .connected {
+            queue.async {
+                let rtcSession = LKRTCAudioSession.sharedInstance()
+                self.emitDiagnostic("native-webrtc-audio-ready", details: [
+                    "remoteAudioTrack": self.remoteAudioTrack != nil,
+                    "remoteAudioEnabled": self.remoteAudioTrack?.isEnabled ?? false,
+                    "audioUnitEnabled": rtcSession.isAudioEnabled,
+                    "audioSessionActive": rtcSession.isActive,
+                    "rtcActivationCount": rtcSession.activationCount,
+                    "rtcSessionCount": rtcSession.webRTCSessionCount,
+                    "category": rtcSession.category,
+                    "mode": rtcSession.mode
+                ])
+            }
+        }
     }
 
     func peerConnection(
@@ -809,6 +862,20 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         didAdd rtpReceiver: LKRTCRtpReceiver,
         streams mediaStreams: [LKRTCMediaStream]
     ) {
+        if let audioTrack = rtpReceiver.track as? LKRTCAudioTrack {
+            queue.async {
+                self.remoteAudioTrack = audioTrack
+                self.remoteAudioReceiver = rtpReceiver
+                audioTrack.isEnabled = true
+                self.emitDiagnostic("native-webrtc-remote-audio-track", details: [
+                    "trackId": audioTrack.trackId,
+                    "enabled": audioTrack.isEnabled,
+                    "readyState": audioTrack.readyState == .live ? "live" : "ended"
+                ])
+                self.startAudioStatsLocked()
+            }
+            return
+        }
         guard let videoTrack = rtpReceiver.track as? LKRTCVideoTrack else { return }
         queue.async {
             self.remoteVideoTrack = videoTrack
@@ -817,5 +884,38 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 if let renderer = self.remoteRenderer { videoTrack.add(renderer) }
             }
         }
+    }
+
+    private func startAudioStatsLocked() {
+        audioStatsTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.setEventHandler { [weak self] in
+            guard let self,
+                  self._isRunning,
+                  let peer = self.peer,
+                  let receiver = self.remoteAudioReceiver
+            else { return }
+            peer.statistics(for: receiver) { report in
+                let inbound = report.statistics.values.first { statistic in
+                    guard statistic.type == "inbound-rtp" else { return false }
+                    let kind = statistic.values["kind"] as? String
+                        ?? statistic.values["mediaType"] as? String
+                    return kind == "audio"
+                }
+                guard let inbound else { return }
+                let values = inbound.values
+                self.emitDiagnostic("native-webrtc-audio-stats", details: [
+                    "packetsReceived": (values["packetsReceived"] as? NSNumber)?.int64Value ?? 0,
+                    "bytesReceived": (values["bytesReceived"] as? NSNumber)?.int64Value ?? 0,
+                    "packetsLost": (values["packetsLost"] as? NSNumber)?.int64Value ?? 0,
+                    "jitter": (values["jitter"] as? NSNumber)?.doubleValue ?? 0,
+                    "audioLevel": (values["audioLevel"] as? NSNumber)?.doubleValue ?? -1,
+                    "totalAudioEnergy": (values["totalAudioEnergy"] as? NSNumber)?.doubleValue ?? 0
+                ])
+            }
+        }
+        audioStatsTimer = timer
+        timer.resume()
     }
 }

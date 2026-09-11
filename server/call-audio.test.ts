@@ -96,6 +96,33 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("rtcAudioSession.isAudioEnabled = false");
     expect(nativePlugin).toContain("audioSessionDidActivate");
     expect(nativePlugin).toContain("LKRTCPeerConnectionFactory");
+    expect(nativePlugin).toContain("rtcSession.lockForConfiguration()");
+    expect(nativePlugin).toContain(
+      "try rtcSession.setConfiguration(configuration, active: true)"
+    );
+    expect(nativePlugin).toContain("try rtcAudioSession.setActive(false)");
+    expect(nativePlugin).toContain("native-webrtc-remote-audio-track");
+    expect(nativePlugin).toContain("native-webrtc-audio-stats");
+    expect(nativePlugin).not.toContain(
+      "try AVAudioSession.sharedInstance().setActive("
+    );
+  });
+
+  it("waits for native WebRTC teardown and avoids a second audio-session deactivation", () => {
+    const callManager = readFileSync(
+      new URL("../client/src/components/chat/CallManager.tsx", import.meta.url),
+      "utf8"
+    );
+    const nativePlugin = readFileSync(
+      new URL("../ios/App/App/NativeWebRTCPlugin.swift", import.meta.url),
+      "utf8"
+    );
+    expect(callManager).toContain(
+      "const finishedNativeRtc = nativeRtcActive.current"
+    );
+    expect(callManager).toContain("if (!finishedNativeRtc)");
+    expect(nativePlugin).toContain("self.closeLocked(deactivateSession: true)");
+    expect(nativePlugin).toContain("completion?()");
   });
 
   it("uses the pure WebRTC binary without the LiveKit Room or Rust runtime", () => {

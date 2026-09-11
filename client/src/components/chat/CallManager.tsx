@@ -802,7 +802,10 @@ const CallManager = forwardRef<
     peers.current.forEach(peer => peer.close());
     peers.current.clear();
     pendingIce.current.clear();
-    if (nativeRtcActive.current) {
+    const finishedNativeRtc = nativeRtcActive.current;
+    await stopIncomingCallAlert();
+    if (active) await clearNativeCallListenerAlert(active.callId);
+    if (finishedNativeRtc) {
       await closeNativeIosWebRTC().catch(() => undefined);
       nativeRtcActive.current = false;
     }
@@ -813,9 +816,8 @@ const CallManager = forwardRef<
     nativePeerUserId.current = "";
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
-    if (active) await clearNativeCallListenerAlert(active.callId);
-    await stopIncomingCallAlert();
-    await endNativeCallAudioSession().catch(() => undefined);
+    if (!finishedNativeRtc)
+      await endNativeCallAudioSession().catch(() => undefined);
     setLocalStream(null);
     setRemoteStreams({});
     setMembers([]);
