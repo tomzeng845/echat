@@ -143,6 +143,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         element.volume = 1;
         const needsResume =
           element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
+        if (!needsResume || playInFlight) return;
         recordAudioState({
           event: "play-attempt",
           paused: element.paused,
@@ -155,7 +156,6 @@ function AudioStream({ stream }: { stream: MediaStream }) {
             readyState: track.readyState,
           })),
         });
-        if (!needsResume || playInFlight) return;
         playInFlight = element.play();
         playInFlight.then(
           () =>
@@ -221,7 +221,13 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       const retries = [0, 250, 1000, 2500, 5000].map(delay =>
         window.setTimeout(play, delay)
       );
-      const watchdog = window.setInterval(play, 2000);
+      const watchdog = window.setInterval(() => {
+        if (
+          element.paused ||
+          element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+        )
+          play();
+      }, 2000);
       const resumeFromUserGesture = () => play();
       window.addEventListener(
         "echat-resume-remote-audio",

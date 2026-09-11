@@ -67,5 +67,15 @@ describe("Android call audio routing", () => {
     expect(source).not.toContain("echat-remote-audio-playback");
     expect(source).not.toContain("audioRouteTimers");
     expect(source).not.toContain("refreshAudioSession");
+    expect(source).toContain("element.paused ||");
+  });
+
+  it("restores the native call session after stopping a ringtone", () => {
+    const source = readFileSync(
+      new URL("../ios/App/App/AppDelegate.swift", import.meta.url),
+      "utf8"
+    );
+    expect(source).toContain('reassertAudioSession(reason: "alert-stopped")');
+    expect(source).toContain("var hasCallSession: Bool");
   });
 });

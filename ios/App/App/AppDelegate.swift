@@ -176,6 +176,11 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             self.alertPlayer?.stop()
             self.alertPlayer = nil
+            // The ringtone uses .playback. Restore the call session immediately
+            // after stopping it so WebKit is not left on Playback/Default.
+            if EChatVoipManager.shared.hasCallSession {
+                EChatVoipManager.shared.reassertAudioSession(reason: "alert-stopped")
+            }
             call.resolve()
         }
     }
@@ -266,6 +271,10 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private var lastConfiguredAudioMode: AVAudioSession.Mode?
     private var lastConfiguredSpeaker: Bool?
     var speakerPreferred = false
+
+    var hasCallSession: Bool {
+        activeCall != nil || pendingCall != nil
+    }
 
     var currentAudioMode: AVAudioSession.Mode {
         let call = activeCall ?? pendingCall
