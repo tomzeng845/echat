@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   adaptiveBitrate,
   classifyNetworkQuality,
@@ -56,5 +57,15 @@ describe("Android call audio routing", () => {
       adaptiveBitrate("good", true).maxBitrate
     );
     expect(adaptiveBitrate("poor", false).maxBitrate).toBe(16_000);
+  });
+
+  it("does not feed remote playback events back into native route changes", () => {
+    const source = readFileSync(
+      new URL("../client/src/components/chat/CallManager.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(source).not.toContain("echat-remote-audio-playback");
+    expect(source).not.toContain("audioRouteTimers");
+    expect(source).not.toContain("refreshAudioSession");
   });
 });

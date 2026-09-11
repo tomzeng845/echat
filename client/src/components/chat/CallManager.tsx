@@ -87,10 +87,7 @@ function StreamView({
       const play = () => {
         element.muted = muted;
         element.volume = 1;
-        element.play().then(() => {
-          if (audioRole === "remote")
-            window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
-        }).catch(() => undefined);
+        element.play().catch(() => undefined);
       };
       element.srcObject = stream;
       element.onloadedmetadata = play;
@@ -159,7 +156,6 @@ function AudioStream({ stream }: { stream: MediaStream }) {
           })),
         });
         if (!needsResume || playInFlight) return;
-        window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
         playInFlight = element.play();
         playInFlight.then(
           () =>
@@ -329,7 +325,6 @@ const CallManager = forwardRef<
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
   const qualityTimer = useRef<number | null>(null);
-  const audioRouteTimers = useRef<number[]>([]);
   const lastIceRestart = useRef(new Map<string, number>());
   const previousStats = useRef(
     new Map<string, { packetsLost: number; packetsReceived: number }>()
@@ -375,26 +370,9 @@ const CallManager = forwardRef<
   }, [call?.status, connectedAt]);
 
   useEffect(() => {
-    const restoreAudioRoute = () => {
-      if (callRef.current?.status !== "connected") return;
-      setNativeCallAudioRoute(speakerOnRef.current).catch(() => undefined);
-    };
-    window.addEventListener("echat-remote-audio-playback", restoreAudioRoute);
-    return () =>
-      window.removeEventListener("echat-remote-audio-playback", restoreAudioRoute);
-  }, []);
-
-  useEffect(() => {
     if (call?.status !== "connected") return;
-    const refreshAudioSession = () => {
-      setNativeCallAudioRoute(speakerOnRef.current)
-        .then(() => window.dispatchEvent(new CustomEvent("echat-resume-remote-audio")))
-        .catch(() => undefined);
-    };
-    const timers = [0, 300, 1000, 2500, 5000].map(delay =>
-      window.setTimeout(refreshAudioSession, delay)
-    );
-    const recoveryListener = () => refreshAudioSession();
+    const recoveryListener = () =>
+      window.dispatchEvent(new CustomEvent("echat-resume-remote-audio"));
     const stateListener = (event: Event) => {
       const detail = (event as CustomEvent<Record<string, unknown>>).detail;
       recordAudioState({
@@ -405,7 +383,6 @@ const CallManager = forwardRef<
     window.addEventListener("echat-audio-session-recovered", recoveryListener);
     window.addEventListener("echat-audio-session-state", stateListener);
     return () => {
-      timers.forEach(window.clearTimeout);
       window.removeEventListener("echat-audio-session-recovered", recoveryListener);
       window.removeEventListener("echat-audio-session-state", stateListener);
     };
@@ -641,14 +618,6 @@ const CallManager = forwardRef<
       };
       peer.ontrack = event => {
         event.track.enabled = true;
-        [0, 250, 1000, 2500].forEach(delay => {
-          const timer = window.setTimeout(() => {
-            setNativeCallAudioRoute(speakerOnRef.current).catch(
-              () => undefined
-            );
-          }, delay);
-          audioRouteTimers.current.push(timer);
-        });
         setRemoteStreams(current => {
           const existing = current[targetUserId];
           const incoming = event.streams[0];
@@ -725,8 +694,6 @@ const CallManager = forwardRef<
     if (qualityTimer.current !== null)
       window.clearInterval(qualityTimer.current);
     qualityTimer.current = null;
-    audioRouteTimers.current.forEach(window.clearTimeout);
-    audioRouteTimers.current = [];
     lastIceRestart.current.clear();
     noAudioSince.current.clear();
     previousStats.current.clear();
@@ -844,9 +811,6 @@ const CallManager = forwardRef<
       const active = callRef.current;
       if (!active || active.callId !== participant.callId) return;
       await stopIncomingCallAlert();
-      await setNativeCallAudioRoute(speakerOnRef.current).catch(
-        () => speakerOnRef.current
-      );
       const connected: ActiveCall = { ...active, status: "connected" };
       callRef.current = connected;
       setCall(connected);

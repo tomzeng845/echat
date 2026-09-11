@@ -330,10 +330,13 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
+            let session = AVAudioSession.sharedInstance()
             var state = self.audioSessionSnapshot()
             state["reason"] = "route-changed"
             self.plugin?.notifyListeners("audioSessionState", data: state)
-            guard self.activeCall != nil else { return }
+            guard self.activeCall != nil,
+                  !self.audioRouteMatchesPreference(session)
+            else { return }
             self.restoreActiveAudioSession(reason: "route-changed")
         }
         center.addObserver(
@@ -342,6 +345,8 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
+            self.lastConfiguredAudioMode = nil
+            self.lastConfiguredSpeaker = nil
             var state = self.audioSessionSnapshot()
             state["reason"] = "media-services-reset"
             self.plugin?.notifyListeners("audioSessionState", data: state)
@@ -364,6 +369,13 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             },
             "otherAudioPlaying": session.isOtherAudioPlaying,
         ]
+    }
+
+    private func audioRouteMatchesPreference(_ session: AVAudioSession) -> Bool {
+        let outputs = session.currentRoute.outputs
+        guard !outputs.isEmpty else { return false }
+        let usesBuiltInSpeaker = outputs.contains { $0.portType == .builtInSpeaker }
+        return speakerPreferred ? usesBuiltInSpeaker : !usesBuiltInSpeaker
     }
 
     private func restoreActiveAudioSession(reason: String) {
@@ -532,7 +544,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             lastConfiguredSpeaker = speakerPreferred
         }
         try? audioSession.setActive(true)
-        try? audioSession.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
+        if !audioRouteMatchesPreference(audioSession) {
+            try? audioSession.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
+        }
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
