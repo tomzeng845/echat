@@ -753,7 +753,7 @@ private final class LiveKitCallPocManager {
                     // The POC is deliberately a voice-only room. CallKit must have
                     // activated the session before the microphone is published.
                     AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
-                    try AudioManager.shared.setEngineAvailability(self.callKitActive ? .localAndRemote : .none)
+                    try AudioManager.shared.setEngineAvailability(self.callKitActive ? .default : .none)
                     let room = Room()
                     self.room = room
                     Task { @MainActor in
@@ -837,7 +837,7 @@ private final class LiveKitCallPocManager {
             self.callKitActive = true
             guard self.room != nil else { return }
             self.applyRoute()
-            try? AudioManager.shared.setEngineAvailability(.localAndRemote)
+            try? AudioManager.shared.setEngineAvailability(.default)
         }
     }
 
@@ -863,7 +863,7 @@ private final class LiveKitCallPocManager {
             } else if type == AVAudioSession.InterruptionType.ended.rawValue, self.room != nil {
                 self.audioInterrupted = false
                 self.applyRoute()
-                try? AudioManager.shared.setEngineAvailability(.localAndRemote)
+                try? AudioManager.shared.setEngineAvailability(.default)
             }
         })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance(), queue: .main) { [weak self] _ in
