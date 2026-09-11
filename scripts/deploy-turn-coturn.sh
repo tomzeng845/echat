@@ -75,10 +75,11 @@ wait_for_package_manager() {
 install_packages() {
   wait_for_package_manager
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update
-  apt-get install -y ca-certificates openssl coturn ufw
+  local apt_options=(-o Acquire::ForceIPv4=true)
+  apt-get "${apt_options[@]}" update
+  apt-get "${apt_options[@]}" install -y ca-certificates openssl coturn ufw
   if [[ "$ENABLE_TLS" == "true" ]]; then
-    apt-get install -y certbot
+    apt-get "${apt_options[@]}" install -y certbot
   fi
 }
 
