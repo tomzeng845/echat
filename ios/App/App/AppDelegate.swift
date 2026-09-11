@@ -40,6 +40,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        EChatVoipManager.shared.handleFallbackRemoteNotification(userInfo) {
+            completionHandler(.newData)
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
@@ -429,6 +439,55 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
         }
         audioSessionRecoveryWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+    }
+
+    func handleFallbackRemoteNotification(
+        _ raw: [AnyHashable: Any],
+        completion: @escaping () -> Void
+    ) {
+        guard (raw["type"] as? String) == "call" else {
+            completion()
+            return
+        }
+        let callId = raw["callId"] as? String ?? ""
+        let action = raw["action"] as? String ?? "invite"
+        if action == "end" {
+            endCall(callId: callId, notifyPlugin: true)
+            completion()
+            return
+        }
+        guard !callId.isEmpty, let uuid = UUID(uuidString: callId) else {
+            completion()
+            return
+        }
+        if pendingCall?["callId"] as? String == callId {
+            if let pending = pendingCall { plugin?.emitIncomingCall(pending) }
+            completion()
+            return
+        }
+        let call: [String: Any] = [
+            "conversationId": raw["conversationId"] as? String ?? "",
+            "callId": callId,
+            "mode": raw["mode"] as? String ?? "audio",
+            "callerId": raw["callerId"] as? String ?? "",
+            "callerName": raw["callerName"] as? String ?? "E聊来电",
+            "callerAvatarUrl": raw["callerAvatarUrl"] as? String ?? "",
+            "nativeUuid": uuid.uuidString,
+            "answerRequested": false
+        ]
+        savePending(call)
+        let update = CXCallUpdate()
+        update.localizedCallerName = call["callerName"] as? String
+        update.remoteHandle = CXHandle(type: .generic, value: call["callerName"] as? String ?? "E聊来电")
+        update.hasVideo = (call["mode"] as? String) == "video"
+        update.supportsHolding = false
+        update.supportsGrouping = false
+        update.supportsUngrouping = false
+        update.supportsDTMF = false
+        provider?.reportNewIncomingCall(with: uuid, update: update) { _ in
+            self.plugin?.emitIncomingCall(call)
+            completion()
+        }
     }
 
     func pushRegistry(

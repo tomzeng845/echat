@@ -37,7 +37,7 @@ public sealed class ApnsNotificationService(
     {
         var aps = voip
             ? new Dictionary<string, object?> { ["content-available"] = 1 }
-            : new Dictionary<string, object?> { ["alert"] = new Dictionary<string, string> { ["title"] = title, ["body"] = body }, ["sound"] = "default" };
+            : new Dictionary<string, object?> { ["alert"] = new Dictionary<string, string> { ["title"] = title, ["body"] = body }, ["sound"] = "default", ["content-available"] = 1 };
         var payload = new Dictionary<string, object?> { ["aps"] = aps };
         foreach (var pair in data) payload[pair.Key] = pair.Value;
         return JsonSerializer.Serialize(payload);

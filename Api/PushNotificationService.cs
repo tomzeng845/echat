@@ -44,7 +44,7 @@ public sealed class PushNotificationService(
         if (!IosEnabled) return;
         var devices = await repository.GetPushDevicesAsync(userIds, ct);
         var data = new Dictionary<string, string> { ["type"] = "call", ["action"] = "end", ["callId"] = callId };
-        await Task.WhenAll(devices.Where(x => x.Platform == "ios-voip").Select(x => apns.SendAsync(x, "", "", data, ct)));
+        await Task.WhenAll(devices.Where(x => x.Platform is "ios" or "ios-voip").Select(x => apns.SendAsync(x, "", "", data, ct)));
     }
 
     public Task SendTestAsync(string userId, CancellationToken ct = default) =>
@@ -62,7 +62,7 @@ public sealed class PushNotificationService(
         device.Platform switch
         {
             "android" => AndroidEnabled ? SendFcmAsync(device, title, body, data, highPriority, ct) : Task.CompletedTask,
-            "ios" => IosEnabled && (!data.TryGetValue("type", out var alertType) || alertType != "call") ? apns.SendAsync(device, title, body, data, ct) : Task.CompletedTask,
+            "ios" => IosEnabled ? apns.SendAsync(device, title, body, data, ct) : Task.CompletedTask,
             "ios-voip" => IosEnabled && data.TryGetValue("type", out var voipType) && voipType == "call" ? apns.SendAsync(device, title, body, data, ct) : Task.CompletedTask,
             _ => Task.CompletedTask
         };
