@@ -238,6 +238,25 @@ function activeCallIsConnected(call: ActiveCall | null) {
   return call?.status === "connected";
 }
 
+function publishCallSummary(
+  active: ActiveCall,
+  status: "calling" | "connected" | "cancelled" | "missed" | "completed",
+  durationSeconds = 0
+) {
+  window.dispatchEvent(
+    new CustomEvent("echat-call-summary", {
+      detail: {
+        callId: active.callId,
+        conversationId: active.conversationId,
+        mode: active.mode,
+        status,
+        durationSeconds,
+        at: new Date().toISOString(),
+      },
+    })
+  );
+}
+
 const CallManager = forwardRef<
   CallManagerHandle,
   { user: User; connection: HubConnection | null }
@@ -274,6 +293,7 @@ const CallManager = forwardRef<
   const connectedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [packetLossPercent, setPacketLossPercent] = useState<number | null>(null);
   const [networkQuality, setNetworkQuality] = useState("检测中");
   callRef.current = call;
   remoteStreamsRef.current = remoteStreams;
@@ -401,6 +421,10 @@ const CallManager = forwardRef<
     );
     const rttMs = Number(candidate?.currentRoundTripTime || 0) * 1000;
     if (rttMs > 0) setLatencyMs(Math.round(rttMs));
+    const lossPercent = packetsLost + packetsReceived > 0
+      ? (packetsLost / (packetsLost + packetsReceived)) * 100
+      : 0;
+    setPacketLossPercent(Number(lossPercent.toFixed(1)));
     setNetworkQuality(
       quality === "excellent" || quality === "good"
         ? "良好"
@@ -592,6 +616,20 @@ const CallManager = forwardRef<
 
   async function finish(notify = true) {
     const active = callRef.current;
+    if (active) {
+      const duration = connectedAtRef.current
+        ? Math.max(0, Math.floor((Date.now() - connectedAtRef.current) / 1000))
+        : 0;
+      publishCallSummary(
+        active,
+        active.status === "connected"
+          ? "completed"
+          : active.status === "incoming"
+            ? "missed"
+            : "cancelled",
+        duration
+      );
+    }
     if (notify && active && connection)
       connection
         .invoke("CallEnd", active.conversationId, active.callId)
@@ -621,6 +659,7 @@ const CallManager = forwardRef<
     setConnectedAt(null);
     setElapsedSeconds(0);
     setLatencyMs(null);
+    setPacketLossPercent(null);
     setNetworkQuality("检测中");
     setCall(null);
   }
@@ -651,6 +690,7 @@ const CallManager = forwardRef<
         );
         setCall(next);
         callRef.current = next;
+        publishCallSummary(next, "calling");
         if (shouldPlayOutgoingRingback(next.status))
           await playOutgoingCallAlert(next.callId);
         await connection.invoke(
@@ -723,6 +763,7 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
+      publishCallSummary(connected, "connected");
       await createPeer(participant.userId, true);
     };
     const signaled = async (signal: CallSignal) => {
@@ -879,6 +920,7 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
+      publishCallSummary(connected, "connected");
       await createPeer(active.callerId || "", false);
     } catch (cause) {
       await connection
@@ -958,6 +1000,9 @@ const CallManager = forwardRef<
           <span className="rounded-full bg-white/10 px-2.5 py-1">
             网络 {networkQuality}
             {latencyMs === null ? " · 延迟检测中" : ` · ${latencyMs} ms`}
+            {call.mode === "video" && packetLossPercent !== null
+              ? ` · 丢包 ${packetLossPercent}%`
+              : ""}
           </span>
         </div>
       )}

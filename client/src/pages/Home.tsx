@@ -86,9 +86,23 @@ const ICON =
 
 type NavKey = "chats" | "contacts" | "discover" | "profile" | "admin";
 type DecryptedMessage = Message & { plaintext: string; decryptError?: boolean };
+type CallSummary = {
+  callId: string;
+  conversationId: string;
+  mode: "audio" | "video";
+  status: "calling" | "connected" | "cancelled" | "missed" | "completed";
+  durationSeconds: number;
+  at: string;
+};
 
 function initials(name: string) {
   return Array.from(name.trim()).slice(-2).join("").toUpperCase() || "E";
+}
+
+function formatCallDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 async function sealKeyForDevices(
@@ -442,6 +456,7 @@ function Messenger({
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
+  const [callSummaries, setCallSummaries] = useState<CallSummary[]>([]);
   const [draft, setDraft] = useState("");
   const [typingPeerName, setTypingPeerName] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -477,6 +492,19 @@ function Messenger({
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
   selectedRef.current = chatVisible ? selectedId : null;
   conversationsRef.current = conversations;
+
+  useEffect(() => {
+    const handleCallSummary = (event: Event) => {
+      const summary = (event as CustomEvent<CallSummary>).detail;
+      if (!summary?.conversationId || !summary.callId) return;
+      setCallSummaries(current => [
+        ...current.filter(item => item.callId !== summary.callId),
+        summary,
+      ].slice(-100));
+    };
+    window.addEventListener("echat-call-summary", handleCallSummary);
+    return () => window.removeEventListener("echat-call-summary", handleCallSummary);
+  }, []);
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
   const selectedContact =
@@ -1700,14 +1728,25 @@ function Messenger({
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   {messages.length ? (
-                    messages.map(message => (
-                      <MessageBubble
-                        key={message.id}
-                        message={message}
-                        mine={message.senderId === user.id}
-                        onRecall={() => recall(message)}
-                      />
-                    ))
+                    <>
+                      {messages.map(message => (
+                        <MessageBubble
+                          key={message.id}
+                          message={message}
+                          mine={message.senderId === user.id}
+                          onRecall={() => recall(message)}
+                        />
+                      ))}
+                      {callSummaries
+                        .filter(item => item.conversationId === selectedId)
+                        .map(summary => (
+                          <CallSummaryBubble key={summary.callId} summary={summary} />
+                        ))}
+                    </>
+                  ) : callSummaries.some(item => item.conversationId === selectedId) ? (
+                    callSummaries
+                      .filter(item => item.conversationId === selectedId)
+                      .map(summary => <CallSummaryBubble key={summary.callId} summary={summary} />)
                   ) : (
                     <div className="my-auto text-center">
                       <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white shadow-sm">
@@ -2020,6 +2059,33 @@ function MessageBubble({
     </div>
   );
 }
+
+function CallSummaryBubble({ summary }: { summary: CallSummary }) {
+  const mode = summary.mode === "video" ? "视频" : "语音";
+  const duration = formatCallDuration(summary.durationSeconds);
+  const label =
+    summary.status === "calling"
+      ? `正在发起${mode}通话`
+      : summary.status === "connected"
+        ? `${mode}通话已接通`
+        : summary.status === "completed"
+          ? `${mode}通话 · ${duration}`
+          : summary.status === "missed"
+            ? `未接听${mode}通话`
+            : `已取消${mode}通话`;
+  return (
+    <div className="mb-4 flex justify-center">
+      <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-xs text-slate-500">
+        <Phone size={13} className={summary.status === "missed" ? "text-rose-500" : "text-teal-600"} />
+        <span>{label}</span>
+        <time className="text-[10px] text-slate-400">
+          {new Date(summary.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+        </time>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({
   icon: Icon,
   title,
