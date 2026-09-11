@@ -197,7 +197,7 @@ jobs:
           profile = os.environ["PROFILE_UUID"]
           text = text.replace(
               "CODE_SIGN_STYLE = Automatic;",
-              f"CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = {profile};",
+              f"CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGN_IDENTITY = Apple Distribution;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = {profile};",
           )
           project.write_text(text)
           PY
@@ -211,7 +211,6 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             MARKETING_VERSION="$ECHAT_IOS_VERSION" \
             CURRENT_PROJECT_VERSION="$ECHAT_IOS_BUILD_NUMBER" \
-            CODE_SIGN_IDENTITY='Apple Distribution' \
             clean archive
 
           # Embedded frameworks must never carry the app provisioning profile.
