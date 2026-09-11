@@ -37,7 +37,7 @@
 - [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收（依赖 Apple 登录和可用真机）
 - [x] 当前仅使用内部 TestFlight 测试，暂不需要提交外部 Beta App Review
 
-### iOS 原生 WebRTC 媒体层（Build 245）
+### iOS 原生 WebRTC 媒体层（Build 247）
 
 - [x] Build 242 日志确认远端 RTP 连续到达、12 个质量样本均为零丢包，`audio.play()` 成功后 0–3 ms 内发生 `AVAudioSession interruption-began`
 - [x] 根因确定为 WKWebView WebRTC 音频进程与 CallKit/原生 AVAudioSession 争夺系统音频设备，不再继续叠加网页播放恢复补丁
@@ -49,7 +49,13 @@
 - [x] `pnpm check`、Vitest 23（1 skipped）、xUnit 27、iOS sync、Xcode archive、签名和 Apple 上传验证通过
 - [x] Build 243 成功归档；IPA 仅包含 `LiveKitWebRTC.framework`，没有 `LiveKit.framework` 或 `RustLiveKitUniFFI`
 - [x] Build 245 已上传 TestFlight；Delivery UUID `7255b8e7-7bd2-42d6-810b-fc4c8d3791f7`
-- [ ] 在 Build 245 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
+- [x] Build 245 真机日志确认原生 PeerConnection 已连接，但会话在接通阶段反复落回 `SoloAmbient/Default`，连续通话还出现 `Session activation failed`
+- [x] Build 247 统一由 `LKRTCAudioSession` 的锁、配置与平衡激活计数管理音频，移除原生通话结束后的第二次 `AVAudioSession.setActive(false)`
+- [x] 原生 `close` Promise 现在等待 PeerConnection、Audio Unit 和音频会话实际释放完成，避免下一通电话与上一通释放流程竞态
+- [x] 增加远端原生音频轨道、Audio Unit、activation count、RTP 包/字节/丢包/抖动/能量诊断，后续日志可直接区分“未收流”和“收到但未播放”
+- [x] Build 246 编译验证成功；`pnpm check`、Vitest 24（1 skipped）、xUnit 27、Xcode archive 与签名通过
+- [x] Build 247 已通过 Apple 校验并上传 TestFlight；Delivery UUID `db255852-81a1-4d6e-a8cf-d81cf9f0059a`
+- [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
 
