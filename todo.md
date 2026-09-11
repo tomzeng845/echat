@@ -28,14 +28,28 @@
 - [x] 创建 APNs Production Team Scoped Key `35Z9TC62QQ`（`EChat APNs Production 2026 v4`），并验证用户上传的 p8 可被 OpenSSL 导入
 - [x] 将 Production APNs p8 安全注入正式服务；重启后健康测试确认 `iosEnabled=true`、Apple APNs provider
 - [x] 创建 Developer 角色 App Store Connect Team API Key，并加入 GitHub `ios-production` Environment Secrets
-- [ ] 在 App Store Connect 完成隐私信息、隐私政策和 Beta 元数据（Apple Developer/App Store Connect 会话已过期，当前无法进入；登录恢复后继续）
+- [ ] 正式发布 App Store 前完成隐私信息、隐私政策和 Beta 元数据；用户当前明确只更新内部 TestFlight，本轮不提交这些正式发布资料
 - [x] 由账号持有人确认标准加密算法并声明当前不在法国分发，完成 Build 181 出口合规问卷
 - [x] 在 GitHub-hosted macOS 26 / Xcode 26 完成 Manual archive、export、codesign、profile、Bundle ID、版本与资源验证
-- [ ] 在 iPhone 真机验证普通 APNs、后台 PushKit/CallKit、相机和麦克风（待确认 APNs Key `5FLA6SLK3N` 为 Production，并重新注册 TestFlight token）
+- [ ] 在 iPhone 真机重新验证普通 APNs、后台 PushKit/CallKit、相机和麦克风，并补充 APNs Production Key 与 TestFlight token 重新注册证据
 - [x] 执行 GitHub workflow `34028293524`，Apple Delivery `f1b7e7d8-a6e1-4a56-8363-da16ba37cc18` 上传成功
 - [x] Apple 已处理 `0.9.0 (181)`；创建自动分发的“E聊内部测试”组并邀请账号持有人
 - [ ] 通过 TestFlight 在至少两台 iPhone 完成消息通知、语音/视频接听、拒接、挂断和双向媒体验收（依赖 Apple 登录和可用真机）
 - [x] 当前仅使用内部 TestFlight 测试，暂不需要提交外部 Beta App Review
+
+### iOS 原生 WebRTC 媒体层（Build 245）
+
+- [x] Build 242 日志确认远端 RTP 连续到达、12 个质量样本均为零丢包，`audio.play()` 成功后 0–3 ms 内发生 `AVAudioSession interruption-began`
+- [x] 根因确定为 WKWebView WebRTC 音频进程与 CallKit/原生 AVAudioSession 争夺系统音频设备，不再继续叠加网页播放恢复补丁
+- [x] 保留现有 SignalR `CallSignal`、SDP/ICE、coturn、Android 和 Windows 通话协议，仅替换 iOS 媒体层
+- [x] iOS 使用纯 `LiveKitWebRTC` XCFramework 的原生 PeerConnection；不接入 LiveKit Room、token server 或 Rust 运行时
+- [x] 原生层统一负责麦克风、摄像头、远端音频、视频渲染、AEC/AGC/NS、听筒/外放/蓝牙和完整释放
+- [x] 使用 WebRTC manual audio：CallKit `didActivate` 后才启用 VoIP Audio Unit，`didDeactivate`、挂断和中断时成对关闭/恢复
+- [x] 路由变化只在实际输出偏离用户选择时修正，避免重现 Build 234 的反馈环
+- [x] `pnpm check`、Vitest 23（1 skipped）、xUnit 27、iOS sync、Xcode archive、签名和 Apple 上传验证通过
+- [x] Build 243 成功归档；IPA 仅包含 `LiveKitWebRTC.framework`，没有 `LiveKit.framework` 或 `RustLiveKitUniFFI`
+- [x] Build 245 已上传 TestFlight；Delivery UUID `7255b8e7-7bd2-42d6-810b-fc4c8d3791f7`
+- [ ] 在 Build 245 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
 
