@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.AlarmManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -79,6 +80,16 @@ public class CallListenerService extends Service {
         ContextCompat.startForegroundService(context, intent);
     }
 
+    public static void restore(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String hubUrl = prefs.getString(EXTRA_HUB_URL, "");
+        String token = prefs.getString(EXTRA_TOKEN, "");
+        if (hubUrl.isEmpty() || token.isEmpty()) return;
+        Intent intent = new Intent(context, CallListenerService.class)
+            .setAction("com.echat.app.action.RESTART_CALL_LISTENER");
+        ContextCompat.startForegroundService(context, intent);
+    }
+
     public static void stop(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) {
@@ -91,7 +102,7 @@ public class CallListenerService extends Service {
     public static void setAppActive(Context context, boolean active) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) return;
-        context.startService(
+        ContextCompat.startForegroundService(context,
             new Intent(context, CallListenerService.class)
                 .setAction(ACTION_APP_STATE)
                 .putExtra(EXTRA_ACTIVE, active)
@@ -101,7 +112,7 @@ public class CallListenerService extends Service {
     public static void clear(Context context, String callId) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) return;
-        context.startService(
+        ContextCompat.startForegroundService(context,
             new Intent(context, CallListenerService.class)
                 .setAction(ACTION_CLEAR)
                 .putExtra(EXTRA_CALL_ID, callId)
@@ -131,6 +142,10 @@ public class CallListenerService extends Service {
         if (ACTION_STOP.equals(action)) {
             stopListener();
             return START_NOT_STICKY;
+        }
+        if ("com.echat.app.action.RESTART_CALL_LISTENER".equals(action)) {
+            connect();
+            return START_STICKY;
         }
         if (ACTION_APP_STATE.equals(action)) {
             appActive = intent.getBooleanExtra(EXTRA_ACTIVE, true);
@@ -488,7 +503,33 @@ public class CallListenerService extends Service {
         stopBackgroundAlert();
         disconnect();
         releaseWakeLock();
+        if (!stopping) scheduleRestart();
         super.onDestroy();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        if (!stopping) scheduleRestart();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    private void scheduleRestart() {
+        if (preferences().getString(EXTRA_TOKEN, "").isEmpty()) return;
+        Intent intent = new Intent(this, CallListenerService.class)
+            .setAction("com.echat.app.action.RESTART_CALL_LISTENER");
+        PendingIntent pending = PendingIntent.getService(
+            this,
+            7301,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        AlarmManager alarm = (AlarmManager) getSystemService(ALARM_SERVICE);
+        long at = System.currentTimeMillis() + 5_000L;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
+        } else {
+            alarm.set(AlarmManager.RTC_WAKEUP, at, pending);
+        }
     }
 
     private void releaseWakeLock() {

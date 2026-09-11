@@ -99,6 +99,44 @@ describe("Android call audio routing", () => {
     expect(source).toContain("callAudioSessionRequested = true");
   });
 
+  it("initializes PushKit immediately and keeps VoIP background modes enabled", () => {
+    const appDelegate = readFileSync(
+      new URL("../ios/App/App/AppDelegate.swift", import.meta.url),
+      "utf8"
+    );
+    const info = readFileSync(new URL("../ios/App/App/Info.plist", import.meta.url), "utf8");
+    expect(appDelegate).toContain("if Thread.isMainThread { install() }");
+    expect(appDelegate).toContain("registry.desiredPushTypes = [.voIP]");
+    expect(appDelegate).toContain("didReceiveIncomingPushWith payload");
+    expect(info).toContain("<string>voip</string>");
+    expect(info).toContain("<string>remote-notification</string>");
+  });
+
+  it("restores the Harmony/Android listener after reboot and task removal", () => {
+    const service = readFileSync(
+      new URL("../android/app/src/main/java/com/echat/app/CallListenerService.java", import.meta.url),
+      "utf8"
+    );
+    const receiver = readFileSync(
+      new URL(
+        "../android/app/src/main/java/com/echat/app/CallListenerBootReceiver.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    const manifest = readFileSync(
+      new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url),
+      "utf8"
+    );
+    expect(service).toContain("public static void restore(Context context)");
+    expect(service).toContain("onTaskRemoved(Intent rootIntent)");
+    expect(service).toContain("setAndAllowWhileIdle");
+    expect(receiver).toContain("ACTION_BOOT_COMPLETED");
+    expect(receiver).toContain("CallListenerService.restore");
+    expect(manifest).toContain("RECEIVE_BOOT_COMPLETED");
+    expect(manifest).toContain(".CallListenerBootReceiver");
+  });
+
   it("routes iOS calls through one native WebRTC audio owner", () => {
     const callManager = readFileSync(
       new URL("../client/src/components/chat/CallManager.tsx", import.meta.url),

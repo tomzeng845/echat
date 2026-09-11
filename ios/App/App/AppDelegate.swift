@@ -295,7 +295,8 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func start() {
-        DispatchQueue.main.async {
+        let install = { [weak self] in
+            guard let self else { return }
             if self.provider == nil {
                 let configuration = CXProviderConfiguration(localizedName: "E聊")
                 configuration.supportsVideo = true
@@ -310,11 +311,14 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             if self.registry == nil {
                 let registry = PKPushRegistry(queue: .main)
                 registry.delegate = self
+                // Set this immediately during cold launch. Delaying it behind
+                // the WebView/plugin lifecycle can miss the first VoIP push.
                 registry.desiredPushTypes = [.voIP]
                 self.registry = registry
             }
             self.installAudioSessionObservers()
         }
+        if Thread.isMainThread { install() } else { DispatchQueue.main.async(execute: install) }
     }
 
     private func installAudioSessionObservers() {
