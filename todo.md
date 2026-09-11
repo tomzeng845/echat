@@ -55,6 +55,7 @@
 - [x] 增加远端原生音频轨道、Audio Unit、activation count、RTP 包/字节/丢包/抖动/能量诊断，后续日志可直接区分“未收流”和“收到但未播放”
 - [x] Build 246 编译验证成功；`pnpm check`、Vitest 24（1 skipped）、xUnit 27、Xcode archive 与签名通过
 - [x] Build 247 已通过 Apple 校验并上传 TestFlight；Delivery UUID `db255852-81a1-4d6e-a8cf-d81cf9f0059a`
+- [x] Build 248（0.9.0）基于现有 SignalR + iOS 原生 WebRTC/CallKit/PushKit 路线构建并上传 TestFlight；Delivery UUID `0acd3ac8-bac8-4be2-9833-49ce983a2086`
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
