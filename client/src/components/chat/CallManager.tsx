@@ -87,7 +87,10 @@ function StreamView({
       const play = () => {
         element.muted = muted;
         element.volume = 1;
-        element.play().catch(() => undefined);
+        element.play().then(() => {
+          if (audioRole === "remote")
+            window.dispatchEvent(new CustomEvent("echat-remote-audio-playback"));
+        }).catch(() => undefined);
       };
       element.srcObject = stream;
       element.onloadedmetadata = play;
@@ -327,6 +330,24 @@ const CallManager = forwardRef<
     return () =>
       window.removeEventListener("echat-remote-audio-playback", restoreAudioRoute);
   }, []);
+
+  useEffect(() => {
+    if (call?.status !== "connected") return;
+    const refreshAudioSession = () => {
+      setNativeCallAudioRoute(speakerOnRef.current)
+        .then(() => window.dispatchEvent(new CustomEvent("echat-resume-remote-audio")))
+        .catch(() => undefined);
+    };
+    const timers = [0, 300, 1000, 2500, 5000].map(delay =>
+      window.setTimeout(refreshAudioSession, delay)
+    );
+    const recoveryListener = () => refreshAudioSession();
+    window.addEventListener("echat-audio-session-recovered", recoveryListener);
+    return () => {
+      timers.forEach(window.clearTimeout);
+      window.removeEventListener("echat-audio-session-recovered", recoveryListener);
+    };
+  }, [call?.status]);
 
   useEffect(() => {
     api<RtcConfig>("/api/rtc/config")
@@ -883,7 +904,7 @@ const CallManager = forwardRef<
       window.removeEventListener("echat-native-call", nativeInvited);
       window.removeEventListener("echat-native-call-cleared", nativeCleared);
     };
-  }, [connection, remoteStreams, user.id]);
+  }, [connection, user.id]);
 
   async function accept() {
     const active = callRef.current;

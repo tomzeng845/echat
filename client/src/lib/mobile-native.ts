@@ -100,6 +100,10 @@ type MediaPermissionsPlugin = {
     eventName: "voipToken",
     listener: (event: { token: string }) => void
   ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "audioSessionRecovered",
+    listener: (event: { reason?: string }) => void
+  ): Promise<PluginListenerHandle>;
   requestPermissions(options: {
     camera: boolean;
     microphone: boolean;
@@ -225,6 +229,11 @@ async function ensureCallListenerEvents() {
     }),
     await MediaPermissions.addListener("voipToken", event => {
       savePushTokenValue(event.token, "ios-voip").catch(() => undefined);
+    }),
+    await MediaPermissions.addListener("audioSessionRecovered", event => {
+      window.dispatchEvent(
+        new CustomEvent("echat-audio-session-recovered", { detail: event })
+      );
     }),
   ];
 }

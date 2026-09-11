@@ -188,6 +188,8 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
                 var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
                 if speaker { options.insert(.defaultToSpeaker) }
                 try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.setPreferredSampleRate(48_000)
+                try session.setPreferredIOBufferDuration(0.01)
                 try session.setActive(true)
                 try session.overrideOutputAudioPort(speaker ? .speaker : .none)
                 EChatVoipManager.shared.speakerPreferred = speaker
@@ -487,6 +489,8 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speakerPreferred { options.insert(.defaultToSpeaker) }
         try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+        try? audioSession.setPreferredSampleRate(48_000)
+        try? audioSession.setPreferredIOBufferDuration(0.01)
         try? audioSession.setActive(true)
         try? audioSession.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
     }
