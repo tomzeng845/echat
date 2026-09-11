@@ -174,11 +174,12 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func stopAlertSound(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            let kind = call.getString("kind") ?? "message"
             self.alertPlayer?.stop()
             self.alertPlayer = nil
             // The ringtone uses .playback. Restore the call session immediately
             // after stopping it so WebKit is not left on Playback/Default.
-            if EChatVoipManager.shared.hasCallSession {
+            if kind == "call" && EChatVoipManager.shared.callAudioSessionRequested {
                 EChatVoipManager.shared.reassertAudioSession(reason: "alert-stopped")
             }
             call.resolve()
@@ -188,6 +189,7 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setCallAudioRoute(_ call: CAPPluginCall) {
         let speaker = call.getBool("speaker") ?? false
         DispatchQueue.main.async {
+            EChatVoipManager.shared.callAudioSessionRequested = true
             EChatVoipManager.shared.speakerPreferred = speaker
             EChatVoipManager.shared.reassertAudioSession(reason: "manual-route")
             call.resolve(["speaker": speaker, "applied": true])
@@ -198,6 +200,7 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             self.alertPlayer?.stop()
             self.alertPlayer = nil
+            EChatVoipManager.shared.callAudioSessionRequested = false
             do {
                 try AVAudioSession.sharedInstance().setActive(
                     false,
@@ -271,10 +274,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private var lastConfiguredAudioMode: AVAudioSession.Mode?
     private var lastConfiguredSpeaker: Bool?
     var speakerPreferred = false
-
-    var hasCallSession: Bool {
-        activeCall != nil || pendingCall != nil
-    }
+    var callAudioSessionRequested = false
 
     var currentAudioMode: AVAudioSession.Mode {
         let call = activeCall ?? pendingCall
@@ -394,7 +394,11 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     func reassertAudioSession(reason: String) {
         audioSessionRecoveryWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.activeCall != nil || reason == "manual-route" else { return }
+            guard let self,
+                  self.activeCall != nil ||
+                    reason == "manual-route" ||
+                    reason == "alert-stopped"
+            else { return }
             let session = AVAudioSession.sharedInstance()
             self.applyAudioRoute(to: session)
             var state = self.audioSessionSnapshot()
@@ -494,6 +498,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             // getUserMedia/RTCPeerConnection; didActivate will make it active
             // again after CallKit owns the audio session.
             speakerPreferred = false
+            callAudioSessionRequested = true
             let session = AVAudioSession.sharedInstance()
             try? session.setCategory(
                 .playAndRecord,
@@ -559,6 +564,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        callAudioSessionRequested = false
         var state = audioSessionSnapshot()
         state["reason"] = "callkit-did-deactivate"
         plugin?.notifyListeners("audioSessionState", data: state)

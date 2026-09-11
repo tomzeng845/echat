@@ -962,8 +962,8 @@ const CallManager = forwardRef<
         active.callId
       );
       await clearNativeCallListenerAlert(active.callId);
-      await stopIncomingCallAlert();
       await acquire(active.mode);
+      await stopIncomingCallAlert();
       setMembers(
         await api<ConversationMember[]>(
           `/api/conversations/${active.conversationId}/members`

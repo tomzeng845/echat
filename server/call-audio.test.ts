@@ -76,6 +76,7 @@ describe("Android call audio routing", () => {
       "utf8"
     );
     expect(source).toContain('reassertAudioSession(reason: "alert-stopped")');
-    expect(source).toContain("var hasCallSession: Bool");
+    expect(source).toContain("var callAudioSessionRequested = false");
+    expect(source).toContain("callAudioSessionRequested = true");
   });
 });
