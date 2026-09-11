@@ -89,8 +89,7 @@ install_packages() {
 random_secret() { openssl rand -hex 32; }
 
 write_secret() {
-  mkdir -p "$INSTALL_DIR"
-  chmod 700 "$INSTALL_DIR"
+  install -d -o root -g turnserver -m 750 "$INSTALL_DIR"
   if [[ ! -s "$INSTALL_DIR/static-auth-secret" ]]; then
     umask 077
     random_secret > "$INSTALL_DIR/static-auth-secret"
@@ -105,9 +104,9 @@ configure_tls() {
   fi
   certbot certonly --standalone --non-interactive --agree-tos \
     --email "$EMAIL" --domain "$DOMAIN" --keep-until-expiring
-  install -d -m 750 "$INSTALL_DIR/certs"
-  ln -sfn "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$INSTALL_DIR/certs/fullchain.pem"
-  ln -sfn "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$INSTALL_DIR/certs/privkey.pem"
+  install -d -o root -g turnserver -m 750 "$INSTALL_DIR/certs"
+  install -o root -g turnserver -m 640 "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$INSTALL_DIR/certs/fullchain.pem"
+  install -o root -g turnserver -m 640 "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$INSTALL_DIR/certs/privkey.pem"
 }
 
 write_config() {
@@ -149,8 +148,9 @@ no-tls
 no-dtls
 EOF
   fi
-  chmod 600 "$config"
-  install -d -m 750 /var/log/turnserver
+  chown root:turnserver "$config"
+  chmod 640 "$config"
+  install -d -o turnserver -g turnserver -m 750 /var/log/turnserver
 }
 
 configure_service() {
