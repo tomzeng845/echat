@@ -131,8 +131,8 @@ static-auth-secret=$secret
 realm=$REALM
 stale-nonce
 no-cli
-no-loopback-peers
-no-multicast-peers
+# coturn >= 4.5.1 blocks loopback/multicast peers by default; the old
+# no-loopback-peers/no-multicast-peers syntax causes "Bad configuration format".
 no-tlsv1
 no-tlsv1_1
 simple-log

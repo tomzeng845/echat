@@ -73,4 +73,4 @@ journalctl -u coturn -n 80 --no-pager
 
 ## 安全注意事项
 
-TURN 服务器必须使用长期密钥或 TURN REST API 鉴权，不能开放匿名中继。限制 `no-loopback-peers` 和 `no-multicast-peers`，监控出口流量和异常分配数量。证书私钥、TURN secret、API JWT secret 和数据库密码不得提交 Git 或放入移动安装包。
+TURN 服务器必须使用长期密钥或 TURN REST API 鉴权，不能开放匿名中继。coturn 4.5.1 及以上版本默认阻止 loopback/multicast peer，不要再写旧版 `no-loopback-peers` 或 `no-multicast-peers`；coturn 4.5.2 会因此报 `Bad configuration format`。同时监控出口流量和异常分配数量。证书私钥、TURN secret、API JWT secret 和数据库密码不得提交 Git 或放入移动安装包。
