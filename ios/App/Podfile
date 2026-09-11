@@ -9,7 +9,6 @@ project 'App.xcodeproj'
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-  pod 'JitsiMeetSDK'
 end
 
 target 'App' do

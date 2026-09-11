@@ -8,7 +8,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MediaPermissionsPlugin.class);
-        registerPlugin(JitsiCallPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
