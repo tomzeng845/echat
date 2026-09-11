@@ -415,3 +415,16 @@
 ## 已知限制
 
 未配置 MongoDB 时预览使用进程内存，服务重启后测试账号与业务数据会清空。默认 WebRTC 使用公共 STUN 和 P2P，小群采用网状连接；未配置 TURN/SFU 时企业网络、对称 NAT 和较大群聊不具备生产可靠性。云端自动化浏览器没有物理摄像头和麦克风，因此媒体流仍需在真实 PC 或手机上进行设备验收；SignalR 通话状态、通话记录和信令已由双账号自动化测试通过。朋友圈媒体按可见范围鉴权，但不属于聊天会话端到端加密范围。
+
+## iOS 原生语音 SDK 迁移（OpenIM + LiveKit）
+- [x] 确认架构：OpenIM 负责通话信令，LiveKit 原生 SDK 负责音频媒体，CallKit/PushKit 负责系统来电
+- [x] 新增受保护接口 `GET /api/openim/session?platform=ios|android`
+- [x] 服务端仅从 `OPENIM_ADMIN_TOKEN` / `OpenIM:AdminToken` 读取 OpenIM 管理员 token，不向客户端暴露
+- [x] 服务端按 EChat 用户 ID 自动同步 OpenIM 用户并签发短期用户 token
+- [x] 返回 OpenIM API、WebSocket 和 LiveKit 地址供原生桥接使用
+- [x] 增加 OpenIM 配置健康检查和 API 回归测试
+- [ ] 接入 OpenIM iOS SDK（官方仓库为 AGPL-3.0 或商业许可，需确认授权路线）
+- [ ] 接入完整 LiveKit Swift SDK 的 Room/AudioManager，而不是当前仅底层 `LiveKitWebRTC` 包
+- [ ] 将 OpenIM signalingInvite/accept/hangup 与 CallKit/PushKit 生命周期接通
+- [ ] iOS 真机验证锁屏接听、听筒/外放/蓝牙、中断恢复和第二通电话
+- [ ] 群会话中选择一名成员建立一对一通话；不创建多人房间

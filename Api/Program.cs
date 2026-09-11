@@ -37,6 +37,8 @@ builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeS
 builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("apns", client => { client.Timeout = TimeSpan.FromSeconds(8); client.DefaultRequestVersion = new Version(2, 0); client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher; });
+builder.Services.AddHttpClient("openim", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<OpenImService>();
 builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
@@ -145,7 +147,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push) => Results.Ok(new
+app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push, OpenImService openIm) => Results.Ok(new
 {
     name = "E聊 API",
     version = "0.9.0",
@@ -155,6 +157,7 @@ app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment enviro
     previewAdminEnabled = RuntimeMode.IsEphemeralPreview(configuration, environment),
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },
     push = new { enabled = push.Enabled, provider = push.Provider, androidEnabled = push.AndroidEnabled, iosEnabled = push.IosEnabled },
+    openIm = new { configured = openIm.Configured },
     utcNow = DateTime.UtcNow
 }));
 app.MapFallbackToFile("index.html");

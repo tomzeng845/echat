@@ -206,6 +206,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var cameraEnabled = true
     private var callKitAudioActive = false
     private var activatedByApp = false
+    private var interruptionActive = false
+    private var activationRetryCount = 0
+    private var activationRetryWorkItem: DispatchWorkItem?
     private var sslInitialized = false
     private var _isRunning = false
     private var videoOverlay: UIView?
@@ -233,6 +236,10 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             self.mode = mode
             self.speaker = speaker
             self.callKitAudioActive = false
+            self.interruptionActive = false
+            self.activationRetryCount = 0
+            self.activationRetryWorkItem?.cancel()
+            self.activationRetryWorkItem = nil
             self.microphoneEnabled = true
             self.cameraEnabled = true
             self.remoteDescriptionReady = false
@@ -522,8 +529,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             let rtcAudioSession = LKRTCAudioSession.sharedInstance()
             rtcAudioSession.audioSessionDidActivate(audioSession)
             guard self._isRunning else { return }
-            self.configureAudioSessionLocked(activate: false)
-            rtcAudioSession.isAudioEnabled = true
+            if self.configureAudioSessionLocked(activate: false) {
+                rtcAudioSession.isAudioEnabled = true
+            }
             self.emitDiagnostic("native-callkit-audio-activated")
         }
     }
@@ -543,12 +551,18 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             guard self._isRunning else { return }
             let rtcAudioSession = LKRTCAudioSession.sharedInstance()
             if ended {
-                self.configureAudioSessionLocked(activate: !self.callKitAudioActive)
-                rtcAudioSession.isAudioEnabled = true
-                self.emitDiagnostic("native-audio-interruption-recovered")
+                self.interruptionActive = false
+                if self.configureAudioSessionLocked(activate: !self.callKitAudioActive) {
+                    rtcAudioSession.isAudioEnabled = true
+                    self.emitDiagnostic("native-audio-interruption-recovered")
+                } else {
+                    self.scheduleAudioActivationRetryLocked()
+                }
             } else {
+                self.interruptionActive = true
                 rtcAudioSession.isAudioEnabled = false
                 self.emitDiagnostic("native-audio-interruption-began")
+                self.scheduleAudioActivationRetryLocked()
             }
         }
     }
@@ -563,8 +577,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 )
             }
             if !force && self.audioRouteMatchesPreferenceLocked() { return }
-            self.configureAudioSessionLocked(activate: !self.callKitAudioActive)
-            LKRTCAudioSession.sharedInstance().isAudioEnabled = true
+            if self.configureAudioSessionLocked(activate: !self.callKitAudioActive) {
+                LKRTCAudioSession.sharedInstance().isAudioEnabled = true
+            }
         }
     }
 
@@ -596,11 +611,13 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 AVAudioSession.sharedInstance()
             )
         }
-        configureAudioSessionLocked(activate: !callKitAudioActive)
-        LKRTCAudioSession.sharedInstance().isAudioEnabled = true
+        if configureAudioSessionLocked(activate: !callKitAudioActive) {
+            LKRTCAudioSession.sharedInstance().isAudioEnabled = true
+        }
     }
 
-    private func configureAudioSessionLocked(activate: Bool) {
+    @discardableResult
+    private func configureAudioSessionLocked(activate: Bool) -> Bool {
         let rtcSession = LKRTCAudioSession.sharedInstance()
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speaker { options.insert(.defaultToSpeaker) }
@@ -632,6 +649,10 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             } else if !hasBluetooth {
                 try rtcSession.overrideOutputAudioPort(.none)
             }
+            activationRetryCount = 0
+            activationRetryWorkItem?.cancel()
+            activationRetryWorkItem = nil
+            return true
         } catch {
             let nsError = error as NSError
             emitDiagnostic("native-audio-session-error", details: [
@@ -643,7 +664,30 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 "rtcActivationCount": rtcSession.activationCount,
                 "rtcSessionCount": rtcSession.webRTCSessionCount
             ])
+            if activate {
+                scheduleAudioActivationRetryLocked()
+            }
+            return false
         }
+    }
+
+    private func scheduleAudioActivationRetryLocked() {
+        guard _isRunning, !callKitAudioActive, activationRetryCount < 10 else { return }
+        activationRetryCount += 1
+        activationRetryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.queue.async {
+                guard self._isRunning, !self.interruptionActive else { return }
+                let rtcSession = LKRTCAudioSession.sharedInstance()
+                if self.configureAudioSessionLocked(activate: true) {
+                    rtcSession.isAudioEnabled = true
+                    self.emitDiagnostic("native-audio-session-recovered")
+                }
+            }
+        }
+        activationRetryWorkItem = work
+        queue.asyncAfter(deadline: .now() + .milliseconds(300), execute: work)
     }
 
     private func audioRouteMatchesPreferenceLocked() -> Bool {
@@ -666,6 +710,10 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private func closeLocked(deactivateSession: Bool) {
         let wasRunning = _isRunning
         _isRunning = false
+        activationRetryWorkItem?.cancel()
+        activationRetryWorkItem = nil
+        activationRetryCount = 0
+        interruptionActive = false
         localAudioTrack?.isEnabled = false
         localVideoTrack?.isEnabled = false
         remoteVideoTrack?.isEnabled = false

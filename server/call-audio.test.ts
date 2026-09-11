@@ -49,6 +49,25 @@ describe("Android call audio routing", () => {
     expect(constraints.autoGainControl).toEqual({ ideal: true });
   });
 
+  it("keeps OpenIM administrator credentials on the API server", () => {
+    const service = readFileSync(
+      new URL("../Api/OpenImService.cs", import.meta.url),
+      "utf8"
+    );
+    const controller = readFileSync(
+      new URL("../Api/Controllers/OpenImController.cs", import.meta.url),
+      "utf8"
+    );
+    expect(service).toContain(
+      'Environment.GetEnvironmentVariable("OPENIM_ADMIN_TOKEN")'
+    );
+    expect(service).toContain("/auth/get_user_token");
+    expect(service).toContain("platformID");
+    expect(controller).toContain("[Authorize]");
+    expect(controller).toContain('Route("api/openim")');
+    expect(controller).not.toContain("AdminToken");
+  });
+
   it("lowers bitrate when loss, jitter or RTT become severe", () => {
     expect(classifyNetworkQuality(1, 999, 0.01, 0.05)).toBe("excellent");
     expect(classifyNetworkQuality(80, 920, 0.09, 0.5)).toBe("degraded");

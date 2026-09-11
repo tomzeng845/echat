@@ -226,6 +226,14 @@ export type RtcConfig = {
   sfuConfigured: boolean;
   maxP2pParticipants: number;
 };
+export type OpenImSession = {
+  userId: string;
+  token: string;
+  expireTimeSeconds: number;
+  apiAddress: string;
+  webSocketAddress: string;
+  liveKitAddress: string;
+};
 
 const DEVICE_KEY = "echat.device.v1";
 export class ApiError extends Error {
@@ -359,6 +367,10 @@ export async function api<T>(
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function getOpenImSession(platform: "ios" | "android" = "ios") {
+  return api<OpenImSession>(`/api/openim/session?platform=${platform}`);
 }
 
 export async function fetchAuthenticatedBlob(path: string) {
