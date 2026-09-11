@@ -435,10 +435,10 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void requestPermissions(PluginCall call) {
         List<String> aliases = new ArrayList<>();
-        if (Boolean.TRUE.equals(call.getBoolean("camera", false)) && getPermissionState("camera") != PermissionState.GRANTED) {
+        if (Boolean.TRUE.equals(call.getBoolean("camera", false)) && !hasSystemPermission(Manifest.permission.CAMERA)) {
             aliases.add("camera");
         }
-        if (Boolean.TRUE.equals(call.getBoolean("microphone", false)) && getPermissionState("microphone") != PermissionState.GRANTED) {
+        if (Boolean.TRUE.equals(call.getBoolean("microphone", false)) && !hasSystemPermission(Manifest.permission.RECORD_AUDIO)) {
             aliases.add("microphone");
         }
         if (aliases.isEmpty()) {
@@ -455,8 +455,12 @@ public class MediaPermissionsPlugin extends Plugin {
 
     private void resolveState(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("camera", getPermissionState("camera") == PermissionState.GRANTED);
-        result.put("microphone", getPermissionState("microphone") == PermissionState.GRANTED);
+        result.put("camera", hasSystemPermission(Manifest.permission.CAMERA));
+        result.put("microphone", hasSystemPermission(Manifest.permission.RECORD_AUDIO));
         call.resolve(result);
+    }
+
+    private boolean hasSystemPermission(String permission) {
+        return ContextCompat.checkSelfPermission(getContext(), permission) == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
 }
