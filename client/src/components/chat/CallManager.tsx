@@ -43,9 +43,6 @@ import {
   consumePendingNativeCall,
   endNativeCallAudioSession,
   ensureNativeMediaPermissions,
-  isNativeJitsiCallAvailable,
-  joinNativeJitsiCall,
-  leaveNativeJitsiCall,
   notifyIncomingEvent,
   playOutgoingCallAlert,
   setNativeCallAudioRoute,
@@ -241,19 +238,10 @@ function activeCallIsConnected(call: ActiveCall | null) {
   return call?.status === "connected";
 }
 
-function nativeJitsiRoomName(call: Pick<ActiveCall, "conversationId" | "callId">) {
-  // callId is a fresh UUID per call, so repeated calls in one conversation
-  // never reuse a previous Jitsi room.
-  const safeConversation = call.conversationId.replace(/[^a-zA-Z0-9_-]/g, "");
-  const safeCall = call.callId.replace(/[^a-zA-Z0-9_-]/g, "");
-  return `echat-${safeConversation}-${safeCall}`.slice(0, 220);
-}
-
 const CallManager = forwardRef<
   CallManagerHandle,
   { user: User; connection: HubConnection | null }
 >(function CallManager({ user, connection }, ref) {
-  const nativeJitsi = isNativeJitsiCallAvailable();
   const [call, setCall] = useState<ActiveCall | null>(null);
   const callRef = useRef<ActiveCall | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -261,7 +249,6 @@ const CallManager = forwardRef<
   const [remoteStreams, setRemoteStreams] = useState<
     Record<string, MediaStream>
   >({});
-  const nativeJitsiJoinedCallId = useRef<string | null>(null);
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
@@ -275,6 +262,9 @@ const CallManager = forwardRef<
   const noAudioSince = useRef(new Map<string, number>());
   const rtcConfigRef = useRef<RTCConfiguration>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    iceCandidatePoolSize: 4,
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
   });
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
@@ -321,7 +311,12 @@ const CallManager = forwardRef<
   useEffect(() => {
     api<RtcConfig>("/api/rtc/config")
       .then(value => {
-        rtcConfigRef.current = { iceServers: value.iceServers };
+        rtcConfigRef.current = {
+          iceServers: value.iceServers,
+          iceCandidatePoolSize: 4,
+          bundlePolicy: "max-bundle",
+          rtcpMuxPolicy: "require",
+        };
       })
       .catch(() => undefined);
   }, []);
@@ -485,14 +480,32 @@ const CallManager = forwardRef<
       stream.getTracks().forEach(track => peer!.addTrack(track, stream));
       const audioCapabilities = RTCRtpReceiver.getCapabilities?.("audio");
       if (audioCapabilities) {
-        const opus = audioCapabilities.codecs.filter(
-          codec => codec.mimeType.toLowerCase() === "audio/opus"
+        const preferredAudioCodecs = audioCapabilities.codecs.filter(codec =>
+          ["audio/opus", "audio/PCMU", "audio/PCMA"].includes(
+            codec.mimeType.toLowerCase()
+          )
         );
         peer
           .getTransceivers()
           .filter(transceiver => transceiver.receiver.track.kind === "audio")
           .forEach(transceiver => {
-            if (opus.length) transceiver.setCodecPreferences(opus);
+            if (preferredAudioCodecs.length)
+              transceiver.setCodecPreferences(preferredAudioCodecs);
+          });
+      }
+      const videoCapabilities = RTCRtpSender.getCapabilities?.("video");
+      if (videoCapabilities) {
+        const preferredVideoCodecs = videoCapabilities.codecs.filter(codec =>
+          ["video/VP9", "video/AV1", "video/H264", "video/VP8"].includes(
+            codec.mimeType
+          )
+        );
+        peer
+          .getTransceivers()
+          .filter(transceiver => transceiver.receiver.track.kind === "video")
+          .forEach(transceiver => {
+            if (preferredVideoCodecs.length)
+              transceiver.setCodecPreferences(preferredVideoCodecs);
           });
       }
       peer
@@ -596,8 +609,6 @@ const CallManager = forwardRef<
     pendingIce.current.clear();
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
-    if (nativeJitsi) await leaveNativeJitsiCall().catch(() => undefined);
-    nativeJitsiJoinedCallId.current = null;
     if (active) await clearNativeCallListenerAlert(active.callId);
     await stopIncomingCallAlert();
     await endNativeCallAudioSession().catch(() => undefined);
@@ -612,16 +623,6 @@ const CallManager = forwardRef<
     setLatencyMs(null);
     setNetworkQuality("检测中");
     setCall(null);
-  }
-
-  async function joinNativeJitsiForCall(active: ActiveCall) {
-    if (!nativeJitsi || nativeJitsiJoinedCallId.current === active.callId)
-      return;
-    await joinNativeJitsiCall({
-      roomName: nativeJitsiRoomName(active),
-      mode: active.mode,
-    });
-    nativeJitsiJoinedCallId.current = active.callId;
   }
 
   useImperativeHandle(ref, () => ({
@@ -642,7 +643,7 @@ const CallManager = forwardRef<
           mode,
           status: "calling",
         };
-        if (!nativeJitsi) await acquire(mode);
+        await acquire(mode);
         setMembers(
           await api<ConversationMember[]>(
             `/api/conversations/${conversation.id}/members`
@@ -650,7 +651,6 @@ const CallManager = forwardRef<
         );
         setCall(next);
         callRef.current = next;
-        await joinNativeJitsiForCall(next);
         if (shouldPlayOutgoingRingback(next.status))
           await playOutgoingCallAlert(next.callId);
         await connection.invoke(
@@ -723,10 +723,7 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
-      if (nativeJitsi) await joinNativeJitsiForCall(connected);
-      else {
-        await createPeer(participant.userId, true);
-      }
+      await createPeer(participant.userId, true);
     };
     const signaled = async (signal: CallSignal) => {
       const active = callRef.current;
@@ -867,7 +864,7 @@ const CallManager = forwardRef<
       );
       await clearNativeCallListenerAlert(active.callId);
       await stopIncomingCallAlert();
-      if (!nativeJitsi) await acquire(active.mode);
+      await acquire(active.mode);
       setMembers(
         await api<ConversationMember[]>(
           `/api/conversations/${active.conversationId}/members`
@@ -882,7 +879,7 @@ const CallManager = forwardRef<
       callRef.current = connected;
       setCall(connected);
       markConnected();
-      if (nativeJitsi) await joinNativeJitsiForCall(connected);
+      await createPeer(active.callerId || "", false);
     } catch (cause) {
       await connection
         .invoke(
