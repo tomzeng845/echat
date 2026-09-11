@@ -55,6 +55,22 @@ import {
   recordNoAudio,
   recordOutputDevice,
 } from "@/lib/runtime-diagnostics";
+import {
+  addNativeRtcConnectionStateListener,
+  addNativeRtcDiagnosticListener,
+  addNativeRtcIceCandidate,
+  addNativeRtcIceListener,
+  closeNativeIosWebRTC,
+  createNativeRtcAnswer,
+  createNativeRtcOffer,
+  setNativeRtcCamera,
+  setNativeRtcMicrophone,
+  setNativeRtcRemoteDescription,
+  setNativeRtcSpeaker,
+  shouldUseNativeIosWebRTC,
+  startNativeIosWebRTC,
+} from "@/lib/native-webrtc";
+import type { PluginListenerHandle } from "@capacitor/core";
 
 export type CallManagerHandle = {
   start: (conversation: Conversation, mode: "audio" | "video") => Promise<void>;
@@ -142,7 +158,8 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         element.muted = false;
         element.volume = 1;
         const needsResume =
-          element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
+          element.paused ||
+          element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
         if (!needsResume || playInFlight) return;
         recordAudioState({
           event: "play-attempt",
@@ -157,36 +174,39 @@ function AudioStream({ stream }: { stream: MediaStream }) {
           })),
         });
         playInFlight = element.play();
-        playInFlight.then(
-          () =>
-            recordAudioState({
-              event: "play-succeeded",
-              paused: element.paused,
-              readyState: element.readyState,
-            }),
-          error => {
-            const name = error instanceof DOMException ? error.name : "unknown";
-            recordAudioState({
-              event: "play-failed",
-              name,
-              message: error instanceof Error ? error.message : String(error),
-              paused: element.paused,
-              readyState: element.readyState,
-            });
-            if (!disposed && name === "AbortError") {
-              if (rebindTimer !== null) window.clearTimeout(rebindTimer);
-              rebindTimer = window.setTimeout(() => {
-                rebindTimer = null;
-                if (disposed) return;
-                element.srcObject = null;
-                element.srcObject = stream;
-                play();
-              }, 120);
+        playInFlight
+          .then(
+            () =>
+              recordAudioState({
+                event: "play-succeeded",
+                paused: element.paused,
+                readyState: element.readyState,
+              }),
+            error => {
+              const name =
+                error instanceof DOMException ? error.name : "unknown";
+              recordAudioState({
+                event: "play-failed",
+                name,
+                message: error instanceof Error ? error.message : String(error),
+                paused: element.paused,
+                readyState: element.readyState,
+              });
+              if (!disposed && name === "AbortError") {
+                if (rebindTimer !== null) window.clearTimeout(rebindTimer);
+                rebindTimer = window.setTimeout(() => {
+                  rebindTimer = null;
+                  if (disposed) return;
+                  element.srcObject = null;
+                  element.srcObject = stream;
+                  play();
+                }, 120);
+              }
             }
-          }
-        ).finally(() => {
-          playInFlight = null;
-        });
+          )
+          .finally(() => {
+            playInFlight = null;
+          });
       };
       const recoverFromMediaStall = () => {
         if (disposed || recoverTimer !== null) return;
@@ -329,6 +349,9 @@ const CallManager = forwardRef<
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const peers = useRef(new Map<string, RTCPeerConnection>());
+  const nativeRtcActive = useRef(false);
+  const nativePeerUserId = useRef("");
+  const nativeRtcListeners = useRef<PluginListenerHandle[]>([]);
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
   const qualityTimer = useRef<number | null>(null);
   const lastIceRestart = useRef(new Map<string, number>());
@@ -350,7 +373,9 @@ const CallManager = forwardRef<
   const connectedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [packetLossPercent, setPacketLossPercent] = useState<number | null>(null);
+  const [packetLossPercent, setPacketLossPercent] = useState<number | null>(
+    null
+  );
   const [networkQuality, setNetworkQuality] = useState("检测中");
   callRef.current = call;
   remoteStreamsRef.current = remoteStreams;
@@ -389,7 +414,10 @@ const CallManager = forwardRef<
     window.addEventListener("echat-audio-session-recovered", recoveryListener);
     window.addEventListener("echat-audio-session-state", stateListener);
     return () => {
-      window.removeEventListener("echat-audio-session-recovered", recoveryListener);
+      window.removeEventListener(
+        "echat-audio-session-recovered",
+        recoveryListener
+      );
       window.removeEventListener("echat-audio-session-state", stateListener);
     };
   }, [call?.status]);
@@ -407,11 +435,54 @@ const CallManager = forwardRef<
       .catch(() => undefined);
   }, []);
 
+  async function ensureNativeRtcListeners() {
+    if (nativeRtcListeners.current.length) return;
+    nativeRtcListeners.current = [
+      await addNativeRtcIceListener(candidate => {
+        const active = callRef.current;
+        const targetUserId = nativePeerUserId.current;
+        if (!active || !targetUserId || !connection) return;
+        connection
+          .invoke(
+            "CallSignal",
+            active.conversationId,
+            active.callId,
+            targetUserId,
+            "ice",
+            JSON.stringify(candidate)
+          )
+          .catch(() => undefined);
+      }),
+      await addNativeRtcConnectionStateListener(({ state }) => {
+        recordAudioState({ event: "native-webrtc-connection-state", state });
+        if (state === "connected") markConnected();
+      }),
+      await addNativeRtcDiagnosticListener(event => recordAudioState(event)),
+    ];
+  }
+
   async function acquire(mode: "audio" | "video") {
     await ensureNativeMediaPermissions({
       camera: mode === "video",
       microphone: true,
     });
+    const useSpeaker = defaultSpeakerForCallMode(mode);
+    if (shouldUseNativeIosWebRTC()) {
+      await ensureNativeRtcListeners();
+      await startNativeIosWebRTC({
+        mode,
+        speaker: useSpeaker,
+        iceServers: rtcConfigRef.current.iceServers || [],
+      });
+      nativeRtcActive.current = true;
+      localStreamRef.current = null;
+      setLocalStream(null);
+      setMicOn(true);
+      setCameraOn(mode === "video");
+      setSpeakerOn(useSpeaker);
+      speakerOnRef.current = useSpeaker;
+      return null;
+    }
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: preferredAudioConstraints(),
       video:
@@ -427,7 +498,6 @@ const CallManager = forwardRef<
     setLocalStream(stream);
     setMicOn(true);
     setCameraOn(mode === "video");
-    const useSpeaker = defaultSpeakerForCallMode(mode);
     await setNativeCallAudioRoute(useSpeaker).catch(() => useSpeaker);
     setSpeakerOn(useSpeaker);
     speakerOnRef.current = useSpeaker;
@@ -487,9 +557,10 @@ const CallManager = forwardRef<
     );
     const rttMs = Number(candidate?.currentRoundTripTime || 0) * 1000;
     if (rttMs > 0) setLatencyMs(Math.round(rttMs));
-    const lossPercent = packetsLost + packetsReceived > 0
-      ? (packetsLost / (packetsLost + packetsReceived)) * 100
-      : 0;
+    const lossPercent =
+      packetsLost + packetsReceived > 0
+        ? (packetsLost / (packetsLost + packetsReceived)) * 100
+        : 0;
     setPacketLossPercent(Number(lossPercent.toFixed(1)));
     setNetworkQuality(
       quality === "excellent" || quality === "good"
@@ -504,13 +575,17 @@ const CallManager = forwardRef<
       0
     );
     const audioPrevious = previousStats.current.get(`${peerKey}:audio`);
-    const audioDelta = Math.max(0, audioPackets - (audioPrevious?.packetsReceived || 0));
+    const audioDelta = Math.max(
+      0,
+      audioPackets - (audioPrevious?.packetsReceived || 0)
+    );
     if (peerKey) {
       previousStats.current.set(`${peerKey}:audio`, {
         packetsLost: 0,
         packetsReceived: audioPackets,
       });
-      const remoteHasAudio = remoteStreamsRef.current[peerKey]?.getAudioTracks().length;
+      const remoteHasAudio =
+        remoteStreamsRef.current[peerKey]?.getAudioTracks().length;
       if (activeCallIsConnected(callRef.current) && remoteHasAudio) {
         const started = noAudioSince.current.get(peerKey);
         if (audioDelta > 0) noAudioSince.current.delete(peerKey);
@@ -524,7 +599,10 @@ const CallManager = forwardRef<
           if (Date.now() - last > 10000) {
             lastIceRestart.current.set(`${peerKey}:audio`, Date.now());
             recordNoAudio({ peerKey, audioPackets });
-            recordIceRestart({ peerKey, reason: "no-audio-data-and-ice-failed" });
+            recordIceRestart({
+              peerKey,
+              reason: "no-audio-data-and-ice-failed",
+            });
             toast.info("检测到远端音频中断，正在尝试恢复连接…", {
               duration: 3000,
             });
@@ -561,8 +639,24 @@ const CallManager = forwardRef<
 
   async function createPeer(targetUserId: string, createOffer: boolean) {
     const active = callRef.current;
+    if (!active || !connection || targetUserId === user.id) return;
+    if (nativeRtcActive.current) {
+      nativePeerUserId.current = targetUserId;
+      if (createOffer) {
+        const offer = await createNativeRtcOffer();
+        await connection.invoke(
+          "CallSignal",
+          active.conversationId,
+          active.callId,
+          targetUserId,
+          "offer",
+          offer.payload
+        );
+      }
+      return;
+    }
     const stream = localStreamRef.current;
-    if (!active || !stream || !connection || targetUserId === user.id) return;
+    if (!stream) return;
     let peer = peers.current.get(targetUserId);
     if (!peer) {
       peer = new RTCPeerConnection(rtcConfigRef.current);
@@ -628,12 +722,14 @@ const CallManager = forwardRef<
           const existing = current[targetUserId];
           const incoming = event.streams[0];
           if (existing) {
-            const previous = existing.getTracks().find(
-              track => track.id === event.track.id
-            );
+            const previous = existing
+              .getTracks()
+              .find(track => track.id === event.track.id);
             if (previous && previous.readyState === "ended")
               existing.removeTrack(previous);
-            if (!existing.getTracks().some(track => track.id === event.track.id))
+            if (
+              !existing.getTracks().some(track => track.id === event.track.id)
+            )
               existing.addTrack(event.track);
             return { ...current };
           }
@@ -706,6 +802,15 @@ const CallManager = forwardRef<
     peers.current.forEach(peer => peer.close());
     peers.current.clear();
     pendingIce.current.clear();
+    if (nativeRtcActive.current) {
+      await closeNativeIosWebRTC().catch(() => undefined);
+      nativeRtcActive.current = false;
+    }
+    await Promise.all(
+      nativeRtcListeners.current.map(listener => listener.remove())
+    ).catch(() => undefined);
+    nativeRtcListeners.current = [];
+    nativePeerUserId.current = "";
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
     if (active) await clearNativeCallListenerAlert(active.callId);
@@ -828,6 +933,26 @@ const CallManager = forwardRef<
       const active = callRef.current;
       if (!active || active.callId !== signal.callId) return;
       try {
+        if (nativeRtcActive.current) {
+          nativePeerUserId.current = signal.fromUserId;
+          if (signal.signalType === "offer") {
+            await setNativeRtcRemoteDescription(signal.payload);
+            const answer = await createNativeRtcAnswer();
+            await connection.invoke(
+              "CallSignal",
+              active.conversationId,
+              active.callId,
+              signal.fromUserId,
+              "answer",
+              answer.payload
+            );
+          } else if (signal.signalType === "answer") {
+            await setNativeRtcRemoteDescription(signal.payload);
+          } else {
+            await addNativeRtcIceCandidate(signal.payload);
+          }
+          return;
+        }
         const peer = await createPeer(signal.fromUserId, false);
         if (!peer) return;
         if (signal.signalType === "offer") {
@@ -996,12 +1121,24 @@ const CallManager = forwardRef<
   }
 
   function toggleMic() {
+    if (nativeRtcActive.current) {
+      const next = !micOn;
+      setNativeRtcMicrophone(next).catch(() => undefined);
+      setMicOn(next);
+      return;
+    }
     localStreamRef.current
       ?.getAudioTracks()
       .forEach(track => (track.enabled = !track.enabled));
     setMicOn(value => !value);
   }
   function toggleCamera() {
+    if (nativeRtcActive.current) {
+      const next = !cameraOn;
+      setNativeRtcCamera(next).catch(() => undefined);
+      setCameraOn(next);
+      return;
+    }
     localStreamRef.current
       ?.getVideoTracks()
       .forEach(track => (track.enabled = !track.enabled));
@@ -1010,12 +1147,25 @@ const CallManager = forwardRef<
   async function toggleSpeaker() {
     const next = toggledSpeakerState(speakerOn);
     try {
+      if (nativeRtcActive.current) {
+        const result = await setNativeRtcSpeaker(next);
+        speakerOnRef.current = result.speaker;
+        setSpeakerOn(result.speaker);
+        recordOutputDevice({
+          speaker: result.speaker,
+          label: result.speaker ? "speaker" : "earpiece",
+        });
+        return;
+      }
       window.dispatchEvent(new CustomEvent("echat-resume-remote-audio"));
       const applied = await setNativeCallAudioRoute(next);
       window.dispatchEvent(new CustomEvent("echat-resume-remote-audio"));
       speakerOnRef.current = applied;
       setSpeakerOn(applied);
-      recordOutputDevice({ speaker: applied, label: applied ? "speaker" : "earpiece" });
+      recordOutputDevice({
+        speaker: applied,
+        label: applied ? "speaker" : "earpiece",
+      });
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "无法切换扬声器");
     }
@@ -1030,7 +1180,7 @@ const CallManager = forwardRef<
         ? "正在接听…"
         : call.status === "calling"
           ? "正在等待对方接听…"
-          : `通话中 · ${remoteEntries.length + 1} 人`;
+          : `通话中 · ${nativeRtcActive.current ? 2 : remoteEntries.length + 1} 人`;
   const durationText = formatCallDuration(elapsedSeconds);
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#06111d] text-white">
@@ -1044,7 +1194,7 @@ const CallManager = forwardRef<
           </h2>
         </div>
         <p className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-slate-300">
-        {call.status === "connected"
+          {call.status === "connected"
             ? `${statusText} · ${durationText}`
             : statusText}
         </p>

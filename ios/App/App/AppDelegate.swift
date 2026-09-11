@@ -56,8 +56,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 public class MyViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(MediaPermissionsPlugin())
-        // Keep the experimental LiveKit POC out of the production startup path.
-        // It can be re-enabled explicitly after the real-device launch check.
+        bridge?.registerPluginInstance(NativeWebRTCPlugin())
     }
 }
 
@@ -277,6 +276,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private var lastConfiguredSpeaker: Bool?
     var speakerPreferred = false
     var callAudioSessionRequested = false
+    private(set) var callKitAudioActive = false
 
     var currentAudioMode: AVAudioSession.Mode {
         let call = activeCall ?? pendingCall
@@ -332,6 +332,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             var state = self.audioSessionSnapshot()
             state["reason"] = ended ? "interruption-ended" : "interruption-began"
             self.plugin?.notifyListeners("audioSessionState", data: state)
+            if NativeIosWebRTCManager.shared.isRunning {
+                NativeIosWebRTCManager.shared.handleInterruption(ended: ended)
+            }
             guard ended, self.activeCall != nil else { return }
             self.restoreActiveAudioSession(reason: "interruption-ended")
         }
@@ -345,6 +348,10 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             var state = self.audioSessionSnapshot()
             state["reason"] = "route-changed"
             self.plugin?.notifyListeners("audioSessionState", data: state)
+            if NativeIosWebRTCManager.shared.isRunning {
+                NativeIosWebRTCManager.shared.reassertAudioSession()
+                return
+            }
             guard self.activeCall != nil,
                   !self.audioRouteMatchesPreference(session)
             else { return }
@@ -361,6 +368,10 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             var state = self.audioSessionSnapshot()
             state["reason"] = "media-services-reset"
             self.plugin?.notifyListeners("audioSessionState", data: state)
+            if NativeIosWebRTCManager.shared.isRunning {
+                NativeIosWebRTCManager.shared.reassertAudioSession()
+                return
+            }
             guard self.activeCall != nil else { return }
             self.restoreActiveAudioSession(reason: "media-services-reset")
         }
@@ -401,6 +412,10 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
                     reason == "manual-route" ||
                     reason == "alert-stopped"
             else { return }
+            if NativeIosWebRTCManager.shared.isRunning {
+                NativeIosWebRTCManager.shared.reassertAudioSession()
+                return
+            }
             let session = AVAudioSession.sharedInstance()
             self.applyAudioRoute(to: session)
             var state = self.audioSessionSnapshot()
@@ -537,14 +552,23 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        applyAudioRoute(to: audioSession)
+        callKitAudioActive = true
+        if NativeIosWebRTCManager.shared.isRunning {
+            NativeIosWebRTCManager.shared.callKitDidActivate(audioSession)
+        } else {
+            applyAudioRoute(to: audioSession)
+        }
         var state = audioSessionSnapshot()
         state["reason"] = "callkit-did-activate"
         plugin?.notifyListeners("audioSessionState", data: state)
         [0.15, 0.5, 1.2].forEach { delay in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak audioSession] in
                 guard let self, let audioSession else { return }
-                self.applyAudioRoute(to: audioSession)
+                if NativeIosWebRTCManager.shared.isRunning {
+                    NativeIosWebRTCManager.shared.reassertAudioSession()
+                } else {
+                    self.applyAudioRoute(to: audioSession)
+                }
             }
         }
     }
@@ -566,11 +590,16 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        callKitAudioActive = false
         callAudioSessionRequested = false
         var state = audioSessionSnapshot()
         state["reason"] = "callkit-did-deactivate"
         plugin?.notifyListeners("audioSessionState", data: state)
-        try? audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+        if NativeIosWebRTCManager.shared.isRunning {
+            NativeIosWebRTCManager.shared.callKitDidDeactivate(audioSession)
+        } else {
+            try? audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+        }
     }
 
     func providerDidReset(_ provider: CXProvider) {

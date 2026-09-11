@@ -79,4 +79,33 @@ describe("Android call audio routing", () => {
     expect(source).toContain("var callAudioSessionRequested = false");
     expect(source).toContain("callAudioSessionRequested = true");
   });
+
+  it("routes iOS calls through one native WebRTC audio owner", () => {
+    const callManager = readFileSync(
+      new URL("../client/src/components/chat/CallManager.tsx", import.meta.url),
+      "utf8"
+    );
+    const nativePlugin = readFileSync(
+      new URL("../ios/App/App/NativeWebRTCPlugin.swift", import.meta.url),
+      "utf8"
+    );
+    expect(callManager).toContain("shouldUseNativeIosWebRTC()");
+    expect(callManager).toContain("startNativeIosWebRTC");
+    expect(callManager).toContain("setNativeRtcRemoteDescription");
+    expect(nativePlugin).toContain("rtcAudioSession.useManualAudio = true");
+    expect(nativePlugin).toContain("rtcAudioSession.isAudioEnabled = false");
+    expect(nativePlugin).toContain("audioSessionDidActivate");
+    expect(nativePlugin).toContain("LKRTCPeerConnectionFactory");
+  });
+
+  it("uses the pure WebRTC binary without the LiveKit Room or Rust runtime", () => {
+    const packageManifest = readFileSync(
+      new URL("../ios/App/CapApp-SPM/Package.swift", import.meta.url),
+      "utf8"
+    );
+    expect(packageManifest).toContain("livekit/webrtc-xcframework.git");
+    expect(packageManifest).toContain('product(name: "LiveKitWebRTC"');
+    expect(packageManifest).not.toContain("client-sdk-swift");
+    expect(packageManifest).not.toContain("RustLiveKitUniFFI");
+  });
 });
