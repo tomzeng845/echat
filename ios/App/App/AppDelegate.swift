@@ -183,32 +183,9 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setCallAudioRoute(_ call: CAPPluginCall) {
         let speaker = call.getBool("speaker") ?? false
         DispatchQueue.main.async {
-            do {
-                let session = AVAudioSession.sharedInstance()
-                var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
-                if speaker { options.insert(.defaultToSpeaker) }
-                try session.setCategory(
-                    .playAndRecord,
-                    mode: EChatVoipManager.shared.currentAudioMode,
-                    options: options
-                )
-                try session.setPreferredSampleRate(48_000)
-                try session.setPreferredIOBufferDuration(0.01)
-                try session.setActive(true)
-                try session.overrideOutputAudioPort(speaker ? .speaker : .none)
-                EChatVoipManager.shared.speakerPreferred = speaker
-                // CallKit may re-activate the audio session immediately after
-                // the route change. Re-apply the selected route once the
-                // system has finished its transition so remote audio does not
-                // remain attached to an inactive output.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    try? session.setActive(true)
-                    try? session.overrideOutputAudioPort(speaker ? .speaker : .none)
-                }
-                call.resolve(["speaker": speaker, "applied": true])
-            } catch {
-                call.reject("无法切换通话音频输出", nil, error)
-            }
+            EChatVoipManager.shared.speakerPreferred = speaker
+            EChatVoipManager.shared.reassertAudioSession(reason: "manual-route")
+            call.resolve(["speaker": speaker, "applied": true])
         }
     }
 
@@ -285,6 +262,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private let pendingClearedKey = "echat.ios.pending-cleared-call.v1"
     private let voipTokenKey = "echat.ios.voip-token.v1"
     private var audioSessionObserversInstalled = false
+    private var audioSessionRecoveryWorkItem: DispatchWorkItem?
+    private var lastConfiguredAudioMode: AVAudioSession.Mode?
+    private var lastConfiguredSpeaker: Bool?
     var speakerPreferred = false
 
     var currentAudioMode: AVAudioSession.Mode {
@@ -387,12 +367,22 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     private func restoreActiveAudioSession(reason: String) {
-        let session = AVAudioSession.sharedInstance()
-        applyAudioRoute(to: session)
-        var state = audioSessionSnapshot()
-        state["reason"] = reason
-        plugin?.notifyListeners("audioSessionRecovered", data: state)
-        plugin?.notifyListeners("audioSessionState", data: state)
+        reassertAudioSession(reason: reason)
+    }
+
+    func reassertAudioSession(reason: String) {
+        audioSessionRecoveryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.activeCall != nil || reason == "manual-route" else { return }
+            let session = AVAudioSession.sharedInstance()
+            self.applyAudioRoute(to: session)
+            var state = self.audioSessionSnapshot()
+            state["reason"] = reason
+            self.plugin?.notifyListeners("audioSessionRecovered", data: state)
+            self.plugin?.notifyListeners("audioSessionState", data: state)
+        }
+        audioSessionRecoveryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
     }
 
     func pushRegistry(
@@ -534,9 +524,13 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     private func applyAudioRoute(to audioSession: AVAudioSession) {
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP]
         if speakerPreferred { options.insert(.defaultToSpeaker) }
-        try? audioSession.setCategory(.playAndRecord, mode: currentAudioMode, options: options)
-        try? audioSession.setPreferredSampleRate(48_000)
-        try? audioSession.setPreferredIOBufferDuration(0.01)
+        if lastConfiguredAudioMode != currentAudioMode || lastConfiguredSpeaker != speakerPreferred || audioSession.category != .playAndRecord || audioSession.mode != currentAudioMode {
+            try? audioSession.setCategory(.playAndRecord, mode: currentAudioMode, options: options)
+            try? audioSession.setPreferredSampleRate(48_000)
+            try? audioSession.setPreferredIOBufferDuration(0.01)
+            lastConfiguredAudioMode = currentAudioMode
+            lastConfiguredSpeaker = speakerPreferred
+        }
         try? audioSession.setActive(true)
         try? audioSession.overrideOutputAudioPort(speakerPreferred ? .speaker : .none)
     }
