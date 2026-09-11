@@ -338,30 +338,73 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         guard let device = LKRTCCameraVideoCapturer.captureDevices().first(where: {
             $0.position == .front
         }) ?? LKRTCCameraVideoCapturer.captureDevices().first else {
-            completion(.failure(NativeWebRTCError.cameraUnavailable))
-            return
-        }
-        let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
-        guard let format = formats.min(by: { lhs, rhs in
-            let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-            let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-            let leftDistance = abs(Int(left.width) - 1280) + abs(Int(left.height) - 720)
-            let rightDistance = abs(Int(right.width) - 1280) + abs(Int(right.height) - 720)
-            return leftDistance < rightDistance
-        }) else {
+            emitDiagnostic("native-camera-unavailable")
             completion(.failure(NativeWebRTCError.cameraUnavailable))
             return
         }
 
-        DispatchQueue.main.async {
-            self.installVideoOverlay()
-            if let localRenderer = self.localRenderer {
+        let startCapture: () -> Void = { [weak self] in
+            guard let self else { return }
+            let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
+            let compatibleFormats = formats.filter { format in
+                format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= 30 }
+            }
+            guard let format = (compatibleFormats.isEmpty ? formats : compatibleFormats).min(by: { lhs, rhs in
+                let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+                let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+                let leftDistance = abs(Int(left.width) - 1280) + abs(Int(left.height) - 720)
+                let rightDistance = abs(Int(right.width) - 1280) + abs(Int(right.height) - 720)
+                return leftDistance < rightDistance
+            }) else {
+                self.emitDiagnostic("native-camera-format-unavailable")
+                completion(.failure(NativeWebRTCError.cameraUnavailable))
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.installVideoOverlay()
+                guard let localRenderer = self.localRenderer else {
+                    self.emitDiagnostic("native-local-preview-unavailable")
+                    completion(.failure(NativeWebRTCError.cameraUnavailable))
+                    return
+                }
                 videoTrack.add(localRenderer)
+                self.emitDiagnostic("native-local-preview-attached", details: [
+                    "device": device.localizedName,
+                    "width": CMVideoFormatDescriptionGetDimensions(format.formatDescription).width,
+                    "height": CMVideoFormatDescriptionGetDimensions(format.formatDescription).height
+                ])
+                capturer.startCapture(with: device, format: format, fps: 30) { error in
+                    if let error {
+                        self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
+                        completion(.failure(error))
+                    } else {
+                        self.emitDiagnostic("native-camera-capture-started", details: ["device": device.localizedName])
+                        completion(.success(()))
+                    }
+                }
             }
-            capturer.startCapture(with: device, format: format, fps: 30) { error in
-                if let error { completion(.failure(error)) }
-                else { completion(.success(())) }
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            startCapture()
+        case .notDetermined:
+            emitDiagnostic("native-camera-permission-requested")
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                self.queue.async {
+                    guard granted else {
+                        self.emitDiagnostic("native-camera-permission-denied")
+                        completion(.failure(NativeWebRTCError.cameraUnavailable))
+                        return
+                    }
+                    self.emitDiagnostic("native-camera-permission-granted")
+                    startCapture()
+                }
             }
+        default:
+            emitDiagnostic("native-camera-permission-denied")
+            completion(.failure(NativeWebRTCError.cameraUnavailable))
         }
     }
 
