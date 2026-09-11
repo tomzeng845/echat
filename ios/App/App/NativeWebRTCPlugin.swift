@@ -335,16 +335,15 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
         let capturer = LKRTCCameraVideoCapturer(delegate: videoSource)
         cameraCapturer = capturer
-        guard let device = LKRTCCameraVideoCapturer.captureDevices().first(where: {
-            $0.position == .front
-        }) ?? LKRTCCameraVideoCapturer.captureDevices().first else {
-            emitDiagnostic("native-camera-unavailable")
-            completion(.failure(NativeWebRTCError.cameraUnavailable))
-            return
-        }
-
         let startCapture: () -> Void = { [weak self] in
             guard let self else { return }
+            guard let device = LKRTCCameraVideoCapturer.captureDevices().first(where: {
+                $0.position == .front
+            }) ?? LKRTCCameraVideoCapturer.captureDevices().first else {
+                self.emitDiagnostic("native-camera-unavailable")
+                completion(.failure(NativeWebRTCError.cameraUnavailable))
+                return
+            }
             let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
             let compatibleFormats = formats.filter { format in
                 format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= 30 }
