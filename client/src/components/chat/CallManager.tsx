@@ -125,6 +125,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       let disposed = false;
       let playInFlight: Promise<void> | null = null;
       let rebindTimer: number | null = null;
+      let recoverTimer: number | null = null;
       const play = () => {
         if (disposed) return;
         const tracks = stream.getAudioTracks();
@@ -191,6 +192,13 @@ function AudioStream({ stream }: { stream: MediaStream }) {
           playInFlight = null;
         });
       };
+      const recoverFromMediaStall = () => {
+        if (disposed || recoverTimer !== null) return;
+        recoverTimer = window.setTimeout(() => {
+          recoverTimer = null;
+          if (!disposed && element.paused) play();
+        }, 300);
+      };
       element.srcObject = stream;
       stream.getAudioTracks().forEach(track => {
         track.enabled = true;
@@ -206,9 +214,9 @@ function AudioStream({ stream }: { stream: MediaStream }) {
       element.onloadedmetadata = play;
       element.oncanplay = play;
       element.onplaying = play;
-      element.onpause = play;
-      element.onstalled = play;
-      element.onwaiting = play;
+      element.onpause = recoverFromMediaStall;
+      element.onstalled = recoverFromMediaStall;
+      element.onwaiting = recoverFromMediaStall;
       stream.onaddtrack = play;
       stream.onremovetrack = () => {
         if (stream.getAudioTracks().some(track => track.readyState === "live"))
@@ -238,6 +246,7 @@ function AudioStream({ stream }: { stream: MediaStream }) {
         retries.forEach(window.clearTimeout);
         window.clearInterval(watchdog);
         if (rebindTimer !== null) window.clearTimeout(rebindTimer);
+        if (recoverTimer !== null) window.clearTimeout(recoverTimer);
         window.removeEventListener(
           "echat-resume-remote-audio",
           resumeFromUserGesture
