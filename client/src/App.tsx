@@ -3,17 +3,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import Home from "@/pages/Home";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import { lazy, Suspense } from "react";
 
 const Admin = lazy(() => import("@/pages/Admin"));
 
 export default function App() {
   const isAdmin = window.location.pathname.startsWith("/admin");
+  const isPrivacy = window.location.pathname === "/privacy";
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          {isAdmin ? (
+          {isPrivacy ? (
+            <PrivacyPolicy />
+          ) : isAdmin ? (
             <Suspense
               fallback={
                 <div className="grid min-h-full place-items-center bg-[#071421] text-sm text-teal-200">
