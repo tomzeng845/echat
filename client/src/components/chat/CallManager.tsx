@@ -395,10 +395,19 @@ const CallManager = forwardRef<
       window.setTimeout(refreshAudioSession, delay)
     );
     const recoveryListener = () => refreshAudioSession();
+    const stateListener = (event: Event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+      recordAudioState({
+        event: "native-audio-session-state",
+        ...detail,
+      });
+    };
     window.addEventListener("echat-audio-session-recovered", recoveryListener);
+    window.addEventListener("echat-audio-session-state", stateListener);
     return () => {
       timers.forEach(window.clearTimeout);
       window.removeEventListener("echat-audio-session-recovered", recoveryListener);
+      window.removeEventListener("echat-audio-session-state", stateListener);
     };
   }, [call?.status]);
 

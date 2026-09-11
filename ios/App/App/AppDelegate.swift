@@ -338,6 +338,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             guard let self else { return }
             let type = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue ?? 0
             let ended = type == AVAudioSession.InterruptionType.ended.rawValue
+            var state = self.audioSessionSnapshot()
+            state["reason"] = ended ? "interruption-ended" : "interruption-began"
+            self.plugin?.notifyListeners("audioSessionState", data: state)
             guard ended, self.activeCall != nil else { return }
             self.restoreActiveAudioSession(reason: "interruption-ended")
         }
@@ -346,7 +349,11 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] _ in
-            guard let self, self.activeCall != nil else { return }
+            guard let self else { return }
+            var state = self.audioSessionSnapshot()
+            state["reason"] = "route-changed"
+            self.plugin?.notifyListeners("audioSessionState", data: state)
+            guard self.activeCall != nil else { return }
             self.restoreActiveAudioSession(reason: "route-changed")
         }
         center.addObserver(
@@ -354,15 +361,38 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] _ in
-            guard let self, self.activeCall != nil else { return }
+            guard let self else { return }
+            var state = self.audioSessionSnapshot()
+            state["reason"] = "media-services-reset"
+            self.plugin?.notifyListeners("audioSessionState", data: state)
+            guard self.activeCall != nil else { return }
             self.restoreActiveAudioSession(reason: "media-services-reset")
         }
+    }
+
+    private func audioSessionSnapshot() -> [String: Any] {
+        let session = AVAudioSession.sharedInstance()
+        return [
+            "category": session.category.rawValue,
+            "mode": session.mode.rawValue,
+            "sampleRate": session.sampleRate,
+            "outputs": session.currentRoute.outputs.map {
+                "\($0.portType.rawValue):\($0.portName)"
+            },
+            "inputs": session.currentRoute.inputs.map {
+                "\($0.portType.rawValue):\($0.portName)"
+            },
+            "otherAudioPlaying": session.isOtherAudioPlaying,
+        ]
     }
 
     private func restoreActiveAudioSession(reason: String) {
         let session = AVAudioSession.sharedInstance()
         applyAudioRoute(to: session)
-        plugin?.notifyListeners("audioSessionRecovered", data: ["reason": reason])
+        var state = audioSessionSnapshot()
+        state["reason"] = reason
+        plugin?.notifyListeners("audioSessionRecovered", data: state)
+        plugin?.notifyListeners("audioSessionState", data: state)
     }
 
     func pushRegistry(
@@ -490,6 +520,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         applyAudioRoute(to: audioSession)
+        var state = audioSessionSnapshot()
+        state["reason"] = "callkit-did-activate"
+        plugin?.notifyListeners("audioSessionState", data: state)
         [0.15, 0.5, 1.2].forEach { delay in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak audioSession] in
                 guard let self, let audioSession else { return }
@@ -509,6 +542,9 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        var state = audioSessionSnapshot()
+        state["reason"] = "callkit-did-deactivate"
+        plugin?.notifyListeners("audioSessionState", data: state)
         try? audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
     }
 

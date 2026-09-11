@@ -102,7 +102,11 @@ type MediaPermissionsPlugin = {
   ): Promise<PluginListenerHandle>;
   addListener(
     eventName: "audioSessionRecovered",
-    listener: (event: { reason?: string }) => void
+    listener: (event: { reason?: string; [key: string]: unknown }) => void
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "audioSessionState",
+    listener: (event: { reason?: string; [key: string]: unknown }) => void
   ): Promise<PluginListenerHandle>;
   requestPermissions(options: {
     camera: boolean;
@@ -233,6 +237,11 @@ async function ensureCallListenerEvents() {
     await MediaPermissions.addListener("audioSessionRecovered", event => {
       window.dispatchEvent(
         new CustomEvent("echat-audio-session-recovered", { detail: event })
+      );
+    }),
+    await MediaPermissions.addListener("audioSessionState", event => {
+      window.dispatchEvent(
+        new CustomEvent("echat-audio-session-state", { detail: event })
       );
     }),
   ];
