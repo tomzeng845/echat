@@ -44,7 +44,7 @@ public sealed class PushNotificationService(
         if (!IosEnabled) return;
         var devices = await repository.GetPushDevicesAsync(userIds, ct);
         var data = new Dictionary<string, string> { ["type"] = "call", ["action"] = "end", ["callId"] = callId };
-        await Task.WhenAll(devices.Where(x => x.Platform is "ios" or "ios-voip").Select(x => apns.SendAsync(x, "", "", data, ct)));
+        await Task.WhenAll(SelectCallPushDevices(devices).Select(x => apns.SendAsync(x, "", "", data, ct)));
     }
 
     public Task SendTestAsync(string userId, CancellationToken ct = default) =>
@@ -55,7 +55,21 @@ public sealed class PushNotificationService(
         if (!Enabled) return;
         var devices = await repository.GetPushDevicesAsync(userIds, ct);
         if (devices.Count == 0) return;
-        await Task.WhenAll(devices.Select(device => SendToDeviceSafelyAsync(device, title, body, data, highPriority, ct)));
+        var selectedDevices = data.TryGetValue("type", out var type) && type == "call"
+            ? SelectCallPushDevices(devices)
+            : devices;
+        await Task.WhenAll(selectedDevices.Select(device => SendToDeviceSafelyAsync(device, title, body, data, highPriority, ct)));
+    }
+
+    private static IReadOnlyList<PushDevice> SelectCallPushDevices(IReadOnlyList<PushDevice> devices)
+    {
+        var voipDeviceIds = devices
+            .Where(x => x.Platform == "ios-voip")
+            .Select(x => $"{x.UserId}:{x.DeviceId}")
+            .ToHashSet(StringComparer.Ordinal);
+        return devices
+            .Where(x => x.Platform != "ios" || !voipDeviceIds.Contains($"{x.UserId}:{x.DeviceId}"))
+            .ToList();
     }
 
     private Task SendToDeviceSafelyAsync(PushDevice device, string title, string body, IReadOnlyDictionary<string, string> data, bool highPriority, CancellationToken ct) =>

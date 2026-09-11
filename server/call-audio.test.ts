@@ -116,9 +116,11 @@ describe("Android call audio routing", () => {
     const apns = readFileSync(new URL("../Api/ApnsNotificationService.cs", import.meta.url), "utf8");
     const push = readFileSync(new URL("../Api/PushNotificationService.cs", import.meta.url), "utf8");
     expect(apns).toContain('["content-available"] = 1');
-    expect(push).toContain('x.Platform is "ios" or "ios-voip"');
+    expect(push).toContain("SelectCallPushDevices(devices)");
     expect(push).toContain('"ios" => IosEnabled ? apns.SendAsync');
     expect(push).toContain('"ios-voip" => IosEnabled');
+    expect(push).toContain("SelectCallPushDevices");
+    expect(push).toContain("voipDeviceIds");
   });
 
   it("turns an APNs call fallback into the same CallKit path", () => {
