@@ -202,6 +202,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var cameraEnabled = true
     private var callKitAudioActive = false
     private var activatedByApp = false
+    private var sslInitialized = false
     private var _isRunning = false
     private var videoOverlay: UIView?
     private var remoteRenderer: LKRTCMTLVideoView?
@@ -211,7 +212,6 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
     private override init() {
         super.init()
-        LKRTCInitializeSSL()
     }
 
     func start(
@@ -221,6 +221,10 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         queue.async {
+            if !self.sslInitialized {
+                LKRTCInitializeSSL()
+                self.sslInitialized = true
+            }
             self.closeLocked(deactivateSession: true)
             self.mode = mode
             self.speaker = speaker
@@ -540,9 +544,16 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         }
     }
 
-    func reassertAudioSession() {
+    func reassertAudioSession(force: Bool = false) {
         queue.async {
             guard self._isRunning else { return }
+            if EChatVoipManager.shared.callKitAudioActive && !self.callKitAudioActive {
+                self.callKitAudioActive = true
+                LKRTCAudioSession.sharedInstance().audioSessionDidActivate(
+                    AVAudioSession.sharedInstance()
+                )
+            }
+            if !force && self.audioRouteMatchesPreferenceLocked() { return }
             self.configureAudioSessionLocked(activate: !self.callKitAudioActive)
             LKRTCAudioSession.sharedInstance().isAudioEnabled = true
         }
@@ -606,6 +617,23 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 "message": error.localizedDescription
             ])
         }
+    }
+
+    private func audioRouteMatchesPreferenceLocked() -> Bool {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        guard !outputs.isEmpty else { return false }
+        let usesSpeaker = outputs.contains { $0.portType == .builtInSpeaker }
+        let usesExternalOutput = outputs.contains {
+            [
+                .bluetoothHFP,
+                .bluetoothA2DP,
+                .bluetoothLE,
+                .headphones,
+                .airPlay,
+                .carAudio
+            ].contains($0.portType)
+        }
+        return speaker ? usesSpeaker : (!usesSpeaker || usesExternalOutput)
     }
 
     private func closeLocked(deactivateSession: Bool) {

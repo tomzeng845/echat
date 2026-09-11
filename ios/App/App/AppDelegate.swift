@@ -369,7 +369,7 @@ final class EChatVoipManager: NSObject, PKPushRegistryDelegate, CXProviderDelega
             state["reason"] = "media-services-reset"
             self.plugin?.notifyListeners("audioSessionState", data: state)
             if NativeIosWebRTCManager.shared.isRunning {
-                NativeIosWebRTCManager.shared.reassertAudioSession()
+                NativeIosWebRTCManager.shared.reassertAudioSession(force: true)
                 return
             }
             guard self.activeCall != nil else { return }
