@@ -67,6 +67,9 @@
 - [x] Build 264（提交 `c14c3428`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `7412fbb7-b424-44a5-a2d0-6423323528d3`
 - [x] Build 264 日志确认首个 420v 失败后仅回退到 420f；新 session 复用内存地址导致 sessionId 去重误阻止后续格式推进
 - [x] 候选格式改为与实际 AVCaptureVideoDataOutput.availableVideoCVPixelFormatTypes 交集，仅允许 420v/420f；同步 output.videoSettings 并使用 inputPriority preset；去重改为 capture generation
+- [x] Build 265（提交 `8254b119`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `61ef1453-cd9f-4110-813e-b129e1154bff`
+- [x] Build 265 真机依次验证 8 个 420v/420f 候选均 `outputCompatible=true`、InputPriority 且 FourCC 匹配，但 SDK capturer 启动后仍全部触发 -11873，排除 output 像素格式不兼容
+- [x] 移除 LKRTCCameraVideoCapturer，改由 EChatVideoCapturer 独占 AVCaptureSession/Input/VideoDataOutput/activeFormat，并把 CVPixelBuffer 直接封装为 LKRTCVideoFrame 注入现有 RTCVideoSource
 - [ ] 构建并通过 TestFlight 真机日志验证格式回退后 `sessionRunning=true`、`capturedFrames>0`
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 

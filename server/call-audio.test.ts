@@ -246,9 +246,9 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("sessionRunningBeforeStop");
     expect(nativePlugin).toContain("sessionInputsBeforeStop");
     expect(nativePlugin).toContain("sessionOutputsBeforeStop");
-    expect(nativePlugin).toContain(
-      "let freshCapturer = LKRTCCameraVideoCapturer"
-    );
+    expect(nativePlugin).toContain("private final class EChatVideoCapturer");
+    expect(nativePlugin).toContain("let freshCapturer = EChatVideoCapturer");
+    expect(nativePlugin).not.toContain("LKRTCCameraVideoCapturer");
     expect(nativePlugin).toContain("self.cameraCapturer = freshCapturer");
     expect(nativePlugin).toContain("native-camera-session-reset");
     expect(nativePlugin).toContain("native-camera-session-reset-complete");
@@ -278,7 +278,18 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("cameraFormatCandidates");
     expect(nativePlugin).toContain("format.isVideoHDRSupported");
     expect(nativePlugin).toContain("device.activeFormat = format");
-    expect(nativePlugin).toContain("native-camera-active-format-configured");
+    expect(nativePlugin).toContain(
+      "native-custom-camera-active-format-configured"
+    );
+    expect(nativePlugin).toContain("native-custom-camera-session-configured");
+    expect(nativePlugin).toContain("native-custom-camera-session-started");
+    expect(nativePlugin).toContain("native-custom-camera-first-sample");
+    expect(nativePlugin).toContain(
+      "LKRTCCVPixelBuffer(pixelBuffer: pixelBuffer)"
+    );
+    expect(nativePlugin).toContain(
+      "delegate?.capturer(self, didCapture: frame)"
+    );
     expect(nativePlugin).toContain("native-camera-format-fallback-selected");
     expect(nativePlugin).toContain("error.code == -11873");
     expect(nativePlugin).toContain("lastFormatFailureGeneration");
@@ -290,9 +301,7 @@ describe("Android call audio routing", () => {
       "kCVPixelFormatType_420YpCbCr8BiPlanarFullRange"
     );
     expect(nativePlugin).toContain("videoOutput.videoSettings");
-    expect(nativePlugin).toContain(
-      "session.canSetSessionPreset(.inputPriority)"
-    );
+    expect(nativePlugin).toContain("canSetSessionPreset(.inputPriority)");
     expect(nativePlugin).toContain("outputCompatible");
     expect(nativePlugin).toContain("cameraRestartAttempts < 8");
     expect(exceptionCatcher).toContain("@catch (NSException *exception)");

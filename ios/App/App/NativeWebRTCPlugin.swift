@@ -185,6 +185,221 @@ private final class NativeVideoCaptureDelegate: NSObject, LKRTCVideoCapturerDele
     }
 }
 
+private final class EChatVideoCapturer: LKRTCVideoCapturer, AVCaptureVideoDataOutputSampleBufferDelegate {
+    let captureSession = AVCaptureSession()
+    let videoOutput = AVCaptureVideoDataOutput()
+    var diagnosticHandler: ((String, [String: Any]) -> Void)?
+    private let sessionQueue = DispatchQueue(label: "com.tomzeng845.echat.camera-session")
+    private let frameQueue = DispatchQueue(label: "com.tomzeng845.echat.camera-frames")
+    private var capturedFrameCount: Int64 = 0
+
+    override init(delegate: LKRTCVideoCapturerDelegate) {
+        super.init(delegate: delegate)
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.setSampleBufferDelegate(self, queue: frameQueue)
+        captureSession.beginConfiguration()
+        if captureSession.canSetSessionPreset(.inputPriority) {
+            captureSession.sessionPreset = .inputPriority
+        }
+        if captureSession.canAddOutput(videoOutput) {
+            captureSession.addOutput(videoOutput)
+        }
+        captureSession.commitConfiguration()
+    }
+
+    func startCapture(
+        with device: AVCaptureDevice,
+        format: AVCaptureDevice.Format,
+        fps: Int,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let input = try AVCaptureDeviceInput(device: device)
+                let mediaSubtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+                guard self.videoOutput.availableVideoPixelFormatTypes.contains(mediaSubtype) else {
+                    completionHandler(self.error("video-output-format-incompatible"))
+                    return
+                }
+                var configurationFailed = false
+                let configurationException = EChatExceptionCatcher.captureException {
+                    self.captureSession.beginConfiguration()
+                    if self.captureSession.canSetSessionPreset(.inputPriority) {
+                        self.captureSession.sessionPreset = .inputPriority
+                    }
+                    for oldInput in self.captureSession.inputs {
+                        self.captureSession.removeInput(oldInput)
+                    }
+                    if self.captureSession.canAddInput(input) {
+                        self.captureSession.addInput(input)
+                    } else {
+                        configurationFailed = true
+                    }
+                    self.videoOutput.videoSettings = [
+                        kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: mediaSubtype)
+                    ]
+                    self.captureSession.commitConfiguration()
+                }
+                if let configurationException {
+                    completionHandler(self.error(
+                        configurationException["message"] as? String ?? "capture-session-configuration-exception"
+                    ))
+                    return
+                }
+                guard !configurationFailed else {
+                    completionHandler(self.error("camera-input-incompatible"))
+                    return
+                }
+                self.diagnosticHandler?("native-custom-camera-session-configured", [
+                    "sessionPreset": self.captureSession.sessionPreset.rawValue,
+                    "sessionInputs": self.captureSession.inputs.count,
+                    "sessionOutputs": self.captureSession.outputs.count,
+                    "candidatePixelFormat": self.fourCC(mediaSubtype),
+                    "outputPixelFormat": self.fourCC(
+                        (self.videoOutput.videoSettings[
+                            kCVPixelBufferPixelFormatTypeKey as String
+                        ] as? NSNumber)?.uint32Value ?? 0
+                    ),
+                    "availableOutputPixelFormats": self.videoOutput.availableVideoPixelFormatTypes.map {
+                        self.fourCC(FourCharCode($0))
+                    }
+                ])
+
+                try device.lockForConfiguration()
+                let formatException = EChatExceptionCatcher.captureException {
+                    device.activeFormat = format
+                    let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
+                    device.activeVideoMinFrameDuration = duration
+                    device.activeVideoMaxFrameDuration = duration
+                }
+                device.unlockForConfiguration()
+                if let formatException {
+                    completionHandler(self.error(
+                        formatException["message"] as? String ?? "camera-format-configuration-exception"
+                    ))
+                    return
+                }
+                let activeDimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+                let availableAfter = self.videoOutput.availableVideoPixelFormatTypes
+                let configuredOutputSubtype = (self.videoOutput.videoSettings[
+                    kCVPixelBufferPixelFormatTypeKey as String
+                ] as? NSNumber)?.uint32Value
+                let outputCompatible = availableAfter.contains(mediaSubtype)
+                    && configuredOutputSubtype == mediaSubtype
+                self.diagnosticHandler?("native-custom-camera-active-format-configured", [
+                    "matchesRequestedFormat": device.activeFormat === format,
+                    "width": activeDimensions.width,
+                    "height": activeDimensions.height,
+                    "pixelFormat": self.fourCC(
+                        CMFormatDescriptionGetMediaSubType(device.activeFormat.formatDescription)
+                    ),
+                    "fps": fps,
+                    "outputCompatible": outputCompatible,
+                    "outputPixelFormat": self.fourCC(configuredOutputSubtype ?? 0),
+                    "availableOutputPixelFormats": availableAfter.map(self.fourCC)
+                ])
+                guard device.activeFormat === format, outputCompatible else {
+                    completionHandler(self.error("active-format-output-incompatible"))
+                    return
+                }
+
+                let startException = EChatExceptionCatcher.captureException {
+                    self.captureSession.startRunning()
+                }
+                if let startException {
+                    completionHandler(self.error(
+                        startException["message"] as? String ?? "capture-session-start-exception"
+                    ))
+                    return
+                }
+                guard self.captureSession.isRunning else {
+                    completionHandler(self.error("capture-session-not-running"))
+                    return
+                }
+                self.diagnosticHandler?("native-custom-camera-session-started", [
+                    "sessionRunning": true,
+                    "sessionInputs": self.captureSession.inputs.count,
+                    "sessionOutputs": self.captureSession.outputs.count,
+                    "fps": fps
+                ])
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
+
+    func stopCapture(completionHandler: (() -> Void)? = nil) {
+        sessionQueue.async { [weak self] in
+            guard let self else {
+                completionHandler?()
+                return
+            }
+            if self.captureSession.isRunning {
+                self.captureSession.stopRunning()
+            }
+            self.diagnosticHandler?("native-custom-camera-session-stopped", [
+                "sessionRunning": self.captureSession.isRunning
+            ])
+            completionHandler?()
+        }
+    }
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let timestampNs = Int64(CMTimeGetSeconds(presentationTime) * 1_000_000_000)
+        let rtcBuffer = LKRTCCVPixelBuffer(pixelBuffer: pixelBuffer)
+        let frame = LKRTCVideoFrame(
+            buffer: rtcBuffer,
+            rotation: videoRotation(),
+            timeStampNs: timestampNs
+        )
+        capturedFrameCount += 1
+        if capturedFrameCount == 1 {
+            diagnosticHandler?("native-custom-camera-first-sample", [
+                "width": CVPixelBufferGetWidth(pixelBuffer),
+                "height": CVPixelBufferGetHeight(pixelBuffer),
+                "pixelFormat": fourCC(CVPixelBufferGetPixelFormatType(pixelBuffer)),
+                "timestampNs": timestampNs
+            ])
+        }
+        delegate?.capturer(self, didCapture: frame)
+    }
+
+    private func videoRotation() -> LKRTCVideoRotation {
+        switch UIDevice.current.orientation {
+        case .portraitUpsideDown: return ._270
+        case .landscapeLeft: return ._180
+        case .landscapeRight: return ._0
+        default: return ._90
+        }
+    }
+
+    private func error(_ message: String) -> NSError {
+        NSError(
+            domain: "com.tomzeng845.echat.camera",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+
+    private func fourCC(_ value: FourCharCode) -> String {
+        let bytes: [UInt8] = [
+            UInt8((value >> 24) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8(value & 0xff)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? String(value)
+    }
+}
+
 private enum NativeWebRTCError: LocalizedError {
     case notStarted
     case peerCreationFailed
@@ -219,7 +434,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var localVideoSender: LKRTCRtpSender?
     private var remoteVideoTrack: LKRTCVideoTrack?
     private var remoteVideoReceiver: LKRTCRtpReceiver?
-    private var cameraCapturer: LKRTCCameraVideoCapturer?
+    private var cameraCapturer: EChatVideoCapturer?
     private var videoCaptureDelegate: NativeVideoCaptureDelegate?
     private var cameraDevice: AVCaptureDevice?
     private var cameraFormat: AVCaptureDevice.Format?
@@ -398,19 +613,24 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         localVideoSender = videoSender
         videoCaptureDelegate = captureDelegate
 
-        let capturer = LKRTCCameraVideoCapturer(delegate: captureDelegate)
+        let capturer = EChatVideoCapturer(delegate: captureDelegate)
+        capturer.diagnosticHandler = { [weak self] event, details in
+            self?.emitDiagnostic(event, details: details)
+        }
         cameraCapturer = capturer
         observeCaptureSession(capturer.captureSession)
         let startCapture: () -> Void = { [weak self] in
             guard let self else { return }
-            guard let device = LKRTCCameraVideoCapturer.captureDevices().first(where: {
-                $0.position == .front
-            }) ?? LKRTCCameraVideoCapturer.captureDevices().first else {
+            guard let device = AVCaptureDevice.default(
+                .builtInWideAngleCamera,
+                for: .video,
+                position: .front
+            ) ?? AVCaptureDevice.default(for: .video) else {
                 self.emitDiagnostic("native-camera-unavailable")
                 completion(.failure(NativeWebRTCError.cameraUnavailable))
                 return
             }
-            let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
+            let formats = device.formats
             let candidates = Array(self.orderedCameraFormats(
                 device: device,
                 formats: formats,
@@ -489,21 +709,20 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                         return
                     }
                     self.cameraCaptureHasStarted = true
-                    guard self.configureCameraDevice(
-                        device,
-                        session: capturer.captureSession,
-                        format: format,
-                        fps: captureFps,
-                        reason: "initial"
-                    ) else {
-                        self.advanceCameraFormatLocked(reason: "initial-format-configuration-failed")
-                        completion(.success(()))
-                        return
-                    }
                     capturer.startCapture(with: device, format: format, fps: captureFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
-                            completion(.failure(error))
+                            self.queue.async {
+                                if self.lastFormatFailureGeneration != generation {
+                                    self.lastFormatFailureGeneration = generation
+                                    self.advanceCameraFormatLocked(reason: "custom-capturer-start-failed")
+                                }
+                                self.scheduleCameraRecoveryLocked(
+                                    reason: "custom-capturer-start-failed",
+                                    delay: .milliseconds(300)
+                                )
+                            }
+                            completion(.success(()))
                         } else {
                             self.emitDiagnostic("native-camera-capture-started", details: [
                                 "device": device.localizedName,
@@ -635,105 +854,6 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             UInt8(value & 0xff)
         ]
         return String(bytes: bytes, encoding: .ascii) ?? String(value)
-    }
-
-    private func configureCameraDevice(
-        _ device: AVCaptureDevice,
-        session: AVCaptureSession,
-        format: AVCaptureDevice.Format,
-        fps: Int,
-        reason: String
-    ) -> Bool {
-        guard device.formats.contains(where: { $0 === format }) else {
-            emitDiagnostic("native-camera-format-invalid", details: ["reason": reason])
-            return false
-        }
-        guard format.videoSupportedFrameRateRanges.contains(where: {
-            $0.minFrameRate <= Double(fps) && $0.maxFrameRate >= Double(fps)
-        }) else {
-            emitDiagnostic("native-camera-format-invalid", details: [
-                "reason": reason,
-                "error": "fps-not-supported",
-                "fps": fps
-            ])
-            return false
-        }
-        guard let videoOutput = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else {
-            emitDiagnostic("native-camera-format-invalid", details: [
-                "reason": reason,
-                "error": "video-output-unavailable"
-            ])
-            return false
-        }
-        let mediaSubtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
-        let availableBefore = videoOutput.availableVideoPixelFormatTypes.map {
-            FourCharCode($0)
-        }
-        guard availableBefore.contains(mediaSubtype) else {
-            emitDiagnostic("native-camera-output-format-incompatible", details: [
-                "reason": reason,
-                "candidatePixelFormat": fourCC(mediaSubtype),
-                "availablePixelFormats": availableBefore.map(fourCC)
-            ])
-            return false
-        }
-        session.beginConfiguration()
-        if session.canSetSessionPreset(.inputPriority) {
-            session.sessionPreset = .inputPriority
-        }
-        videoOutput.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: mediaSubtype)
-        ]
-        session.commitConfiguration()
-        do {
-            try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
-            let exception = EChatExceptionCatcher.captureException {
-                device.activeFormat = format
-                let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
-                device.activeVideoMinFrameDuration = duration
-                device.activeVideoMaxFrameDuration = duration
-            }
-            if let exception {
-                emitDiagnostic("native-camera-format-configuration-exception", details: [
-                    "reason": reason,
-                    "message": exception["message"] as? String ?? "",
-                    "exceptionName": exception["exceptionName"] as? String ?? "",
-                    "callStack": exception["callStackSymbols"] as? [String] ?? []
-                ])
-                return false
-            }
-            let active = device.activeFormat
-            let matches = active === format
-            let availableAfter = videoOutput.availableVideoPixelFormatTypes.map {
-                FourCharCode($0)
-            }
-            let configuredOutputSubtype = (videoOutput.videoSettings[
-                kCVPixelBufferPixelFormatTypeKey as String
-            ] as? NSNumber)?.uint32Value
-            let outputCompatible = availableAfter.contains(mediaSubtype)
-                && configuredOutputSubtype == mediaSubtype
-            var details = cameraFormatDescription(active, index: cameraFormatCandidateIndex)
-            details["reason"] = reason
-            details["requestedFps"] = fps
-            details["matchesRequestedFormat"] = matches
-            details["sessionPreset"] = session.sessionPreset.rawValue
-            details["candidatePixelFormat"] = fourCC(mediaSubtype)
-            details["outputPixelFormat"] = configuredOutputSubtype.map(fourCC) ?? ""
-            details["availableOutputPixelFormats"] = availableAfter.map(fourCC)
-            details["outputCompatible"] = outputCompatible
-            emitDiagnostic("native-camera-active-format-configured", details: details)
-            return matches && outputCompatible
-        } catch {
-            let nsError = error as NSError
-            emitDiagnostic("native-camera-format-configuration-failed", details: [
-                "reason": reason,
-                "message": error.localizedDescription,
-                "domain": nsError.domain,
-                "code": nsError.code
-            ])
-            return false
-        }
     }
 
     private func advanceCameraFormatLocked(reason: String) {
@@ -883,25 +1003,12 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     // releases the previous AVCaptureSession instead of
                     // allowing generation-only recovery to reuse a poisoned
                     // session that is no longer running.
-                    let freshCapturer = LKRTCCameraVideoCapturer(delegate: delegate)
+                    let freshCapturer = EChatVideoCapturer(delegate: delegate)
+                    freshCapturer.diagnosticHandler = { [weak self] event, details in
+                        self?.emitDiagnostic(event, details: details)
+                    }
                     self.cameraCapturer = freshCapturer
                     self.observeCaptureSession(freshCapturer.captureSession)
-                    guard self.configureCameraDevice(
-                        device,
-                        session: freshCapturer.captureSession,
-                        format: format,
-                        fps: self.cameraFps,
-                        reason: "restart-\(reason)"
-                    ) else {
-                        self.advanceCameraFormatLocked(reason: "restart-format-configuration-failed")
-                        self.queue.async {
-                            self.scheduleCameraRecoveryLocked(
-                                reason: "format-configuration-failed",
-                                delay: .milliseconds(300)
-                            )
-                        }
-                        return
-                    }
                     freshCapturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-restart-failed", details: [
@@ -909,6 +1016,16 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                                 "error": error.localizedDescription,
                                 "deviceAvailable": device.isConnected
                             ])
+                            self.queue.async {
+                                if self.lastFormatFailureGeneration != generation {
+                                    self.lastFormatFailureGeneration = generation
+                                    self.advanceCameraFormatLocked(reason: "custom-capturer-restart-failed")
+                                }
+                                self.scheduleCameraRecoveryLocked(
+                                    reason: "custom-capturer-restart-failed",
+                                    delay: .milliseconds(300)
+                                )
+                            }
                         } else {
                             let session = freshCapturer.captureSession
                             let wasRunning = session.isRunning
