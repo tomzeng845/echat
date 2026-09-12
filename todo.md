@@ -74,6 +74,9 @@
 - [x] Build 266 真机功能验证：Android 已能看到 iPhone 摄像头画面，证明 iOS 采集、编码和上行 RTP 已恢复
 - [x] iOS 下行链路增加远端 SDP 视频段、transceiver/receiver、首 RTP 包、首渲染帧、RTP/解码/renderer 统计及 overlay 可见性全链路日志
 - [x] 远端轨改为幂等 receiver 扫描/绑定并通过 RemoteVideoFrameRelay 转发至 Metal renderer；解码有帧但 renderer 无帧时最多自动重绑 3 次
+- [x] Build 267（提交 `30af7d89`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `c6cacb7f-74f1-4eea-9f4f-eed9be707bd5`
+- [x] Build 267 日志确认 sendrecv、视频 receiver/track、renderer 和 overlay 均正常；故障位于解码前，远端答案仅选择 H.264 PT98，且旧统计可能误选 RTX/FEC 辅助 inbound 流
+- [x] iOS 改用全 codec 编解码工厂并优先 VP8；SDP 增加 fmtp/rtcp-fb；RTP stats 按 codecId 排除 RTX/RED/FEC 并兼容 NSNumber/NSString 64 位计数
 - [ ] 通过 TestFlight 真机验证 iPhone 能显示 Android 远端视频，并依据新增日志确认下行 RTP、解码和渲染均持续增长
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 

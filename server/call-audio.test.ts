@@ -317,6 +317,18 @@ describe("Android call audio routing", () => {
     );
     expect(nativePlugin).toContain("native-webrtc-video-outbound-stats");
     expect(nativePlugin).toContain("native-webrtc-video-inbound-stats");
+    expect(nativePlugin).toContain("LKRTCDefaultVideoEncoderFactory");
+    expect(nativePlugin).toContain("LKRTCDefaultVideoDecoderFactory");
+    expect(nativePlugin).toContain(
+      'encoderFactory.preferredCodec = LKRTCVideoCodecInfo(name: "VP8")'
+    );
+    expect(nativePlugin).toContain("native-video-codec-factory");
+    expect(nativePlugin).toContain("codecParameters");
+    expect(nativePlugin).toContain("codecFeedback");
+    expect(nativePlugin).toContain("inboundCandidates");
+    expect(nativePlugin).toContain('!mime.contains("rtx")');
+    expect(nativePlugin).toContain("private func statInt64");
+    expect(nativePlugin).toContain("private func statDouble");
     expect(nativePlugin).toContain("native-video-sdp");
     expect(nativePlugin).toContain("remote-description-set");
     expect(nativePlugin).toContain("native-video-transceiver-snapshot");

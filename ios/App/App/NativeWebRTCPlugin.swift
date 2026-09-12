@@ -558,7 +558,22 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
                 self.callKitAudioActive = true
             }
 
-            let factory = LKRTCPeerConnectionFactory()
+            let encoderFactory = LKRTCDefaultVideoEncoderFactory()
+            encoderFactory.preferredCodec = LKRTCVideoCodecInfo(name: "VP8")
+            let decoderFactory = LKRTCDefaultVideoDecoderFactory()
+            let factory = LKRTCPeerConnectionFactory(
+                encoderFactory: encoderFactory,
+                decoderFactory: decoderFactory
+            )
+            self.emitDiagnostic("native-video-codec-factory", details: [
+                "preferredCodec": encoderFactory.preferredCodec.name,
+                "supportedCodecs": LKRTCDefaultVideoEncoderFactory.supportedCodecs().map { codec in
+                    [
+                        "name": codec.name,
+                        "parameters": codec.parameters
+                    ]
+                }
+            ])
             let config = LKRTCConfiguration()
             config.sdpSemantics = .unifiedPlan
             config.bundlePolicy = .maxBundle
@@ -1699,6 +1714,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
             ["a=sendrecv", "a=sendonly", "a=recvonly", "a=inactive"].contains($0)
         } ?? "unknown"
         let codecs = videoLines.filter { $0.hasPrefix("a=rtpmap:") }
+        let codecParameters = videoLines.filter { $0.hasPrefix("a=fmtp:") }
+        let codecFeedback = videoLines.filter { $0.hasPrefix("a=rtcp-fb:") }
         let mid = videoLines.first(where: { $0.hasPrefix("a=mid:") })?
             .replacingOccurrences(of: "a=mid:", with: "") ?? ""
         let msid = videoLines.first(where: { $0.hasPrefix("a=msid:") }) ?? ""
@@ -1714,12 +1731,34 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
             "msid": msid,
             "payloadTypes": payloadTypes,
             "codecs": codecs,
+            "codecParameters": codecParameters,
+            "codecFeedback": codecFeedback,
             "ssrcLineCount": videoLines.filter { $0.hasPrefix("a=ssrc:") }.count,
             "localTrackEnabled": localVideoTrack?.isEnabled ?? false,
             "senderAttached": localVideoSender?.track != nil,
             "capturedFrames": localVideoFrameCount,
             "remoteTrackPresent": remoteVideoTrack != nil
         ])
+    }
+
+    private func statInt64(_ value: Any?) -> Int64 {
+        if let number = value as? NSNumber { return number.int64Value }
+        if let string = value as? NSString { return string.longLongValue }
+        if let string = value as? String { return Int64(string) ?? 0 }
+        return 0
+    }
+
+    private func statDouble(_ value: Any?) -> Double {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? NSString { return string.doubleValue }
+        if let string = value as? String { return Double(string) ?? 0 }
+        return 0
+    }
+
+    private func statString(_ value: Any?) -> String {
+        if let string = value as? String { return string }
+        if let string = value as? NSString { return string as String }
+        return value.map { String(describing: $0) } ?? ""
     }
 
     private func startVideoStatsLocked() {
@@ -1743,48 +1782,102 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
             ]
             if let sender = self.localVideoSender {
                 peer.statistics(for: sender) { report in
-                    let outbound = report.statistics.values.first { statistic in
+                    let codecs = report.statistics.values.filter { $0.type == "codec" }
+                    let outboundCandidates = report.statistics.values.filter { statistic in
                         guard statistic.type == "outbound-rtp" else { return false }
-                        let kind = statistic.values["kind"] as? String
-                            ?? statistic.values["mediaType"] as? String
+                        let kind = self.statString(statistic.values["kind"])
+                            .isEmpty ? self.statString(statistic.values["mediaType"]) : self.statString(statistic.values["kind"])
                         return kind == "video"
                     }
+                    let annotated = outboundCandidates.map { statistic -> (LKRTCStatistics, String) in
+                        let codecId = self.statString(statistic.values["codecId"])
+                        let mimeType = codecs.first(where: { $0.id == codecId }).map {
+                            self.statString($0.values["mimeType"])
+                        } ?? ""
+                        return (statistic, mimeType)
+                    }
+                    let primary = annotated.filter { item in
+                        let mime = item.1.lowercased()
+                        return !mime.contains("rtx") && !mime.contains("red")
+                            && !mime.contains("ulpfec") && !mime.contains("flexfec")
+                    }
+                    let outbound = (primary.isEmpty ? annotated : primary).max { lhs, rhs in
+                        let lhsFrames = self.statInt64(lhs.0.values["framesEncoded"])
+                        let rhsFrames = self.statInt64(rhs.0.values["framesEncoded"])
+                        if lhsFrames != rhsFrames { return lhsFrames < rhsFrames }
+                        return self.statInt64(lhs.0.values["bytesSent"])
+                            < self.statInt64(rhs.0.values["bytesSent"])
+                    }
                     var details = base
-                    details["framesEncoded"] = (outbound?.values["framesEncoded"] as? NSNumber)?.int64Value ?? 0
-                    details["framesSent"] = (outbound?.values["framesSent"] as? NSNumber)?.int64Value ?? 0
-                    details["bytesSent"] = (outbound?.values["bytesSent"] as? NSNumber)?.int64Value ?? 0
+                    details["framesEncoded"] = self.statInt64(outbound?.0.values["framesEncoded"])
+                    details["framesSent"] = self.statInt64(outbound?.0.values["framesSent"])
+                    details["bytesSent"] = self.statInt64(outbound?.0.values["bytesSent"])
+                    details["codecId"] = self.statString(outbound?.0.values["codecId"])
+                    details["codecMimeType"] = outbound?.1 ?? ""
                     self.emitDiagnostic("native-webrtc-video-outbound-stats", details: details)
                 }
             }
             if let receiver = self.remoteVideoReceiver {
                 peer.statistics(for: receiver) { report in
-                    let inbound = report.statistics.values.first { statistic in
+                    let codecs = report.statistics.values.filter { $0.type == "codec" }
+                    let inboundCandidates = report.statistics.values.filter { statistic in
                         guard statistic.type == "inbound-rtp" else { return false }
-                        let kind = statistic.values["kind"] as? String
-                            ?? statistic.values["mediaType"] as? String
+                        let kind = self.statString(statistic.values["kind"])
+                            .isEmpty ? self.statString(statistic.values["mediaType"]) : self.statString(statistic.values["kind"])
                         return kind == "video"
                     }
-                    let framesDecoded = (inbound?.values["framesDecoded"] as? NSNumber)?.int64Value ?? 0
-                    let framesReceived = (inbound?.values["framesReceived"] as? NSNumber)?.int64Value ?? 0
+                    let annotated = inboundCandidates.map { statistic -> (LKRTCStatistics, String) in
+                        let codecId = self.statString(statistic.values["codecId"])
+                        let mimeType = codecs.first(where: { $0.id == codecId }).map {
+                            self.statString($0.values["mimeType"])
+                        } ?? ""
+                        return (statistic, mimeType)
+                    }
+                    let primary = annotated.filter { item in
+                        let mime = item.1.lowercased()
+                        return !mime.contains("rtx") && !mime.contains("red")
+                            && !mime.contains("ulpfec") && !mime.contains("flexfec")
+                    }
+                    let inbound = (primary.isEmpty ? annotated : primary).max { lhs, rhs in
+                        let lhsFrames = self.statInt64(lhs.0.values["framesDecoded"])
+                        let rhsFrames = self.statInt64(rhs.0.values["framesDecoded"])
+                        if lhsFrames != rhsFrames { return lhsFrames < rhsFrames }
+                        return self.statInt64(lhs.0.values["bytesReceived"])
+                            < self.statInt64(rhs.0.values["bytesReceived"])
+                    }
+                    let framesDecoded = self.statInt64(inbound?.0.values["framesDecoded"])
+                    let framesReceived = self.statInt64(inbound?.0.values["framesReceived"])
                     let renderSnapshot = self.remoteFrameRelay?.snapshot()
                     var details = base
                     details["framesDecoded"] = framesDecoded
                     details["framesReceived"] = framesReceived
                     details["renderedFrames"] = renderSnapshot?.frames ?? 0
-                    details["bytesReceived"] = (inbound?.values["bytesReceived"] as? NSNumber)?.int64Value ?? 0
-                    details["packetsReceived"] = (inbound?.values["packetsReceived"] as? NSNumber)?.int64Value ?? 0
-                    details["packetsLost"] = (inbound?.values["packetsLost"] as? NSNumber)?.int64Value ?? 0
-                    details["keyFramesDecoded"] = (inbound?.values["keyFramesDecoded"] as? NSNumber)?.int64Value ?? 0
-                    details["frameWidth"] = (inbound?.values["frameWidth"] as? NSNumber)?.intValue ?? 0
-                    details["frameHeight"] = (inbound?.values["frameHeight"] as? NSNumber)?.intValue ?? 0
-                    details["framesDropped"] = (inbound?.values["framesDropped"] as? NSNumber)?.int64Value ?? 0
-                    details["freezeCount"] = (inbound?.values["freezeCount"] as? NSNumber)?.int64Value ?? 0
-                    details["jitter"] = (inbound?.values["jitter"] as? NSNumber)?.doubleValue ?? 0
-                    details["nackCount"] = (inbound?.values["nackCount"] as? NSNumber)?.int64Value ?? 0
-                    details["pliCount"] = (inbound?.values["pliCount"] as? NSNumber)?.int64Value ?? 0
-                    details["firCount"] = (inbound?.values["firCount"] as? NSNumber)?.int64Value ?? 0
-                    details["codecId"] = inbound?.values["codecId"] as? String ?? ""
-                    details["decoderImplementation"] = inbound?.values["decoderImplementation"] as? String ?? ""
+                    details["bytesReceived"] = self.statInt64(inbound?.0.values["bytesReceived"])
+                    details["packetsReceived"] = self.statInt64(inbound?.0.values["packetsReceived"])
+                    details["packetsLost"] = self.statInt64(inbound?.0.values["packetsLost"])
+                    details["keyFramesDecoded"] = self.statInt64(inbound?.0.values["keyFramesDecoded"])
+                    details["frameWidth"] = self.statInt64(inbound?.0.values["frameWidth"])
+                    details["frameHeight"] = self.statInt64(inbound?.0.values["frameHeight"])
+                    details["framesDropped"] = self.statInt64(inbound?.0.values["framesDropped"])
+                    details["freezeCount"] = self.statInt64(inbound?.0.values["freezeCount"])
+                    details["jitter"] = self.statDouble(inbound?.0.values["jitter"])
+                    details["nackCount"] = self.statInt64(inbound?.0.values["nackCount"])
+                    details["pliCount"] = self.statInt64(inbound?.0.values["pliCount"])
+                    details["firCount"] = self.statInt64(inbound?.0.values["firCount"])
+                    details["codecId"] = self.statString(inbound?.0.values["codecId"])
+                    details["codecMimeType"] = inbound?.1 ?? ""
+                    details["decoderImplementation"] = self.statString(inbound?.0.values["decoderImplementation"])
+                    details["inboundCandidates"] = annotated.map { statistic, mimeType in
+                        [
+                            "id": statistic.id,
+                            "mimeType": mimeType,
+                            "ssrc": self.statString(statistic.values["ssrc"]),
+                            "packetsReceived": self.statInt64(statistic.values["packetsReceived"]),
+                            "bytesReceived": self.statInt64(statistic.values["bytesReceived"]),
+                            "framesReceived": self.statInt64(statistic.values["framesReceived"]),
+                            "framesDecoded": self.statInt64(statistic.values["framesDecoded"])
+                        ]
+                    }
                     details["lastRendererFrameAgeMs"] = renderSnapshot?.lastFrameAt.map {
                         Int(Date().timeIntervalSince($0) * 1_000)
                     } ?? -1
@@ -2348,12 +2441,12 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
                 guard let inbound else { return }
                 let values = inbound.values
                 self.emitDiagnostic("native-webrtc-audio-stats", details: [
-                    "packetsReceived": (values["packetsReceived"] as? NSNumber)?.int64Value ?? 0,
-                    "bytesReceived": (values["bytesReceived"] as? NSNumber)?.int64Value ?? 0,
-                    "packetsLost": (values["packetsLost"] as? NSNumber)?.int64Value ?? 0,
-                    "jitter": (values["jitter"] as? NSNumber)?.doubleValue ?? 0,
-                    "audioLevel": (values["audioLevel"] as? NSNumber)?.doubleValue ?? -1,
-                    "totalAudioEnergy": (values["totalAudioEnergy"] as? NSNumber)?.doubleValue ?? 0
+                    "packetsReceived": self.statInt64(values["packetsReceived"]),
+                    "bytesReceived": self.statInt64(values["bytesReceived"]),
+                    "packetsLost": self.statInt64(values["packetsLost"]),
+                    "jitter": self.statDouble(values["jitter"]),
+                    "audioLevel": values["audioLevel"] == nil ? -1 : self.statDouble(values["audioLevel"]),
+                    "totalAudioEnergy": self.statDouble(values["totalAudioEnergy"])
                 ])
             }
         }
