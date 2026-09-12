@@ -64,6 +64,9 @@
 - [x] Build 263（提交 `5fe0f7e2`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `d7ccd0cc-59ed-4ec3-a10e-145c566a48df`
 - [x] Build 263 真机日志捕获 `AVFoundationErrorDomain -11873`，明确为当前前置摄像头 activeFormat 不受 capture session 支持
 - [x] 改为稳定 SDR 640×480/24fps 优先，启动前显式验证并设置 activeFormat；-11873 后切换下一候选格式，最多尝试 8 种
+- [x] Build 264（提交 `c14c3428`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `7412fbb7-b424-44a5-a2d0-6423323528d3`
+- [x] Build 264 日志确认首个 420v 失败后仅回退到 420f；新 session 复用内存地址导致 sessionId 去重误阻止后续格式推进
+- [x] 候选格式改为与实际 AVCaptureVideoDataOutput.availableVideoCVPixelFormatTypes 交集，仅允许 420v/420f；同步 output.videoSettings 并使用 inputPriority preset；去重改为 capture generation
 - [ ] 构建并通过 TestFlight 真机日志验证格式回退后 `sessionRunning=true`、`capturedFrames>0`
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 

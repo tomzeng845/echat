@@ -225,7 +225,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var cameraFormat: AVCaptureDevice.Format?
     private var cameraFormatCandidates: [AVCaptureDevice.Format] = []
     private var cameraFormatCandidateIndex = 0
-    private var lastFormatFailureSessionId: String?
+    private var lastFormatFailureGeneration: Int?
     private var cameraFps = 24
     private var cameraCaptureHasStarted = false
     private var localVideoFrameCount: Int64 = 0
@@ -411,7 +411,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 return
             }
             let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
-            let candidates = Array(self.orderedCameraFormats(device: device, formats: formats).prefix(8))
+            let candidates = Array(self.orderedCameraFormats(
+                device: device,
+                formats: formats,
+                session: capturer.captureSession
+            ).prefix(8))
             guard let format = candidates.first else {
                 self.emitDiagnostic("native-camera-format-unavailable")
                 completion(.failure(NativeWebRTCError.cameraUnavailable))
@@ -422,7 +426,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             self.cameraFormat = format
             self.cameraFormatCandidates = candidates
             self.cameraFormatCandidateIndex = 0
-            self.lastFormatFailureSessionId = nil
+            self.lastFormatFailureGeneration = nil
             self.cameraFps = captureFps
             self.cameraCaptureHasStarted = false
             self.localVideoFrameCount = 0
@@ -446,6 +450,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 ])
                 self.emitDiagnostic("native-camera-format-candidates", details: [
                     "count": candidates.count,
+                    "outputPixelFormats": self.availableVideoPixelFormats(in: capturer.captureSession).map(self.fourCC),
                     "formats": candidates.enumerated().map { index, candidate in
                         self.cameraFormatDescription(candidate, index: index)
                     }
@@ -484,7 +489,13 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                         return
                     }
                     self.cameraCaptureHasStarted = true
-                    guard self.configureCameraDevice(device, format: format, fps: captureFps, reason: "initial") else {
+                    guard self.configureCameraDevice(
+                        device,
+                        session: capturer.captureSession,
+                        format: format,
+                        fps: captureFps,
+                        reason: "initial"
+                    ) else {
                         self.advanceCameraFormatLocked(reason: "initial-format-configuration-failed")
                         completion(.success(()))
                         return
@@ -536,13 +547,37 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
     private func orderedCameraFormats(
         device: AVCaptureDevice,
-        formats: [AVCaptureDevice.Format]
+        formats: [AVCaptureDevice.Format],
+        session: AVCaptureSession
     ) -> [AVCaptureDevice.Format] {
-        formats.filter { format in
-            !format.videoSupportedFrameRateRanges.isEmpty
-        }.sorted { lhs, rhs in
+        let availableOutputFormats = Set(availableVideoPixelFormats(in: session))
+        let nv12Formats: Set<FourCharCode> = [
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        var compatible = formats.filter { format in
+            let mediaSubtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+            return !format.videoSupportedFrameRateRanges.isEmpty
+                && nv12Formats.contains(mediaSubtype)
+                && availableOutputFormats.contains(mediaSubtype)
+        }
+        let activeFormat = device.activeFormat
+        let activeSubtype = CMFormatDescriptionGetMediaSubType(activeFormat.formatDescription)
+        if compatible.isEmpty,
+           nv12Formats.contains(activeSubtype),
+           availableOutputFormats.contains(activeSubtype) {
+            compatible.append(activeFormat)
+        }
+        return compatible.sorted { lhs, rhs in
             cameraFormatScore(lhs) < cameraFormatScore(rhs)
         }
+    }
+
+    private func availableVideoPixelFormats(in session: AVCaptureSession) -> [FourCharCode] {
+        guard let output = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else {
+            return []
+        }
+        return output.availableVideoCVPixelFormatTypes.map { FourCharCode($0.uint32Value) }
     }
 
     private func cameraFormatScore(_ format: AVCaptureDevice.Format) -> Int64 {
@@ -604,6 +639,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
     private func configureCameraDevice(
         _ device: AVCaptureDevice,
+        session: AVCaptureSession,
         format: AVCaptureDevice.Format,
         fps: Int,
         reason: String
@@ -622,6 +658,33 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             ])
             return false
         }
+        guard let videoOutput = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else {
+            emitDiagnostic("native-camera-format-invalid", details: [
+                "reason": reason,
+                "error": "video-output-unavailable"
+            ])
+            return false
+        }
+        let mediaSubtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+        let availableBefore = videoOutput.availableVideoCVPixelFormatTypes.map {
+            FourCharCode($0.uint32Value)
+        }
+        guard availableBefore.contains(mediaSubtype) else {
+            emitDiagnostic("native-camera-output-format-incompatible", details: [
+                "reason": reason,
+                "candidatePixelFormat": fourCC(mediaSubtype),
+                "availablePixelFormats": availableBefore.map(fourCC)
+            ])
+            return false
+        }
+        session.beginConfiguration()
+        if session.canSetSessionPreset(.inputPriority) {
+            session.sessionPreset = .inputPriority
+        }
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: mediaSubtype)
+        ]
+        session.commitConfiguration()
         do {
             try device.lockForConfiguration()
             defer { device.unlockForConfiguration() }
@@ -642,12 +705,25 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             }
             let active = device.activeFormat
             let matches = active === format
+            let availableAfter = videoOutput.availableVideoCVPixelFormatTypes.map {
+                FourCharCode($0.uint32Value)
+            }
+            let configuredOutputSubtype = (videoOutput.videoSettings[
+                kCVPixelBufferPixelFormatTypeKey as String
+            ] as? NSNumber)?.uint32Value
+            let outputCompatible = availableAfter.contains(mediaSubtype)
+                && configuredOutputSubtype == mediaSubtype
             var details = cameraFormatDescription(active, index: cameraFormatCandidateIndex)
             details["reason"] = reason
             details["requestedFps"] = fps
             details["matchesRequestedFormat"] = matches
+            details["sessionPreset"] = session.sessionPreset.rawValue
+            details["candidatePixelFormat"] = fourCC(mediaSubtype)
+            details["outputPixelFormat"] = configuredOutputSubtype.map(fourCC) ?? ""
+            details["availableOutputPixelFormats"] = availableAfter.map(fourCC)
+            details["outputCompatible"] = outputCompatible
             emitDiagnostic("native-camera-active-format-configured", details: details)
-            return matches
+            return matches && outputCompatible
         } catch {
             let nsError = error as NSError
             emitDiagnostic("native-camera-format-configuration-failed", details: [
@@ -812,6 +888,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     self.observeCaptureSession(freshCapturer.captureSession)
                     guard self.configureCameraDevice(
                         device,
+                        session: freshCapturer.captureSession,
                         format: format,
                         fps: self.cameraFps,
                         reason: "restart-\(reason)"
@@ -955,8 +1032,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     details["errorUserInfo"] = error.userInfo.description
                     if error.domain == AVFoundationErrorDomain, error.code == -11873 {
                         self.queue.async {
-                            guard self.lastFormatFailureSessionId != sessionId else { return }
-                            self.lastFormatFailureSessionId = sessionId
+                            let generation = self.cameraCaptureGeneration
+                            guard self.lastFormatFailureGeneration != generation else { return }
+                            self.lastFormatFailureGeneration = generation
                             self.advanceCameraFormatLocked(reason: "runtime-error--11873")
                         }
                     }
@@ -1387,7 +1465,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         cameraFormat = nil
         cameraFormatCandidates.removeAll()
         cameraFormatCandidateIndex = 0
-        lastFormatFailureSessionId = nil
+        lastFormatFailureGeneration = nil
         localVideoFrameCount = 0
         lastLocalVideoFrameAt = nil
         cameraRestartAttempts = 0
