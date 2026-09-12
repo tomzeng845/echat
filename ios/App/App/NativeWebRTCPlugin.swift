@@ -463,21 +463,28 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     completion(.success(()))
                     return
                 }
-                capturer.startCapture(with: device, format: format, fps: captureFps) { error in
-                    if let error {
-                        self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
-                        completion(.failure(error))
-                    } else {
-                        self.emitDiagnostic("native-camera-capture-started", details: [
-                            "device": device.localizedName,
-                            "fps": captureFps,
-                            "sessionRunning": capturer.captureSession.isRunning,
-                            "senderTrack": videoSender.track?.trackId ?? ""
-                        ])
-                        self.queue.async {
-                            self.scheduleCameraFrameWatchdogLocked(generation: generation)
+                // Let the WebRTC audio/session setup settle before touching
+                // AVCaptureSession. On iOS the old same-turn start could call
+                // back successfully while the session was still stopped.
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+                    capturer.startCapture(with: device, format: format, fps: captureFps) { error in
+                        if let error {
+                            self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
+                            completion(.failure(error))
+                        } else {
+                            self.emitDiagnostic("native-camera-capture-started", details: [
+                                "device": device.localizedName,
+                                "fps": captureFps,
+                                "sessionRunning": capturer.captureSession.isRunning,
+                                "applicationState": UIApplication.shared.applicationState.rawValue,
+                                "senderTrack": videoSender.track?.trackId ?? ""
+                            ])
+                            self.queue.async {
+                                self.verifyCameraSessionLocked(generation: generation, delay: .milliseconds(150))
+                                self.scheduleCameraFrameWatchdogLocked(generation: generation)
+                            }
+                            completion(.success(()))
                         }
-                        completion(.success(()))
                     }
                 }
             }
@@ -546,6 +553,32 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         }
     }
 
+    private func verifyCameraSessionLocked(
+        generation: Int,
+        delay: DispatchTimeInterval
+    ) {
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self,
+                  self._isRunning,
+                  self.mode == "video",
+                  self.cameraEnabled,
+                  generation == self.cameraCaptureGeneration,
+                  let capturer = self.cameraCapturer
+            else { return }
+            let running = capturer.captureSession.isRunning
+            self.emitDiagnostic("native-camera-session-verified", details: [
+                "sessionRunning": running,
+                "capturedFrames": self.localVideoFrameCount,
+                "generation": generation
+            ])
+            guard !running, self.localVideoFrameCount == 0 else { return }
+            self.scheduleCameraRecoveryLocked(
+                reason: "capture-session-not-running",
+                delay: .milliseconds(300)
+            )
+        }
+    }
+
     private func scheduleCameraRecoveryLocked(
         reason: String,
         delay: DispatchTimeInterval
@@ -583,20 +616,26 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         ])
         DispatchQueue.main.async {
             capturer.stopCapture {
-                capturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
-                    if let error {
-                        self.emitDiagnostic("native-camera-restart-failed", details: [
-                            "reason": reason,
-                            "error": error.localizedDescription
-                        ])
-                    } else {
-                        self.emitDiagnostic("native-camera-restarted", details: [
-                            "reason": reason,
-                            "sessionRunning": capturer.captureSession.isRunning
-                        ])
-                    }
-                    self.queue.async {
-                        self.scheduleCameraFrameWatchdogLocked(generation: generation)
+                // Give AVCaptureSession one main-run-loop turn to become idle
+                // before starting it again; immediate stop/start is racy on
+                // iOS and was observed as sessionRunning=false forever.
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) {
+                    capturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
+                        if let error {
+                            self.emitDiagnostic("native-camera-restart-failed", details: [
+                                "reason": reason,
+                                "error": error.localizedDescription
+                            ])
+                        } else {
+                            self.emitDiagnostic("native-camera-restarted", details: [
+                                "reason": reason,
+                                "sessionRunning": capturer.captureSession.isRunning
+                            ])
+                        }
+                        self.queue.async {
+                            self.verifyCameraSessionLocked(generation: generation, delay: .milliseconds(150))
+                            self.scheduleCameraFrameWatchdogLocked(generation: generation)
+                        }
                     }
                 }
             }

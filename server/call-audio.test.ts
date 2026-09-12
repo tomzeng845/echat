@@ -230,6 +230,14 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("native-camera-start-deferred");
     expect(nativePlugin).toContain('reason: "audio-interruption-ended"');
     expect(nativePlugin).toContain("cameraRecoveryWorkItem?.cancel()");
+    expect(nativePlugin).toContain("native-camera-session-verified");
+    expect(nativePlugin).toContain("capture-session-not-running");
+    expect(nativePlugin).toContain(
+      "asyncAfter(deadline: .now() + .milliseconds(250))"
+    );
+    expect(nativePlugin).toContain(
+      "asyncAfter(deadline: .now() + .milliseconds(150))"
+    );
     expect(nativePlugin).toContain("native-webrtc-video-outbound-stats");
     expect(nativePlugin).toContain("native-webrtc-video-inbound-stats");
     expect(nativePlugin).toContain("native-video-sdp");
