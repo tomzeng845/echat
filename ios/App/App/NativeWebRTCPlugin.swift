@@ -1862,15 +1862,15 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
             "overlayInWindow": overlay?.window != nil,
             "overlayHidden": overlay?.isHidden ?? true,
             "overlayAlpha": overlay?.alpha ?? 0,
-            "overlayFrame": overlay.map { NSStringFromCGRect($0.frame) } ?? "",
-            "overlayBounds": overlay.map { NSStringFromCGRect($0.bounds) } ?? "",
+            "overlayFrame": overlay.map { NSCoder.string(for: $0.frame) } ?? "",
+            "overlayBounds": overlay.map { NSCoder.string(for: $0.bounds) } ?? "",
             "overlayZPosition": overlay?.layer.zPosition ?? 0,
             "remoteRendererExists": remote != nil,
             "remoteRendererEnabled": remote?.isEnabled ?? false,
             "remoteRendererHidden": remote?.isHidden ?? true,
             "remoteRendererAlpha": remote?.alpha ?? 0,
-            "remoteRendererFrame": remote.map { NSStringFromCGRect($0.frame) } ?? "",
-            "remoteRendererBounds": remote.map { NSStringFromCGRect($0.bounds) } ?? "",
+            "remoteRendererFrame": remote.map { NSCoder.string(for: $0.frame) } ?? "",
+            "remoteRendererBounds": remote.map { NSCoder.string(for: $0.bounds) } ?? "",
             "remoteTrackAttached": remoteVideoTrack != nil,
             "remoteTrackEnabled": remoteVideoTrack?.isEnabled ?? false,
             "remoteTrackShouldReceive": remoteVideoTrack?.shouldReceive ?? false,
@@ -1999,11 +1999,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
             "windowLevel": window.windowLevel.rawValue,
             "overlayHidden": overlay.isHidden,
             "overlayAlpha": overlay.alpha,
-            "overlayFrame": NSStringFromCGRect(overlay.frame),
+            "overlayFrame": NSCoder.string(for: overlay.frame),
             "remoteRendererEnabled": remote.isEnabled,
             "remoteRendererHidden": remote.isHidden,
             "remoteRendererAlpha": remote.alpha,
-            "remoteRendererFrame": NSStringFromCGRect(remote.frame),
+            "remoteRendererFrame": NSCoder.string(for: remote.frame),
             "remoteTrackAttached": remoteVideoTrack != nil,
             "relayAttached": remoteVideoTrack != nil
         ])
@@ -2315,7 +2315,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTC
 
     func rtpReceiver(
         _ rtpReceiver: LKRTCRtpReceiver,
-        didReceiveFirstPacketForMediaType mediaType: LKRTCRtpMediaType
+        didReceiveFirstPacketFor mediaType: LKRTCRtpMediaType
     ) {
         emitDiagnostic("native-rtp-receiver-first-packet", details: [
             "receiverId": rtpReceiver.receiverId,
