@@ -11,6 +11,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -32,6 +35,8 @@ public class CallListenerService extends Service {
     public static final String ACTION_STOP = "com.echat.app.action.STOP_CALL_LISTENER";
     public static final String ACTION_APP_STATE = "com.echat.app.action.CALL_LISTENER_APP_STATE";
     public static final String ACTION_CLEAR = "com.echat.app.action.CLEAR_INCOMING_CALL";
+    public static final String ACTION_RESTART = "com.echat.app.action.RESTART_CALL_LISTENER";
+    public static final String ACTION_WATCHDOG = "com.echat.app.action.CALL_LISTENER_WATCHDOG";
     public static final String ACTION_INCOMING = "com.echat.app.event.INCOMING_CALL";
     public static final String ACTION_CLEARED = "com.echat.app.event.CALL_CLEARED";
     public static final String EXTRA_HUB_URL = "hubUrl";
@@ -52,6 +57,9 @@ public class CallListenerService extends Service {
     private static final String CALL_CHANNEL = "calls-v2";
     private static final int LISTENER_NOTIFICATION_ID = 7300;
     private static final int CALL_NOTIFICATION_BASE = 7400;
+    private static final int RESTART_REQUEST_ID = 7301;
+    private static final int WATCHDOG_REQUEST_ID = 7302;
+    private static final long WATCHDOG_INTERVAL_MS = 45_000L;
 
     private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
     private final AtomicInteger generation = new AtomicInteger();
@@ -61,12 +69,16 @@ public class CallListenerService extends Service {
     private int reconnectAttempt;
     private boolean appActive = true;
     private boolean stopping;
+    private boolean explicitStopRequested;
     private IncomingCallPayload activeCall;
     private PowerManager.WakeLock wakeLock;
 
     public static void start(Context context, String hubUrl, String token, String userId) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
+        EChatNativeLog.info(context, "android-call-listener-api", "start",
+            "hubUrl", EChatNativeLog.safeEndpoint(hubUrl),
+            "credentialPresent", token != null && !token.isBlank(),
+            "hasUserId", userId != null && !userId.isBlank());
+        preferences(context).edit()
             .putString(EXTRA_HUB_URL, hubUrl)
             .putString(EXTRA_TOKEN, token)
             .putString(EXTRA_USER_ID, userId)
@@ -81,17 +93,22 @@ public class CallListenerService extends Service {
     }
 
     public static void restore(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
         String hubUrl = prefs.getString(EXTRA_HUB_URL, "");
         String token = prefs.getString(EXTRA_TOKEN, "");
+        EChatNativeLog.info(context, "android-call-listener-api", "restore",
+            "hubUrl", EChatNativeLog.safeEndpoint(hubUrl),
+            "credentialPresent", !token.isEmpty());
         if (hubUrl.isEmpty() || token.isEmpty()) return;
         Intent intent = new Intent(context, CallListenerService.class)
-            .setAction("com.echat.app.action.RESTART_CALL_LISTENER");
+            .setAction(ACTION_RESTART);
         ContextCompat.startForegroundService(context, intent);
     }
 
     public static void stop(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
+        EChatNativeLog.info(context, "android-call-listener-api", "stop",
+            "configured", !prefs.getString(EXTRA_TOKEN, "").isEmpty());
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) {
             prefs.edit().clear().apply();
             return;
@@ -100,8 +117,10 @@ public class CallListenerService extends Service {
     }
 
     public static void setAppActive(Context context, boolean active) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) return;
+        prefs.edit().putBoolean(EXTRA_ACTIVE, active).apply();
+        EChatNativeLog.info(context, "android-call-listener-api", "setAppActive", "active", active);
         ContextCompat.startForegroundService(context,
             new Intent(context, CallListenerService.class)
                 .setAction(ACTION_APP_STATE)
@@ -110,8 +129,10 @@ public class CallListenerService extends Service {
     }
 
     public static void clear(Context context, String callId) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
         if (prefs.getString(EXTRA_TOKEN, "").isEmpty()) return;
+        EChatNativeLog.info(context, "android-call-listener-api", "clearCallAlert",
+            "hasCallId", callId != null && !callId.isBlank());
         ContextCompat.startForegroundService(context,
             new Intent(context, CallListenerService.class)
                 .setAction(ACTION_CLEAR)
@@ -122,6 +143,8 @@ public class CallListenerService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        stopping = false;
+        explicitStopRequested = false;
         // If Harmony/Android recreates this service while the screen is locked,
         // the last persisted foreground value may still be true. Treat a
         // process restart as background until the foreground WebView explicitly
@@ -131,19 +154,32 @@ public class CallListenerService extends Service {
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "EChat:CallListener");
         wakeLock.setReferenceCounted(false);
-        wakeLock.acquire();
+        renewWakeLock();
         createChannels();
         startForeground(LISTENER_NOTIFICATION_ID, listenerNotification("正在连接来电服务…"));
+        scheduleWatchdog();
+        EChatNativeLog.info(this, "android-call-listener", "Service created",
+            "sdk", Build.VERSION.SDK_INT,
+            "manufacturer", Build.MANUFACTURER,
+            "wakeLockHeld", wakeLock != null && wakeLock.isHeld());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
+        EChatNativeLog.info(this, "android-call-listener-api", "onStartCommand",
+            "action", action == null ? "null" : action,
+            "flags", flags,
+            "startId", startId,
+            "appActive", appActive,
+            "connectionState", hubConnection == null ? "none" : hubConnection.getConnectionState().name());
         if (ACTION_STOP.equals(action)) {
             stopListener();
             return START_NOT_STICKY;
         }
-        if ("com.echat.app.action.RESTART_CALL_LISTENER".equals(action)) {
+        if (ACTION_RESTART.equals(action) || ACTION_WATCHDOG.equals(action)) {
+            renewWakeLock();
+            scheduleWatchdog();
             connect();
             return START_STICKY;
         }
@@ -167,9 +203,8 @@ public class CallListenerService extends Service {
                     .putString(EXTRA_HUB_URL, hubUrl)
                     .putString(EXTRA_TOKEN, token)
                     .putString(EXTRA_USER_ID, userId == null ? "" : userId)
-                    .putBoolean(EXTRA_ACTIVE, true)
                     .apply();
-                appActive = true;
+                appActive = preferences().getBoolean(EXTRA_ACTIVE, false);
                 reconnectNow();
             }
         } else {
@@ -185,17 +220,28 @@ public class CallListenerService extends Service {
     }
 
     private synchronized void connect() {
-        if (stopping) return;
+        if (explicitStopRequested) return;
         SharedPreferences prefs = preferences();
         String hubUrl = prefs.getString(EXTRA_HUB_URL, "");
         String token = prefs.getString(EXTRA_TOKEN, "");
         if (hubUrl.isEmpty() || token.isEmpty()) {
+            EChatNativeLog.warn(this, "android-call-listener-signalr", "Missing persisted listener configuration",
+                "hasHubUrl", !hubUrl.isEmpty(), "credentialPresent", !token.isEmpty());
             stopListener();
             return;
         }
-        if (hubConnection != null && hubConnection.getConnectionState() != HubConnectionState.DISCONNECTED) return;
+        if (hubConnection != null && hubConnection.getConnectionState() != HubConnectionState.DISCONNECTED) {
+            EChatNativeLog.info(this, "android-call-listener-signalr", "Connect skipped",
+                "state", hubConnection.getConnectionState().name());
+            return;
+        }
 
         int currentGeneration = generation.incrementAndGet();
+        EChatNativeLog.info(this, "android-call-listener-signalr", "Connect started",
+            "generation", currentGeneration,
+            "hubUrl", EChatNativeLog.safeEndpoint(hubUrl),
+            "appActive", appActive,
+            "networkConnected", isNetworkConnected());
         hubConnection = HubConnectionBuilder.create(hubUrl)
             .withAccessTokenProvider(Single.defer(() -> Single.just(preferences().getString(EXTRA_TOKEN, ""))))
             .build();
@@ -207,16 +253,27 @@ public class CallListenerService extends Service {
         hubConnection.on("call.ended", payload -> clearCall(payload.callId, "ended"), CallStatePayload.class);
         hubConnection.on("call.listener.cleared", payload -> clearCall(payload.callId, payload.reason), CallStatePayload.class);
         hubConnection.onClosed(error -> {
-            if (generation.get() == currentGeneration && !stopping) scheduleReconnect();
+            EChatNativeLog.error(this, "android-call-listener-signalr", "Connection closed", error,
+                "generation", currentGeneration,
+                "currentGeneration", generation.get(),
+                "explicitStop", explicitStopRequested,
+                "networkConnected", isNetworkConnected());
+            if (generation.get() == currentGeneration && !explicitStopRequested) scheduleReconnect();
         });
         hubConnection.start().subscribe(
             () -> {
                 if (generation.get() != currentGeneration) return;
                 reconnectAttempt = 0;
                 updateListenerNotification("来电服务运行中");
+                EChatNativeLog.info(this, "android-call-listener-signalr", "Connect succeeded",
+                    "generation", currentGeneration,
+                    "state", hubConnection == null ? "none" : hubConnection.getConnectionState().name());
             },
             error -> {
-                if (generation.get() == currentGeneration && !stopping) scheduleReconnect();
+                EChatNativeLog.error(this, "android-call-listener-signalr", "Connect failed", error,
+                    "generation", currentGeneration,
+                    "networkConnected", isNetworkConnected());
+                if (generation.get() == currentGeneration && !explicitStopRequested) scheduleReconnect();
             }
         );
     }
@@ -224,13 +281,25 @@ public class CallListenerService extends Service {
     private void scheduleReconnect() {
         long[] delays = { 1_000L, 3_000L, 8_000L, 15_000L, 30_000L, 60_000L };
         long delay = delays[Math.min(reconnectAttempt++, delays.length - 1)];
+        EChatNativeLog.warn(this, "android-call-listener-signalr", "Reconnect scheduled",
+            "attempt", reconnectAttempt,
+            "delayMs", delay,
+            "networkConnected", isNetworkConnected());
         updateListenerNotification("连接中断，正在重连…");
         reconnectHandler.removeCallbacksAndMessages(null);
         reconnectHandler.postDelayed(this::connect, delay);
     }
 
     private void handleInvite(IncomingCallPayload invite) {
-        if (invite == null || invite.callId == null || invite.conversationId == null) return;
+        if (invite == null || invite.callId == null || invite.conversationId == null) {
+            EChatNativeLog.warn(this, "android-call-listener-event", "Invalid call.invited payload");
+            return;
+        }
+        EChatNativeLog.info(this, "android-call-listener-event", "SignalR event received",
+            "method", "call.invited",
+            "mode", invite.mode,
+            "appActive", appActive,
+            "callIdSuffix", suffix(invite.callId));
         if (invite.callerId != null && invite.callerId.equals(preferences().getString(EXTRA_USER_ID, ""))) return;
         if (wasRecentlyCleared(invite.callId)) return;
         if (activeCall != null && invite.callId.equals(activeCall.callId)) return;
@@ -264,6 +333,7 @@ public class CallListenerService extends Service {
             .setContentTitle(callerName)
             .setContentText(body)
             .setContentIntent(contentIntent)
+            .setFullScreenIntent(contentIntent, true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -272,11 +342,20 @@ public class CallListenerService extends Service {
             .setVibrate(new long[] { 0, 500, 300, 500 })
             .build();
         getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
+        EChatNativeLog.info(this, "android-call-notification", "Incoming call notification posted",
+            "mode", invite.mode,
+            "callIdSuffix", suffix(invite.callId),
+            "notificationId", stableNotificationId(invite.callId),
+            "appActive", appActive,
+            "notificationsEnabled", notificationsEnabled());
         startRingtone();
     }
 
     private void clearCall(String callId, String reason) {
         if (callId == null || callId.isBlank()) return;
+        EChatNativeLog.info(this, "android-call-listener-event", "Call cleared",
+            "reason", reason == null ? "ended" : reason,
+            "callIdSuffix", suffix(callId));
         boolean duplicateClear = wasRecentlyCleared(callId);
         rememberCleared(callId);
         getSystemService(NotificationManager.class).cancel(stableNotificationId(callId));
@@ -304,7 +383,7 @@ public class CallListenerService extends Service {
 
     public static boolean isCallRecentlyCleared(Context context, String callId) {
         if (callId == null || callId.isBlank()) return false;
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
         long now = System.currentTimeMillis();
         return callId.equals(prefs.getString(EXTRA_CLEARED_CALL_ID, null))
             && now - prefs.getLong(EXTRA_CLEARED_AT, 0L) <= 120_000L;
@@ -338,7 +417,9 @@ public class CallListenerService extends Service {
             ringtone.setLooping(true);
             ringtone.prepare();
             ringtone.start();
-        } catch (Exception ignored) {
+            EChatNativeLog.info(this, "android-call-notification", "Ringtone started");
+        } catch (Exception error) {
+            EChatNativeLog.error(this, "android-call-notification", "Ringtone failed", error);
             stopRingtone();
         }
     }
@@ -426,7 +507,7 @@ public class CallListenerService extends Service {
     }
 
     public static IncomingCallPayload consumePendingCall(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = preferences(context);
         String callId = prefs.getString(EXTRA_CALL_ID, null);
         if (callId == null) return null;
         if (isCallRecentlyCleared(context, callId)) {
@@ -471,8 +552,21 @@ public class CallListenerService extends Service {
         return CALL_NOTIFICATION_BASE + Math.abs(value.hashCode() % 10_000);
     }
 
+    private static SharedPreferences preferences(Context context) {
+        Context app = context.getApplicationContext();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N)
+            return app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Context device = app.createDeviceProtectedStorageContext();
+        try {
+            device.moveSharedPreferencesFrom(app, PREFS);
+        } catch (Exception error) {
+            EChatNativeLog.error(app, "android-call-listener", "Failed to migrate listener preferences", error);
+        }
+        return device.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
     private SharedPreferences preferences() {
-        return getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return preferences(this);
     }
 
     private synchronized void disconnect() {
@@ -485,8 +579,10 @@ public class CallListenerService extends Service {
     }
 
     private void stopListener() {
+        explicitStopRequested = true;
         stopping = true;
         reconnectHandler.removeCallbacksAndMessages(null);
+        cancelWatchdog();
         stopBackgroundAlert();
         clearPendingCall();
         preferences().edit().clear().apply();
@@ -503,38 +599,100 @@ public class CallListenerService extends Service {
         stopBackgroundAlert();
         disconnect();
         releaseWakeLock();
-        if (!stopping) scheduleRestart();
+        boolean configured = !preferences().getString(EXTRA_TOKEN, "").isEmpty();
+        EChatNativeLog.warn(this, "android-call-listener", "Service destroyed",
+            "explicitStop", explicitStopRequested,
+            "configured", configured,
+            "networkConnected", isNetworkConnected());
+        if (!explicitStopRequested && configured) scheduleRestart(5_000L, ACTION_RESTART, RESTART_REQUEST_ID);
         super.onDestroy();
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        if (!stopping) scheduleRestart();
+        EChatNativeLog.warn(this, "android-call-listener", "Task removed",
+            "explicitStop", explicitStopRequested);
+        if (!explicitStopRequested) scheduleRestart(3_000L, ACTION_RESTART, RESTART_REQUEST_ID);
         super.onTaskRemoved(rootIntent);
     }
 
-    private void scheduleRestart() {
+    private void scheduleRestart(long delayMs, String action, int requestId) {
         if (preferences().getString(EXTRA_TOKEN, "").isEmpty()) return;
         Intent intent = new Intent(this, CallListenerService.class)
-            .setAction("com.echat.app.action.RESTART_CALL_LISTENER");
-        PendingIntent pending = PendingIntent.getService(
-            this,
-            7301,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
+            .setAction(action);
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? PendingIntent.getForegroundService(this, requestId, intent, pendingFlags)
+            : PendingIntent.getService(this, requestId, intent, pendingFlags);
         AlarmManager alarm = (AlarmManager) getSystemService(ALARM_SERVICE);
-        long at = System.currentTimeMillis() + 5_000L;
+        long at = System.currentTimeMillis() + delayMs;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
         } else {
             alarm.set(AlarmManager.RTC_WAKEUP, at, pending);
+        }
+        EChatNativeLog.info(this, "android-call-listener-watchdog", "Alarm scheduled",
+            "action", action,
+            "delayMs", delayMs,
+            "requestId", requestId);
+    }
+
+    private void scheduleWatchdog() {
+        if (explicitStopRequested || preferences().getString(EXTRA_TOKEN, "").isEmpty()) return;
+        scheduleRestart(WATCHDOG_INTERVAL_MS, ACTION_WATCHDOG, WATCHDOG_REQUEST_ID);
+    }
+
+    private void cancelWatchdog() {
+        Intent intent = new Intent(this, CallListenerService.class).setAction(ACTION_WATCHDOG);
+        int pendingFlags = PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? PendingIntent.getForegroundService(this, WATCHDOG_REQUEST_ID, intent, pendingFlags)
+            : PendingIntent.getService(this, WATCHDOG_REQUEST_ID, intent, pendingFlags);
+        if (pending != null) {
+            ((AlarmManager) getSystemService(ALARM_SERVICE)).cancel(pending);
+            pending.cancel();
         }
     }
 
     private void releaseWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
+    }
+
+    private void renewWakeLock() {
+        if (wakeLock == null) {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "EChat:CallListener");
+            wakeLock.setReferenceCounted(false);
+        }
+        if (wakeLock.isHeld()) wakeLock.release();
+        wakeLock.acquire(10 * 60_000L);
+    }
+
+    private boolean isNetworkConnected() {
+        try {
+            ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+            Network network = manager.getActiveNetwork();
+            if (network == null) return false;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+            return capabilities != null
+                && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private boolean notificationsEnabled() {
+        try {
+            return getSystemService(NotificationManager.class).areNotificationsEnabled();
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private static String suffix(String value) {
+        if (value == null || value.isBlank()) return "";
+        return value.length() <= 8 ? value : value.substring(value.length() - 8);
     }
 
     @Nullable

@@ -17,6 +17,7 @@ import {
 import { api, getDeviceId } from "./echat-api";
 import { canInitializeNativePush } from "./push-status";
 import { apiUrl } from "./runtime-config";
+import type { DiagnosticEntry } from "./runtime-diagnostics";
 
 const PENDING_NOTIFICATION_KEY = "echat.pending-notification.v1";
 const PENDING_NATIVE_CALL_KEY = "echat.pending-native-call.v1";
@@ -82,6 +83,7 @@ type MediaPermissionsPlugin = {
   stopCallListener(): Promise<void>;
   clearCallListenerAlert(options: { callId: string }): Promise<void>;
   getPendingCall(): Promise<Partial<NativeCallInvite> & { available: boolean }>;
+  getRuntimeLogs(): Promise<{ entriesJson: string }>;
   getVoipToken(): Promise<{ token: string; available: boolean }>;
   addListener(
     eventName: "callListenerIncoming",
@@ -149,6 +151,26 @@ export function getNativePushState() {
 
 export function getNativeCallListenerState() {
   return callListenerStarted;
+}
+
+export async function getNativeRuntimeLogs(): Promise<DiagnosticEntry[]> {
+  if (!isNativeAndroid()) return [];
+  try {
+    const result = await MediaPermissions.getRuntimeLogs();
+    const parsed = JSON.parse(result.entriesJson || "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry): entry is DiagnosticEntry =>
+        !!entry &&
+        typeof entry === "object" &&
+        typeof (entry as DiagnosticEntry).at === "string" &&
+        ["info", "warn", "error"].includes((entry as DiagnosticEntry).level) &&
+        typeof (entry as DiagnosticEntry).scope === "string" &&
+        typeof (entry as DiagnosticEntry).message === "string"
+    );
+  } catch {
+    return [];
+  }
 }
 
 function updateCallListenerState(running: boolean) {

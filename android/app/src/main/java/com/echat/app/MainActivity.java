@@ -13,4 +13,18 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().setWebChromeClient(new HarmonyWebChromeClient(getBridge(), this));
         }
     }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        CallListenerService.setAppActive(getApplicationContext(), true);
+        EChatNativeLog.info(this, "android-lifecycle", "MainActivity onStart");
+    }
+
+    @Override
+    public void onStop() {
+        CallListenerService.setAppActive(getApplicationContext(), false);
+        EChatNativeLog.info(this, "android-lifecycle", "MainActivity onStop");
+        super.onStop();
+    }
 }

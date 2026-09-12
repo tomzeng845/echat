@@ -77,10 +77,21 @@
 - [x] Build 267（提交 `30af7d89`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `c6cacb7f-74f1-4eea-9f4f-eed9be707bd5`
 - [x] Build 267 日志确认 sendrecv、视频 receiver/track、renderer 和 overlay 均正常；故障位于解码前，远端答案仅选择 H.264 PT98，且旧统计可能误选 RTX/FEC 辅助 inbound 流
 - [x] iOS 改用全 codec 编解码工厂并优先 VP8；SDP 增加 fmtp/rtcp-fb；RTP stats 按 codecId 排除 RTX/RED/FEC 并兼容 NSNumber/NSString 64 位计数
+- [x] Build 268（提交 `626505fe`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `08c42e73-715d-4cf0-b9b3-3322119acb4c`
 - [ ] 通过 TestFlight 真机验证 iPhone 能显示 Android 远端视频，并依据新增日志确认下行 RTP、解码和渲染均持续增长
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
+
+- [x] 定位鸿蒙锁屏/后台来电回归：`onDestroy()` 先设置 `stopping=true` 再判断 `!stopping`，导致系统销毁独立 `:calls` 进程后永远不安排恢复
+- [x] 区分用户明确停止与系统销毁；系统销毁/任务移除通过 `PendingIntent.getForegroundService` 安排恢复，并每 45 秒设置一次存活 watchdog
+- [x] listener token、应用前后台状态和待接来电迁移到 Device Protected Storage；服务与接收器启用 Direct Boot，锁屏重启可读配置
+- [x] MainActivity 原生 `onStart/onStop` 兜底同步前后台，避免 WebView 插件生命周期遗漏；来电通知启用全屏 Intent
+- [x] 新增跨进程持久原生日志，记录后台服务、SignalR 连接/重连/事件、通知、铃声、网络状态、生命周期和所有通话原生桥接 API，token/密码/密钥自动脱敏
+- [x] 全局记录 `/api/*`、`/hubs/*` HTTP 请求/响应/状态/耗时/异常，以及全部 SignalR 入站事件和 `start/invoke/send` 调用；仅记录查询参数名，不记录请求体、Authorization 或 token
+- [x] JS 日志持久化并扩容至 1200 条；日志预览和导出合并最多 500 条 Android/鸿蒙独立进程日志
+- [x] `pnpm check`、Vitest 31（1 skipped）、xUnit 27、Android `test/lint/assembleDebug` 通过；最终 APK Manifest 已验证 Direct Boot、全屏来电与 remoteMessaging 前台服务权限
+- [ ] 构建签名 Android/鸿蒙 APK 并提供真机锁屏、后台、进程被杀和 API 日志导出验证
 
 - [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥
 - [x] 发布密钥和凭据打包为 AES-256 加密备份，密码单独保存

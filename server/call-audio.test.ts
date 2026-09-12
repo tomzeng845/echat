@@ -161,13 +161,39 @@ describe("Android call audio routing", () => {
       new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url),
       "utf8"
     );
+    const nativeLog = readFileSync(
+      new URL(
+        "../android/app/src/main/java/com/echat/app/EChatNativeLog.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    const plugin = readFileSync(
+      new URL(
+        "../android/app/src/main/java/com/echat/app/MediaPermissionsPlugin.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
     expect(service).toContain("public static void restore(Context context)");
     expect(service).toContain("onTaskRemoved(Intent rootIntent)");
     expect(service).toContain("setAndAllowWhileIdle");
+    expect(service).toContain("PendingIntent.getForegroundService");
+    expect(service).toContain("explicitStopRequested");
+    expect(service).toContain("ACTION_WATCHDOG");
+    expect(service).toContain("WATCHDOG_INTERVAL_MS = 45_000L");
+    expect(service).toContain("moveSharedPreferencesFrom");
+    expect(service).toContain("scheduleRestart(5_000L");
+    expect(service).not.toContain("if (!stopping) scheduleRestart()");
     expect(receiver).toContain("ACTION_BOOT_COMPLETED");
     expect(receiver).toContain("CallListenerService.restore");
     expect(manifest).toContain("RECEIVE_BOOT_COMPLETED");
+    expect(manifest).toContain("USE_FULL_SCREEN_INTENT");
+    expect(manifest).toContain('android:directBootAware="true"');
     expect(manifest).toContain(".CallListenerBootReceiver");
+    expect(nativeLog).toContain("echat-native-runtime.jsonl");
+    expect(nativeLog).toContain("MAX_EXPORTED_ENTRIES = 500");
+    expect(plugin).toContain("getRuntimeLogs(PluginCall call)");
   });
 
   it("routes iOS calls through one native WebRTC audio owner", () => {
@@ -358,5 +384,35 @@ describe("Android call audio routing", () => {
     expect(packageManifest).toContain('product(name: "LiveKitWebRTC"');
     expect(packageManifest).not.toContain("client-sdk-swift");
     expect(packageManifest).not.toContain("RustLiveKitUniFFI");
+  });
+
+  it("records HTTP, SignalR and native bridge API calls in exportable logs", () => {
+    const diagnostics = readFileSync(
+      new URL("../client/src/lib/runtime-diagnostics.ts", import.meta.url),
+      "utf8"
+    );
+    const apiClient = readFileSync(
+      new URL("../client/src/lib/echat-api.ts", import.meta.url),
+      "utf8"
+    );
+    const mobileNative = readFileSync(
+      new URL("../client/src/lib/mobile-native.ts", import.meta.url),
+      "utf8"
+    );
+    const profile = readFileSync(
+      new URL("../client/src/components/P1ProfilePanel.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(diagnostics).toContain("installApiFetchCapture");
+    expect(diagnostics).toContain('info("api", "HTTP request"');
+    expect(diagnostics).toContain('info("api", "HTTP response"');
+    expect(diagnostics).toContain("echat.runtime-diagnostics.v2");
+    expect(diagnostics).toContain("extraEntries: DiagnosticEntry[]");
+    expect(apiClient).toContain("instrumentRealtimeConnection");
+    expect(apiClient).toContain('direction: "outbound"');
+    expect(apiClient).toContain('direction: "inbound"');
+    expect(apiClient).toContain("connection.onreconnecting");
+    expect(mobileNative).toContain("getNativeRuntimeLogs");
+    expect(profile).toContain("exportDiagnosticLog(nativeEntries)");
   });
 });

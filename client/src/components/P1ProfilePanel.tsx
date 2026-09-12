@@ -29,6 +29,7 @@ import {
   getNativeBackgroundCallSupport,
   getNativeCallListenerState,
   getNativePushState,
+  getNativeRuntimeLogs,
   isNativeAndroid,
   isNativeIos,
   isNativeMobile,
@@ -252,7 +253,8 @@ export default function P1ProfilePanel({
   async function exportRuntimeLogs() {
     try {
       logInfo("settings", "User requested runtime log export");
-      await exportDiagnosticLog();
+      const nativeEntries = await getNativeRuntimeLogs();
+      await exportDiagnosticLog(nativeEntries);
       toast.success("运行日志已导出，请将文件发送给技术支持");
     } catch (cause) {
       logInfo("settings", "Runtime log export failed", cause);
@@ -260,8 +262,13 @@ export default function P1ProfilePanel({
     }
   }
 
-  function openRuntimeLogPreview() {
-    setLogEntries(snapshotDiagnosticLog().slice(-100).reverse());
+  async function openRuntimeLogPreview() {
+    const nativeEntries = await getNativeRuntimeLogs();
+    setLogEntries(
+      [...snapshotDiagnosticLog(), ...nativeEntries]
+        .sort((left, right) => right.at.localeCompare(left.at))
+        .slice(0, 100)
+    );
     setSection("logs");
   }
 
@@ -288,15 +295,28 @@ export default function P1ProfilePanel({
         <div className="max-h-[60vh] space-y-2 overflow-y-auto rounded-2xl bg-slate-950 p-3 font-mono text-[10px] text-slate-200 shadow-sm">
           {logEntries.length ? (
             logEntries.map((entry, index) => (
-              <div key={`${entry.at}-${index}`} className="border-b border-white/10 pb-2 last:border-0">
+              <div
+                key={`${entry.at}-${index}`}
+                className="border-b border-white/10 pb-2 last:border-0"
+              >
                 <div className="flex gap-2 text-slate-400">
                   <span>{new Date(entry.at).toLocaleTimeString("zh-CN")}</span>
-                  <span className={entry.level === "error" ? "text-rose-300" : entry.level === "warn" ? "text-amber-300" : "text-teal-300"}>
+                  <span
+                    className={
+                      entry.level === "error"
+                        ? "text-rose-300"
+                        : entry.level === "warn"
+                          ? "text-amber-300"
+                          : "text-teal-300"
+                    }
+                  >
                     [{entry.level}]
                   </span>
                   <span>[{entry.scope}]</span>
                 </div>
-                <p className="mt-1 break-words text-slate-100">{entry.message}</p>
+                <p className="mt-1 break-words text-slate-100">
+                  {entry.message}
+                </p>
                 {entry.details !== undefined && (
                   <pre className="mt-1 whitespace-pre-wrap break-words text-slate-400">
                     {JSON.stringify(entry.details)}

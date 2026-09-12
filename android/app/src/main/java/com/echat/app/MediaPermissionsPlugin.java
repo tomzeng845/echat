@@ -45,6 +45,7 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @Override
     public void load() {
+        EChatNativeLog.info(getContext(), "android-native-bridge", "MediaPermissions.load");
         Intent initialIntent = getActivity() == null ? null : getActivity().getIntent();
         if (initialIntent != null && initialIntent.hasExtra(CallListenerService.EXTRA_CALL_ID)) {
             CallListenerService.IncomingCallPayload candidate = fromIntent(initialIntent);
@@ -78,6 +79,10 @@ public class MediaPermissionsPlugin extends Plugin {
         String hubUrl = call.getString("hubUrl", "");
         String token = call.getString("token", "");
         String userId = call.getString("userId", "");
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "startCallListener",
+            "hubUrl", EChatNativeLog.safeEndpoint(hubUrl),
+            "credentialPresent", !token.isBlank(),
+            "hasUserId", !userId.isBlank());
         if (!hubUrl.startsWith("https://") || token.isBlank() || userId.isBlank()) {
             call.reject("来电服务配置无效");
             return;
@@ -91,6 +96,7 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PluginMethod
     public void stopCallListener(PluginCall call) {
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "stopCallListener");
         CallListenerService.stop(getContext());
         call.resolve();
     }
@@ -98,6 +104,8 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void clearCallListenerAlert(PluginCall call) {
         String callId = call.getString("callId", "");
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "clearCallListenerAlert",
+            "hasCallId", !callId.isBlank());
         if (pendingIntentCall != null && callId.equals(pendingIntentCall.callId)) pendingIntentCall = null;
         CallListenerService.clear(getContext(), callId);
         call.resolve();
@@ -106,8 +114,17 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void getPendingCall(PluginCall call) {
         CallListenerService.IncomingCallPayload pending = takePendingCall();
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "getPendingCall",
+            "available", pending != null);
         JSObject result = toCallJson(pending);
         result.put("available", pending != null);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getRuntimeLogs(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("entriesJson", EChatNativeLog.snapshotJson(getContext()));
         call.resolve(result);
     }
 
@@ -151,6 +168,7 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void playAlertSound(PluginCall call) {
         String kind = call.getString("kind", "message");
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "playAlertSound", "kind", kind);
         boolean incomingCall = "voice-call".equals(kind) || "video-call".equals(kind);
         boolean outgoingCall = "outgoing-call".equals(kind);
         boolean callSound = incomingCall || outgoingCall;
@@ -197,6 +215,7 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void stopAlertSound(PluginCall call) {
         String kind = call.getString("kind", "all");
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "stopAlertSound", "kind", kind);
         if ("all".equals(kind) || "message".equals(kind)) {
             releasePlayer(messagePlayer);
             messagePlayer = null;
@@ -235,7 +254,12 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PluginMethod
     public void getBackgroundCallSupport(PluginCall call) {
-        call.resolve(backgroundCallSupport());
+        JSObject support = backgroundCallSupport();
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "getBackgroundCallSupport",
+            "manufacturer", support.getString("manufacturer"),
+            "harmonyCompatible", support.getBool("harmonyCompatible"),
+            "batteryOptimizationIgnored", support.getBool("batteryOptimizationIgnored"));
+        call.resolve(support);
     }
 
     @PluginMethod
@@ -246,6 +270,10 @@ public class MediaPermissionsPlugin extends Plugin {
             || powerManager.isIgnoringBatteryOptimizations(getContext().getPackageName());
         android.content.SharedPreferences preferences = getContext().getSharedPreferences("echat_background_calls", Context.MODE_PRIVATE);
         boolean requested = preferences.getBoolean("battery_exemption_requested", false);
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "requestBackgroundCallExemption",
+            "force", force,
+            "alreadyIgnored", ignored,
+            "previouslyRequested", requested);
         if (!ignored && (force || !requested) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             preferences.edit().putBoolean("battery_exemption_requested", true).apply();
             try {
@@ -308,6 +336,9 @@ public class MediaPermissionsPlugin extends Plugin {
         }
         JSObject result = new JSObject();
         result.put("opened", opened);
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "openBackgroundCallSettings",
+            "opened", opened,
+            "manufacturer", Build.MANUFACTURER);
         call.resolve(result);
     }
 
@@ -331,6 +362,7 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void setCallAudioRoute(PluginCall call) {
         boolean speaker = Boolean.TRUE.equals(call.getBoolean("speaker", false));
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "setCallAudioRoute", "speaker", speaker);
         AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
         audioManager.setMicrophoneMute(false);
@@ -377,6 +409,7 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PluginMethod
     public void endCallAudioSession(PluginCall call) {
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "endCallAudioSession");
         releasePlayer(callPlayer);
         callPlayer = null;
         AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
@@ -404,17 +437,21 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @Override
     protected void handleOnResume() {
+        EChatNativeLog.info(getContext(), "android-lifecycle", "MediaPermissions handleOnResume");
         CallListenerService.setAppActive(getContext(), true);
         emitPendingCall(true);
     }
 
     @Override
     protected void handleOnPause() {
+        EChatNativeLog.info(getContext(), "android-lifecycle", "MediaPermissions handleOnPause");
         CallListenerService.setAppActive(getContext(), false);
     }
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
+        EChatNativeLog.info(getContext(), "android-lifecycle", "MediaPermissions handleOnNewIntent",
+            "hasCallId", intent != null && intent.hasExtra(CallListenerService.EXTRA_CALL_ID));
         CallListenerService.setAppActive(getContext(), true);
         if (intent != null && intent.hasExtra(CallListenerService.EXTRA_CALL_ID)) {
             CallListenerService.IncomingCallPayload candidate = fromIntent(intent);
@@ -429,11 +466,16 @@ public class MediaPermissionsPlugin extends Plugin {
         int googleAppId = getContext().getResources().getIdentifier("google_app_id", "string", getContext().getPackageName());
         JSObject result = new JSObject();
         result.put("firebaseConfigured", googleAppId != 0);
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "getCapabilities",
+            "firebaseConfigured", googleAppId != 0);
         call.resolve(result);
     }
 
     @PluginMethod
     public void requestPermissions(PluginCall call) {
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "requestPermissions",
+            "cameraRequested", Boolean.TRUE.equals(call.getBoolean("camera", false)),
+            "microphoneRequested", Boolean.TRUE.equals(call.getBoolean("microphone", false)));
         List<String> aliases = new ArrayList<>();
         if (Boolean.TRUE.equals(call.getBoolean("camera", false)) && !hasSystemPermission(Manifest.permission.CAMERA)) {
             aliases.add("camera");

@@ -7,6 +7,7 @@ import {
   restorePersistedSession,
 } from "./session-storage";
 import { createUuid } from "./uuid";
+import { recordSignalR } from "./runtime-diagnostics";
 
 export type User = {
   id: string;
@@ -419,6 +420,118 @@ export type RealtimeHandlers = {
   onCallEnded?: (event: CallEnded) => void;
 };
 
+function instrumentRealtimeConnection(connection: signalR.HubConnection) {
+  const endpoint = apiUrl("/hubs/chat").split("?")[0];
+  const originalStart = connection.start.bind(connection);
+  connection.start = async () => {
+    const startedAt = performance.now();
+    recordSignalR({ direction: "connect", phase: "started", endpoint });
+    try {
+      await originalStart();
+      recordSignalR({
+        direction: "connect",
+        phase: "succeeded",
+        endpoint,
+        connectionId: connection.connectionId,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    } catch (cause) {
+      recordSignalR({
+        direction: "connect",
+        phase: "failed",
+        endpoint,
+        durationMs: Math.round(performance.now() - startedAt),
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+      throw cause;
+    }
+  };
+  const originalInvoke = connection.invoke.bind(connection);
+  connection.invoke = (async <T>(methodName: string, ...args: unknown[]) => {
+    const startedAt = performance.now();
+    recordSignalR({
+      direction: "outbound",
+      transport: "invoke",
+      method: methodName,
+      argCount: args.length,
+      state: connection.state,
+    });
+    try {
+      const result = await originalInvoke<T>(methodName, ...args);
+      recordSignalR({
+        direction: "outbound",
+        transport: "invoke",
+        method: methodName,
+        phase: "succeeded",
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+      return result;
+    } catch (cause) {
+      recordSignalR({
+        direction: "outbound",
+        transport: "invoke",
+        method: methodName,
+        phase: "failed",
+        durationMs: Math.round(performance.now() - startedAt),
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+      throw cause;
+    }
+  }) as typeof connection.invoke;
+  const originalSend = connection.send.bind(connection);
+  connection.send = (async (methodName: string, ...args: unknown[]) => {
+    const startedAt = performance.now();
+    recordSignalR({
+      direction: "outbound",
+      transport: "send",
+      method: methodName,
+      argCount: args.length,
+      state: connection.state,
+    });
+    try {
+      await originalSend(methodName, ...args);
+      recordSignalR({
+        direction: "outbound",
+        transport: "send",
+        method: methodName,
+        phase: "succeeded",
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    } catch (cause) {
+      recordSignalR({
+        direction: "outbound",
+        transport: "send",
+        method: methodName,
+        phase: "failed",
+        durationMs: Math.round(performance.now() - startedAt),
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+      throw cause;
+    }
+  }) as typeof connection.send;
+  connection.onreconnecting(cause =>
+    recordSignalR({
+      direction: "connect",
+      phase: "reconnecting",
+      error: cause?.message || "",
+    })
+  );
+  connection.onreconnected(connectionId =>
+    recordSignalR({
+      direction: "connect",
+      phase: "reconnected",
+      connectionId,
+    })
+  );
+  connection.onclose(cause =>
+    recordSignalR({
+      direction: "connect",
+      phase: "closed",
+      error: cause?.message || "",
+    })
+  );
+}
+
 export function connectRealtime(handlers: RealtimeHandlers) {
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(apiUrl("/hubs/chat"), {
@@ -427,6 +540,35 @@ export function connectRealtime(handlers: RealtimeHandlers) {
     .withAutomaticReconnect([0, 1000, 3000, 8000, 15000])
     .configureLogging(signalR.LogLevel.Warning)
     .build();
+  instrumentRealtimeConnection(connection);
+  [
+    "message.created",
+    "message.available",
+    "message.updated",
+    "conversation.updated",
+    "contact.requested",
+    "contact.updated",
+    "profile.updated",
+    "receipt.updated",
+    "typing.updated",
+    "moment.updated",
+    "admin.notice",
+    "call.invited",
+    "call.accepted",
+    "call.rejected",
+    "call.signal",
+    "call.ended",
+    "call.listener.cleared",
+  ].forEach(method => {
+    connection.on(method, (...args: unknown[]) =>
+      recordSignalR({
+        direction: "inbound",
+        method,
+        argCount: args.length,
+        state: connection.state,
+      })
+    );
+  });
   if (handlers.onMessage) connection.on("message.created", handlers.onMessage);
   if (handlers.onMessageAvailable)
     connection.on("message.available", handlers.onMessageAvailable);
