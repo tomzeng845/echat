@@ -84,7 +84,8 @@
 - [x] Web/Android MediaRecorder 按 MP4/AAC、WebM/Opus、Ogg/Opus 顺序动态选择实际支持格式，并用对应扩展名上传，不再把所有语音强制命名为 `.webm`
 - [x] 下载语音按消息 MIME 与 `.m4a/.webm/.ogg/.wav` 扩展名重新封装 Blob；播放器使用显式 `<source type>`，记录 MediaError、networkState、readyState、canPlayType、Blob MIME/大小并提供重试
 - [x] `pnpm check`、Vitest 35（1 skipped）、xUnit 27、iOS sync 与静态项目校验通过
-- [ ] 构建并上传包含语音录制/播放修复的下一版 TestFlight，在 iPhone 真机验证录音发送、M4A 收听和旧 WebM/Opus 收听
+- [x] Build 269（提交 `a663da53`）已通过 Xcode 26.6 编译、签名、Apple 校验并上传 TestFlight；Delivery UUID `9ddabdea-d8f1-45d2-8578-71fb6de8abcf`
+- [ ] 在 iPhone 真机验证 Build 269 的录音发送、M4A 收听和旧 WebM/Opus 收听；若旧消息失败，依据新增 `mediaErrorCode/canPlayType/blobMimeType` 日志处理历史格式
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
