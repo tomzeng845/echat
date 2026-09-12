@@ -689,21 +689,18 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                                     "sessionInputs": session.inputs.count,
                                     "sessionOutputs": session.outputs.count
                                 ])
-                                var exceptionError: NSError?
-                                let startReturned = EChatExceptionCatcher.execute({
+                                let exception = EChatExceptionCatcher.captureException {
                                     session.startRunning()
-                                }, exceptionError: &exceptionError)
-                                if let exceptionError {
+                                }
+                                if let exception {
                                     self.emitDiagnostic("native-camera-start-running-exception", details: [
-                                        "message": exceptionError.localizedDescription,
-                                        "domain": exceptionError.domain,
-                                        "code": exceptionError.code,
-                                        "exceptionName": exceptionError.userInfo["exceptionName"] as? String ?? "",
-                                        "callStack": exceptionError.userInfo["callStackSymbols"] as? [String] ?? []
+                                        "message": exception["message"] as? String ?? "",
+                                        "exceptionName": exception["exceptionName"] as? String ?? "",
+                                        "callStack": exception["callStackSymbols"] as? [String] ?? []
                                     ])
                                 }
                                 self.emitDiagnostic("native-camera-start-running-returned", details: [
-                                    "completedWithoutException": startReturned,
+                                    "completedWithoutException": exception == nil,
                                     "sessionRunning": session.isRunning,
                                     "sessionInputs": session.inputs.count,
                                     "sessionOutputs": session.outputs.count
