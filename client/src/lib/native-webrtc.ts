@@ -42,6 +42,10 @@ type NativeWebRTCPlugin = {
     cameraEnabled: boolean;
     callKitAudioActive: boolean;
     connectionState: string;
+    cameraSessionRunning: boolean;
+    localVideoFrames: number;
+    localVideoSenderAttached: boolean;
+    remoteVideoTrack: boolean;
   }>;
   addListener(
     eventName: "iceCandidate",

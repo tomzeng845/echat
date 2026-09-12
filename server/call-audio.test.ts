@@ -104,7 +104,10 @@ describe("Android call audio routing", () => {
       new URL("../ios/App/App/AppDelegate.swift", import.meta.url),
       "utf8"
     );
-    const info = readFileSync(new URL("../ios/App/App/Info.plist", import.meta.url), "utf8");
+    const info = readFileSync(
+      new URL("../ios/App/App/Info.plist", import.meta.url),
+      "utf8"
+    );
     expect(appDelegate).toContain("if Thread.isMainThread { install() }");
     expect(appDelegate).toContain("registry.desiredPushTypes = [.voIP]");
     expect(appDelegate).toContain("didReceiveIncomingPushWith payload");
@@ -113,8 +116,14 @@ describe("Android call audio routing", () => {
   });
 
   it("keeps a regular APNs fallback for calls when VoIP delivery is unavailable", () => {
-    const apns = readFileSync(new URL("../Api/ApnsNotificationService.cs", import.meta.url), "utf8");
-    const push = readFileSync(new URL("../Api/PushNotificationService.cs", import.meta.url), "utf8");
+    const apns = readFileSync(
+      new URL("../Api/ApnsNotificationService.cs", import.meta.url),
+      "utf8"
+    );
+    const push = readFileSync(
+      new URL("../Api/PushNotificationService.cs", import.meta.url),
+      "utf8"
+    );
     expect(apns).toContain('["content-available"] = 1');
     expect(push).toContain("SelectCallPushDevices(devices)");
     expect(push).toContain('"ios" => IosEnabled ? apns.SendAsync');
@@ -135,7 +144,10 @@ describe("Android call audio routing", () => {
 
   it("restores the Harmony/Android listener after reboot and task removal", () => {
     const service = readFileSync(
-      new URL("../android/app/src/main/java/com/echat/app/CallListenerService.java", import.meta.url),
+      new URL(
+        "../android/app/src/main/java/com/echat/app/CallListenerService.java",
+        import.meta.url
+      ),
       "utf8"
     );
     const receiver = readFileSync(
@@ -201,6 +213,24 @@ describe("Android call audio routing", () => {
     expect(callManager).toContain("if (!finishedNativeRtc)");
     expect(nativePlugin).toContain("self.closeLocked(deactivateSession: true)");
     expect(nativePlugin).toContain("completion?()");
+  });
+
+  it("verifies and recovers the native iOS camera frame and outbound video path", () => {
+    const nativePlugin = readFileSync(
+      new URL("../ios/App/App/NativeWebRTCPlugin.swift", import.meta.url),
+      "utf8"
+    );
+    expect(nativePlugin).toContain("NativeVideoCaptureDelegate");
+    expect(nativePlugin).toContain(
+      "source.capturer(capturer, didCapture: frame)"
+    );
+    expect(nativePlugin).toContain("native-camera-first-frame");
+    expect(nativePlugin).toContain("native-camera-no-frames");
+    expect(nativePlugin).toContain("restartCameraCaptureLocked");
+    expect(nativePlugin).toContain("native-webrtc-video-outbound-stats");
+    expect(nativePlugin).toContain("native-webrtc-video-inbound-stats");
+    expect(nativePlugin).toContain("native-video-sdp");
+    expect(nativePlugin).toContain("UIApplication.didBecomeActiveNotification");
   });
 
   it("uses the pure WebRTC binary without the LiveKit Room or Rust runtime", () => {
