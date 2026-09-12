@@ -318,6 +318,22 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("native-webrtc-video-outbound-stats");
     expect(nativePlugin).toContain("native-webrtc-video-inbound-stats");
     expect(nativePlugin).toContain("native-video-sdp");
+    expect(nativePlugin).toContain("remote-description-set");
+    expect(nativePlugin).toContain("native-video-transceiver-snapshot");
+    expect(nativePlugin).toContain(
+      "native-video-transceiver-started-receiving"
+    );
+    expect(nativePlugin).toContain("native-rtp-receiver-first-packet");
+    expect(nativePlugin).toContain("private final class RemoteVideoFrameRelay");
+    expect(nativePlugin).toContain("native-remote-video-first-frame");
+    expect(nativePlugin).toContain("native-remote-video-render-progress");
+    expect(nativePlugin).toContain("native-video-overlay-audit");
+    expect(nativePlugin).toContain("native-remote-video-renderer-rebound");
+    expect(nativePlugin).toContain('reason: "decoded-without-render"');
+    expect(nativePlugin).toContain("remoteRendererRebindAttempts < 3");
+    expect(nativePlugin).toContain("framesDecoded");
+    expect(nativePlugin).toContain("framesReceived");
+    expect(nativePlugin).toContain("renderedFrames");
     expect(nativePlugin).toContain("UIApplication.didBecomeActiveNotification");
   });
 

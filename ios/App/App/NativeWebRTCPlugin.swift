@@ -185,6 +185,36 @@ private final class NativeVideoCaptureDelegate: NSObject, LKRTCVideoCapturerDele
     }
 }
 
+private final class RemoteVideoFrameRelay: NSObject, LKRTCVideoRenderer {
+    weak var owner: NativeIosWebRTCManager?
+    weak var target: LKRTCVideoRenderer?
+    private let lock = NSLock()
+    private var frameCount: Int64 = 0
+    private var lastFrameAt: Date?
+
+    func setSize(_ size: CGSize) {
+        target?.setSize(size)
+        owner?.didChangeRemoteVideoSize(size)
+    }
+
+    func renderFrame(_ frame: LKRTCVideoFrame?) {
+        target?.renderFrame(frame)
+        guard let frame else { return }
+        lock.lock()
+        frameCount += 1
+        let count = frameCount
+        lastFrameAt = Date()
+        lock.unlock()
+        owner?.didRenderRemoteVideoFrame(frame, count: count)
+    }
+
+    func snapshot() -> (frames: Int64, lastFrameAt: Date?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (frameCount, lastFrameAt)
+    }
+}
+
 private final class EChatVideoCapturer: LKRTCVideoCapturer, AVCaptureVideoDataOutputSampleBufferDelegate {
     let captureSession = AVCaptureSession()
     let videoOutput = AVCaptureVideoDataOutput()
@@ -418,7 +448,7 @@ private enum NativeWebRTCError: LocalizedError {
     }
 }
 
-final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
+final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate, LKRTCRtpReceiverDelegate {
     static let shared = NativeIosWebRTCManager()
 
     weak var plugin: NativeWebRTCPlugin?
@@ -466,6 +496,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var videoOverlay: UIView?
     private var remoteRenderer: LKRTCMTLVideoView?
     private var localRenderer: LKRTCMTLVideoView?
+    private var remoteFrameRelay: RemoteVideoFrameRelay?
+    private var remoteRendererBoundTrackId: String?
+    private var remoteRendererRebindAttempts = 0
 
     var isRunning: Bool { queue.sync { _isRunning } }
 
@@ -1268,8 +1301,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             let description = LKRTCSessionDescription(type: type, sdp: sdp)
             peer.setRemoteDescription(description) { error in
                 if let error { completion(.failure(error)); return }
+                self.emitVideoSdpDiagnostic(description, role: "remote-\(typeString)")
                 self.queue.async {
                     self.remoteDescriptionReady = true
+                    self.emitVideoTransceiverSnapshotLocked(reason: "remote-description-set")
+                    self.bindRemoteVideoReceiverIfNeededLocked(reason: "remote-description-set")
                     let candidates = self.pendingCandidates
                     self.pendingCandidates.removeAll()
                     guard !candidates.isEmpty else {
@@ -1546,6 +1582,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
     private func closeLocked(deactivateSession: Bool) {
         let wasRunning = _isRunning
+        let remoteTrackForCleanup = remoteVideoTrack
+        let remoteRelayForCleanup = remoteFrameRelay
+        let localTrackForCleanup = localVideoTrack
+        let localRendererForCleanup = localRenderer
+        let overlayForCleanup = videoOverlay
         _isRunning = false
         activationRetryWorkItem?.cancel()
         activationRetryWorkItem = nil
@@ -1576,6 +1617,12 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         localVideoSender = nil
         remoteVideoTrack = nil
         remoteVideoReceiver = nil
+        remoteFrameRelay = nil
+        remoteRendererBoundTrackId = nil
+        remoteRendererRebindAttempts = 0
+        remoteRenderer = nil
+        localRenderer = nil
+        videoOverlay = nil
         cameraCapturer = nil
         videoCaptureDelegate = nil
         cameraDevice = nil
@@ -1607,7 +1654,16 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             }
         }
         activatedByApp = false
-        DispatchQueue.main.async { self.removeVideoOverlay() }
+        DispatchQueue.main.async {
+            if let remoteTrackForCleanup, let remoteRelayForCleanup {
+                remoteTrackForCleanup.remove(remoteRelayForCleanup)
+                remoteRelayForCleanup.target = nil
+            }
+            if let localTrackForCleanup, let localRendererForCleanup {
+                localTrackForCleanup.remove(localRendererForCleanup)
+            }
+            overlayForCleanup?.removeFromSuperview()
+        }
         if wasRunning { emitDiagnostic("native-webrtc-closed") }
     }
 
@@ -1621,19 +1677,48 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     }
 
     private func emitVideoSdpDiagnostic(_ description: LKRTCSessionDescription, role: String) {
-        let lines = description.sdp.components(separatedBy: .newlines)
-        let hasVideo = lines.contains { $0.hasPrefix("m=video ") }
-        let direction = lines.first {
+        let lines = description.sdp.components(separatedBy: .newlines).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let videoStart = lines.firstIndex(where: { $0.hasPrefix("m=video ") }) else {
+            emitDiagnostic("native-video-sdp", details: [
+                "role": role,
+                "mode": mode,
+                "hasVideoMLine": false,
+                "localTrackEnabled": localVideoTrack?.isEnabled ?? false,
+                "senderAttached": localVideoSender?.track != nil,
+                "capturedFrames": localVideoFrameCount
+            ])
+            return
+        }
+        let videoEnd = lines[(videoStart + 1)...].firstIndex(where: { $0.hasPrefix("m=") })
+            ?? lines.endIndex
+        let videoLines = Array(lines[videoStart..<videoEnd])
+        let mediaParts = videoLines[0].split(separator: " ").map(String.init)
+        let direction = videoLines.first {
             ["a=sendrecv", "a=sendonly", "a=recvonly", "a=inactive"].contains($0)
         } ?? "unknown"
+        let codecs = videoLines.filter { $0.hasPrefix("a=rtpmap:") }
+        let mid = videoLines.first(where: { $0.hasPrefix("a=mid:") })?
+            .replacingOccurrences(of: "a=mid:", with: "") ?? ""
+        let msid = videoLines.first(where: { $0.hasPrefix("a=msid:") }) ?? ""
+        let payloadTypes = mediaParts.count > 3 ? Array(mediaParts.dropFirst(3)) : []
         emitDiagnostic("native-video-sdp", details: [
             "role": role,
             "mode": mode,
-            "hasVideoMLine": hasVideo,
+            "hasVideoMLine": true,
             "direction": direction,
+            "videoPort": mediaParts.count > 1 ? mediaParts[1] : "",
+            "videoRejected": mediaParts.count > 1 && mediaParts[1] == "0",
+            "mid": mid,
+            "msid": msid,
+            "payloadTypes": payloadTypes,
+            "codecs": codecs,
+            "ssrcLineCount": videoLines.filter { $0.hasPrefix("a=ssrc:") }.count,
             "localTrackEnabled": localVideoTrack?.isEnabled ?? false,
             "senderAttached": localVideoSender?.track != nil,
-            "capturedFrames": localVideoFrameCount
+            "capturedFrames": localVideoFrameCount,
+            "remoteTrackPresent": remoteVideoTrack != nil
         ])
     }
 
@@ -1647,7 +1732,14 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 "capturedFrames": self.localVideoFrameCount,
                 "captureSessionRunning": self.cameraCapturer?.captureSession.isRunning ?? false,
                 "localTrackEnabled": self.localVideoTrack?.isEnabled ?? false,
-                "remoteTrackEnabled": self.remoteVideoTrack?.isEnabled ?? false
+                "remoteTrackEnabled": self.remoteVideoTrack?.isEnabled ?? false,
+                "remoteTrackShouldReceive": self.remoteVideoTrack?.shouldReceive ?? false,
+                "remoteTrackReadyState": self.remoteVideoTrack?.readyState == .live ? "live" : "ended",
+                "remoteReceiverPresent": self.remoteVideoReceiver != nil,
+                "remoteReceiverSourceCount": self.remoteVideoReceiver?.sources.count ?? 0,
+                "renderedFrames": self.remoteFrameRelay?.snapshot().frames ?? 0,
+                "remoteRendererReady": self.remoteRenderer != nil,
+                "remoteRendererBoundTrackId": self.remoteRendererBoundTrackId ?? ""
             ]
             if let sender = self.localVideoSender {
                 peer.statistics(for: sender) { report in
@@ -1672,13 +1764,44 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                             ?? statistic.values["mediaType"] as? String
                         return kind == "video"
                     }
-                    self.emitDiagnostic("native-webrtc-video-inbound-stats", details: [
-                        "framesDecoded": (inbound?.values["framesDecoded"] as? NSNumber)?.int64Value ?? 0,
-                        "framesReceived": (inbound?.values["framesReceived"] as? NSNumber)?.int64Value ?? 0,
-                        "bytesReceived": (inbound?.values["bytesReceived"] as? NSNumber)?.int64Value ?? 0,
-                        "packetsLost": (inbound?.values["packetsLost"] as? NSNumber)?.int64Value ?? 0
-                    ])
+                    let framesDecoded = (inbound?.values["framesDecoded"] as? NSNumber)?.int64Value ?? 0
+                    let framesReceived = (inbound?.values["framesReceived"] as? NSNumber)?.int64Value ?? 0
+                    let renderSnapshot = self.remoteFrameRelay?.snapshot()
+                    var details = base
+                    details["framesDecoded"] = framesDecoded
+                    details["framesReceived"] = framesReceived
+                    details["renderedFrames"] = renderSnapshot?.frames ?? 0
+                    details["bytesReceived"] = (inbound?.values["bytesReceived"] as? NSNumber)?.int64Value ?? 0
+                    details["packetsReceived"] = (inbound?.values["packetsReceived"] as? NSNumber)?.int64Value ?? 0
+                    details["packetsLost"] = (inbound?.values["packetsLost"] as? NSNumber)?.int64Value ?? 0
+                    details["keyFramesDecoded"] = (inbound?.values["keyFramesDecoded"] as? NSNumber)?.int64Value ?? 0
+                    details["frameWidth"] = (inbound?.values["frameWidth"] as? NSNumber)?.intValue ?? 0
+                    details["frameHeight"] = (inbound?.values["frameHeight"] as? NSNumber)?.intValue ?? 0
+                    details["framesDropped"] = (inbound?.values["framesDropped"] as? NSNumber)?.int64Value ?? 0
+                    details["freezeCount"] = (inbound?.values["freezeCount"] as? NSNumber)?.int64Value ?? 0
+                    details["jitter"] = (inbound?.values["jitter"] as? NSNumber)?.doubleValue ?? 0
+                    details["nackCount"] = (inbound?.values["nackCount"] as? NSNumber)?.int64Value ?? 0
+                    details["pliCount"] = (inbound?.values["pliCount"] as? NSNumber)?.int64Value ?? 0
+                    details["firCount"] = (inbound?.values["firCount"] as? NSNumber)?.int64Value ?? 0
+                    details["codecId"] = inbound?.values["codecId"] as? String ?? ""
+                    details["decoderImplementation"] = inbound?.values["decoderImplementation"] as? String ?? ""
+                    details["lastRendererFrameAgeMs"] = renderSnapshot?.lastFrameAt.map {
+                        Int(Date().timeIntervalSince($0) * 1_000)
+                    } ?? -1
+                    self.emitDiagnostic("native-webrtc-video-inbound-stats", details: details)
+                    let rendererHasNoFrames = (renderSnapshot?.frames ?? 0) == 0
+                    let rendererIsStale = renderSnapshot?.lastFrameAt.map {
+                        Date().timeIntervalSince($0) > 2
+                    } ?? true
+                    if framesDecoded > 0 && (rendererHasNoFrames || rendererIsStale) {
+                        DispatchQueue.main.async {
+                            self.rebindRemoteRendererOnMain(reason: "decoded-without-render")
+                        }
+                    }
                 }
+            } else {
+                self.emitDiagnostic("native-webrtc-video-receiver-missing", details: base)
+                self.bindRemoteVideoReceiverIfNeededLocked(reason: "stats-receiver-missing")
             }
         }
         videoStatsTimer = timer
@@ -1687,6 +1810,106 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
     private func emitDiagnostic(_ event: String, details: [String: Any] = [:]) {
         DispatchQueue.main.async { self.plugin?.emitDiagnostic(event, details: details) }
+    }
+
+    fileprivate func didRenderRemoteVideoFrame(_ frame: LKRTCVideoFrame, count: Int64) {
+        queue.async {
+            if count == 1 {
+                self.remoteRendererRebindAttempts = 0
+                self.emitDiagnostic("native-remote-video-first-frame", details: [
+                    "width": frame.width,
+                    "height": frame.height,
+                    "rotation": frame.rotation.rawValue,
+                    "trackEnabled": self.remoteVideoTrack?.isEnabled ?? false,
+                    "trackShouldReceive": self.remoteVideoTrack?.shouldReceive ?? false,
+                    "trackReadyState": self.remoteVideoTrack?.readyState == .live ? "live" : "ended"
+                ])
+                DispatchQueue.main.async {
+                    if let overlay = self.videoOverlay, let window = overlay.window {
+                        window.bringSubviewToFront(overlay)
+                    }
+                    self.emitVideoOverlayAudit(reason: "first-remote-frame")
+                }
+            } else if count % 120 == 0 {
+                self.emitDiagnostic("native-remote-video-render-progress", details: [
+                    "renderedFrames": count,
+                    "width": frame.width,
+                    "height": frame.height,
+                    "rotation": frame.rotation.rawValue
+                ])
+            }
+        }
+    }
+
+    fileprivate func didChangeRemoteVideoSize(_ size: CGSize) {
+        emitDiagnostic("native-remote-video-size-changed", details: [
+            "width": size.width,
+            "height": size.height
+        ])
+    }
+
+    private func emitVideoOverlayAudit(reason: String) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.emitVideoOverlayAudit(reason: reason) }
+            return
+        }
+        let overlay = videoOverlay
+        let remote = remoteRenderer
+        let snapshot = remoteFrameRelay?.snapshot()
+        emitDiagnostic("native-video-overlay-audit", details: [
+            "reason": reason,
+            "overlayExists": overlay != nil,
+            "overlayInWindow": overlay?.window != nil,
+            "overlayHidden": overlay?.isHidden ?? true,
+            "overlayAlpha": overlay?.alpha ?? 0,
+            "overlayFrame": overlay.map { NSStringFromCGRect($0.frame) } ?? "",
+            "overlayBounds": overlay.map { NSStringFromCGRect($0.bounds) } ?? "",
+            "overlayZPosition": overlay?.layer.zPosition ?? 0,
+            "remoteRendererExists": remote != nil,
+            "remoteRendererEnabled": remote?.isEnabled ?? false,
+            "remoteRendererHidden": remote?.isHidden ?? true,
+            "remoteRendererAlpha": remote?.alpha ?? 0,
+            "remoteRendererFrame": remote.map { NSStringFromCGRect($0.frame) } ?? "",
+            "remoteRendererBounds": remote.map { NSStringFromCGRect($0.bounds) } ?? "",
+            "remoteTrackAttached": remoteVideoTrack != nil,
+            "remoteTrackEnabled": remoteVideoTrack?.isEnabled ?? false,
+            "remoteTrackShouldReceive": remoteVideoTrack?.shouldReceive ?? false,
+            "renderedFrames": snapshot?.frames ?? 0
+        ])
+    }
+
+    private func rebindRemoteRendererOnMain(reason: String) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.rebindRemoteRendererOnMain(reason: reason) }
+            return
+        }
+        guard remoteRendererRebindAttempts < 3,
+              let track = remoteVideoTrack,
+              let relay = remoteFrameRelay,
+              let renderer = remoteRenderer
+        else {
+            emitVideoOverlayAudit(reason: "rebind-unavailable-\(reason)")
+            return
+        }
+        remoteRendererRebindAttempts += 1
+        track.remove(relay)
+        relay.target = renderer
+        track.isEnabled = true
+        track.shouldReceive = true
+        renderer.isEnabled = true
+        track.add(relay)
+        if let overlay = videoOverlay, let window = overlay.window {
+            window.bringSubviewToFront(overlay)
+        }
+        emitDiagnostic("native-remote-video-renderer-rebound", details: [
+            "reason": reason,
+            "attempt": remoteRendererRebindAttempts,
+            "trackId": track.trackId,
+            "trackEnabled": track.isEnabled,
+            "trackShouldReceive": track.shouldReceive,
+            "rendererEnabled": renderer.isEnabled
+        ])
+        emitVideoOverlayAudit(reason: "after-rebind-\(reason)")
     }
 
     private func connectionStateName(_ state: LKRTCPeerConnectionState?) -> String {
@@ -1726,11 +1949,13 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         let remote = LKRTCMTLVideoView()
         remote.translatesAutoresizingMaskIntoConstraints = false
         remote.videoContentMode = .scaleAspectFill
+        remote.isEnabled = true
         overlay.addSubview(remote)
 
         let local = LKRTCMTLVideoView()
         local.translatesAutoresizingMaskIntoConstraints = false
         local.videoContentMode = .scaleAspectFill
+        local.isEnabled = true
         local.layer.cornerRadius = 16
         local.layer.masksToBounds = true
         local.layer.borderWidth = 1
@@ -1761,62 +1986,228 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         remoteRenderer = remote
         localRenderer = local
         localVideoTrack?.add(local)
-        remoteVideoTrack?.add(remote)
+        let relay = RemoteVideoFrameRelay()
+        relay.owner = self
+        relay.target = remote
+        remoteFrameRelay = relay
+        remoteVideoTrack?.add(relay)
+        remoteRendererBoundTrackId = remoteVideoTrack?.trackId
         emitDiagnostic("native-video-overlay-installed", details: [
             "window": window.isKeyWindow,
             "windowWidth": window.bounds.width,
             "windowHeight": window.bounds.height,
-            "windowLevel": window.windowLevel.rawValue
+            "windowLevel": window.windowLevel.rawValue,
+            "overlayHidden": overlay.isHidden,
+            "overlayAlpha": overlay.alpha,
+            "overlayFrame": NSStringFromCGRect(overlay.frame),
+            "remoteRendererEnabled": remote.isEnabled,
+            "remoteRendererHidden": remote.isHidden,
+            "remoteRendererAlpha": remote.alpha,
+            "remoteRendererFrame": NSStringFromCGRect(remote.frame),
+            "remoteTrackAttached": remoteVideoTrack != nil,
+            "relayAttached": remoteVideoTrack != nil
         ])
+        DispatchQueue.main.async {
+            self.emitVideoOverlayAudit(reason: "post-layout")
+        }
     }
 
     private func removeVideoOverlay() {
-        if let remoteVideoTrack, let remoteRenderer { remoteVideoTrack.remove(remoteRenderer) }
+        if let remoteVideoTrack, let remoteFrameRelay { remoteVideoTrack.remove(remoteFrameRelay) }
         if let localVideoTrack, let localRenderer { localVideoTrack.remove(localRenderer) }
+        remoteFrameRelay?.target = nil
         videoOverlay?.removeFromSuperview()
         videoOverlay = nil
         remoteRenderer = nil
         localRenderer = nil
+        remoteFrameRelay = nil
+        remoteRendererBoundTrackId = nil
+    }
+
+    private func emitVideoTransceiverSnapshotLocked(reason: String) {
+        guard let peer else { return }
+        let videoTransceivers = peer.transceivers.filter { $0.mediaType == .video }
+        emitDiagnostic("native-video-transceiver-snapshot", details: [
+            "reason": reason,
+            "count": videoTransceivers.count,
+            "transceivers": videoTransceivers.map { transceiver -> [String: Any] in
+                var currentDirection = transceiver.direction
+                let hasCurrentDirection = transceiver.currentDirection(&currentDirection)
+                let track = transceiver.receiver.track
+                return [
+                    "mid": String(describing: transceiver.mid),
+                    "direction": transceiver.direction.rawValue,
+                    "hasCurrentDirection": hasCurrentDirection,
+                    "currentDirection": currentDirection.rawValue,
+                    "isStopped": transceiver.isStopped,
+                    "receiverId": transceiver.receiver.receiverId,
+                    "receiverTrackKind": track?.kind ?? "",
+                    "receiverTrackId": track?.trackId ?? "",
+                    "receiverTrackEnabled": track?.isEnabled ?? false,
+                    "receiverTrackReadyState": track?.readyState == .live ? "live" : "ended",
+                    "receiverSourceCount": transceiver.receiver.sources.count
+                ]
+            }
+        ])
+    }
+
+    private func bindRemoteVideoReceiverIfNeededLocked(reason: String) {
+        guard let peer else { return }
+        guard let receiver = peer.receivers.first(where: { $0.track?.kind == "video" }) else {
+            emitDiagnostic("native-remote-video-receiver-unavailable", details: [
+                "reason": reason,
+                "receiverCount": peer.receivers.count,
+                "receiverKinds": peer.receivers.map { $0.track?.kind ?? "none" }
+            ])
+            return
+        }
+        bindRemoteVideoReceiverLocked(receiver, reason: reason)
+    }
+
+    private func bindRemoteVideoReceiverLocked(_ receiver: LKRTCRtpReceiver, reason: String) {
+        guard let videoTrack = receiver.track as? LKRTCVideoTrack else {
+            emitDiagnostic("native-remote-video-track-unavailable", details: [
+                "reason": reason,
+                "receiverId": receiver.receiverId,
+                "trackKind": receiver.track?.kind ?? "none"
+            ])
+            return
+        }
+        let previousTrack = remoteVideoTrack
+        receiver.delegate = self
+        remoteVideoTrack = videoTrack
+        remoteVideoReceiver = receiver
+        videoTrack.isEnabled = true
+        videoTrack.shouldReceive = true
+        emitDiagnostic("native-webrtc-remote-video-track", details: [
+            "reason": reason,
+            "receiverId": receiver.receiverId,
+            "trackId": videoTrack.trackId,
+            "enabled": videoTrack.isEnabled,
+            "shouldReceive": videoTrack.shouldReceive,
+            "readyState": videoTrack.readyState == .live ? "live" : "ended",
+            "sourceCount": receiver.sources.count,
+            "rendererReady": remoteRenderer != nil,
+            "relayReady": remoteFrameRelay != nil
+        ])
+        DispatchQueue.main.async {
+            if self.remoteRenderer == nil || self.remoteFrameRelay == nil {
+                self.installVideoOverlay()
+            } else if let renderer = self.remoteRenderer,
+                      let relay = self.remoteFrameRelay {
+                if let previousTrack, previousTrack.trackId != videoTrack.trackId {
+                    previousTrack.remove(relay)
+                }
+                relay.owner = self
+                relay.target = renderer
+                renderer.isEnabled = true
+                if self.remoteRendererBoundTrackId != videoTrack.trackId {
+                    videoTrack.add(relay)
+                    self.remoteRendererBoundTrackId = videoTrack.trackId
+                }
+            }
+            if let overlay = self.videoOverlay, let window = overlay.window {
+                window.bringSubviewToFront(overlay)
+            }
+            self.emitDiagnostic("native-remote-video-renderer-attached", details: [
+                "reason": reason,
+                "trackId": videoTrack.trackId,
+                "trackEnabled": videoTrack.isEnabled,
+                "trackShouldReceive": videoTrack.shouldReceive,
+                "rendererReady": self.remoteRenderer != nil,
+                "relayReady": self.remoteFrameRelay != nil
+            ])
+            self.emitVideoOverlayAudit(reason: "receiver-bound-\(reason)")
+        }
     }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didChange stateChanged: LKRTCSignalingState
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-signaling-state", details: [
+            "state": stateChanged.rawValue,
+            "hasLocalDescription": peerConnection.localDescription != nil,
+            "hasRemoteDescription": peerConnection.remoteDescription != nil,
+            "receiverCount": peerConnection.receivers.count,
+            "transceiverCount": peerConnection.transceivers.count
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didAdd stream: LKRTCMediaStream
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-media-stream-added", details: [
+            "streamId": stream.streamId,
+            "audioTrackIds": stream.audioTracks.map(\.trackId),
+            "videoTrackIds": stream.videoTracks.map(\.trackId)
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didRemove stream: LKRTCMediaStream
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-media-stream-removed", details: [
+            "streamId": stream.streamId,
+            "audioTrackIds": stream.audioTracks.map(\.trackId),
+            "videoTrackIds": stream.videoTracks.map(\.trackId)
+        ])
+    }
 
-    func peerConnectionShouldNegotiate(_ peerConnection: LKRTCPeerConnection) {}
+    func peerConnectionShouldNegotiate(_ peerConnection: LKRTCPeerConnection) {
+        emitDiagnostic("native-webrtc-negotiation-needed", details: [
+            "signalingState": peerConnection.signalingState.rawValue,
+            "receiverCount": peerConnection.receivers.count,
+            "transceiverCount": peerConnection.transceivers.count
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didChange newState: LKRTCIceConnectionState
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-ice-connection-state", details: [
+            "state": newState.rawValue
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didChange newState: LKRTCIceGatheringState
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-ice-gathering-state", details: [
+            "state": newState.rawValue
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didGenerate candidate: LKRTCIceCandidate
     ) {
+        let parts = candidate.sdp.split(separator: " ").map(String.init)
+        let typeIndex = parts.firstIndex(of: "typ")
+        emitDiagnostic("native-webrtc-ice-candidate-generated", details: [
+            "sdpMid": candidate.sdpMid ?? "",
+            "sdpMLineIndex": candidate.sdpMLineIndex,
+            "protocol": parts.count > 2 ? parts[2].lowercased() : "",
+            "candidateType": typeIndex.map { index in
+                index + 1 < parts.count ? parts[index + 1] : ""
+            } ?? ""
+        ])
         DispatchQueue.main.async { self.plugin?.emitIceCandidate(candidate) }
     }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
         didRemove candidates: [LKRTCIceCandidate]
-    ) {}
+    ) {
+        emitDiagnostic("native-webrtc-ice-candidates-removed", details: [
+            "count": candidates.count,
+            "mids": candidates.compactMap(\.sdpMid)
+        ])
+    }
 
     func peerConnection(
         _ peerConnection: LKRTCPeerConnection,
@@ -1831,6 +2222,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         DispatchQueue.main.async { self.plugin?.emitConnectionState(state) }
         if newState == .connected {
             queue.async {
+                self.emitVideoTransceiverSnapshotLocked(reason: "peer-connected")
+                self.bindRemoteVideoReceiverIfNeededLocked(reason: "peer-connected")
                 let rtcSession = LKRTCAudioSession.sharedInstance()
                 self.emitDiagnostic("native-webrtc-audio-ready", details: [
                     "remoteAudioTrack": self.remoteAudioTrack != nil,
@@ -1842,6 +2235,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     "category": rtcSession.category,
                     "mode": rtcSession.mode
                 ])
+                DispatchQueue.main.async {
+                    self.emitVideoOverlayAudit(reason: "peer-connected")
+                }
             }
         }
     }
@@ -1853,6 +2249,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     ) {
         if let audioTrack = rtpReceiver.track as? LKRTCAudioTrack {
             queue.async {
+                rtpReceiver.delegate = self
                 self.remoteAudioTrack = audioTrack
                 self.remoteAudioReceiver = rtpReceiver
                 audioTrack.isEnabled = true
@@ -1865,31 +2262,70 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             }
             return
         }
-        guard let videoTrack = rtpReceiver.track as? LKRTCVideoTrack else { return }
         queue.async {
-            self.remoteVideoTrack = videoTrack
-            self.remoteVideoReceiver = rtpReceiver
-            videoTrack.isEnabled = true
-            videoTrack.shouldReceive = true
-            self.emitDiagnostic("native-webrtc-remote-video-track", details: [
-                "trackId": videoTrack.trackId,
-                "enabled": videoTrack.isEnabled,
-                "readyState": videoTrack.readyState == .live ? "live" : "ended",
-                "rendererReady": self.remoteRenderer != nil
+            self.bindRemoteVideoReceiverLocked(rtpReceiver, reason: "did-add-receiver")
+            self.emitVideoTransceiverSnapshotLocked(reason: "did-add-receiver")
+        }
+    }
+
+    func peerConnection(
+        _ peerConnection: LKRTCPeerConnection,
+        didStartReceivingOn transceiver: LKRTCRtpTransceiver
+    ) {
+        queue.async {
+            var currentDirection = transceiver.direction
+            let hasCurrentDirection = transceiver.currentDirection(&currentDirection)
+            self.emitDiagnostic("native-video-transceiver-started-receiving", details: [
+                "mediaType": transceiver.mediaType.rawValue,
+                "mid": String(describing: transceiver.mid),
+                "direction": transceiver.direction.rawValue,
+                "hasCurrentDirection": hasCurrentDirection,
+                "currentDirection": currentDirection.rawValue,
+                "receiverId": transceiver.receiver.receiverId,
+                "trackKind": transceiver.receiver.track?.kind ?? "",
+                "trackId": transceiver.receiver.track?.trackId ?? "",
+                "trackReadyState": transceiver.receiver.track?.readyState == .live ? "live" : "ended"
             ])
-            DispatchQueue.main.async {
-                if self.remoteRenderer == nil {
-                    self.installVideoOverlay()
-                } else if let renderer = self.remoteRenderer {
-                    videoTrack.add(renderer)
-                }
-                self.emitDiagnostic(
-                    self.remoteRenderer == nil
-                        ? "native-remote-video-renderer-unavailable"
-                        : "native-remote-video-renderer-attached"
+            if transceiver.mediaType == .video {
+                self.bindRemoteVideoReceiverLocked(
+                    transceiver.receiver,
+                    reason: "did-start-receiving-transceiver"
                 )
             }
         }
+    }
+
+    func peerConnection(
+        _ peerConnection: LKRTCPeerConnection,
+        didRemove rtpReceiver: LKRTCRtpReceiver
+    ) {
+        queue.async {
+            self.emitDiagnostic("native-rtp-receiver-removed", details: [
+                "receiverId": rtpReceiver.receiverId,
+                "trackKind": rtpReceiver.track?.kind ?? "",
+                "trackId": rtpReceiver.track?.trackId ?? ""
+            ])
+            if self.remoteVideoReceiver?.receiverId == rtpReceiver.receiverId {
+                self.remoteVideoTrack = nil
+                self.remoteVideoReceiver = nil
+                self.remoteRendererBoundTrackId = nil
+            }
+        }
+    }
+
+    func rtpReceiver(
+        _ rtpReceiver: LKRTCRtpReceiver,
+        didReceiveFirstPacketForMediaType mediaType: LKRTCRtpMediaType
+    ) {
+        emitDiagnostic("native-rtp-receiver-first-packet", details: [
+            "receiverId": rtpReceiver.receiverId,
+            "mediaType": mediaType.rawValue,
+            "trackKind": rtpReceiver.track?.kind ?? "",
+            "trackId": rtpReceiver.track?.trackId ?? "",
+            "trackEnabled": rtpReceiver.track?.isEnabled ?? false,
+            "trackReadyState": rtpReceiver.track?.readyState == .live ? "live" : "ended",
+            "sourceCount": rtpReceiver.sources.count
+        ])
     }
 
     private func startAudioStatsLocked() {
