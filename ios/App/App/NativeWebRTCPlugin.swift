@@ -832,8 +832,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             ?? UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
                 .flatMap({ $0.windows })
-                .first(where: { !$0.isHidden && $0.windowLevel == .normal }),
-              let rootView = window.rootViewController?.view
+                .first(where: { !$0.isHidden && $0.windowLevel == .normal })
         else {
             emitDiagnostic("native-video-window-unavailable")
             return
@@ -859,13 +858,17 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         local.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
         overlay.addSubview(local)
 
-        rootView.addSubview(overlay)
-        rootView.bringSubviewToFront(overlay)
+        // Attach directly to the Scene's top-level window rather than the
+        // Capacitor root view. WKWebView can add/bring its own subviews to
+        // the front after the call UI is mounted, which otherwise leaves
+        // both native video renderers hidden while audio continues normally.
+        window.addSubview(overlay)
+        window.bringSubviewToFront(overlay)
         NSLayoutConstraint.activate([
-            overlay.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 16),
-            overlay.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -16),
-            overlay.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor, constant: 84),
-            overlay.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor, constant: -116),
+            overlay.leadingAnchor.constraint(equalTo: window.leadingAnchor, constant: 16),
+            overlay.trailingAnchor.constraint(equalTo: window.trailingAnchor, constant: -16),
+            overlay.topAnchor.constraint(equalTo: window.safeAreaLayoutGuide.topAnchor, constant: 84),
+            overlay.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -116),
             remote.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
             remote.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
             remote.topAnchor.constraint(equalTo: overlay.topAnchor),
@@ -880,8 +883,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         localRenderer = local
         emitDiagnostic("native-video-overlay-installed", details: [
             "window": window.isKeyWindow,
-            "rootViewWidth": rootView.bounds.width,
-            "rootViewHeight": rootView.bounds.height
+            "windowWidth": window.bounds.width,
+            "windowHeight": window.bounds.height,
+            "windowLevel": window.windowLevel.rawValue
         ])
     }
 
