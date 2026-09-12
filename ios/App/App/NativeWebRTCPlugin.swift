@@ -224,6 +224,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var cameraDevice: AVCaptureDevice?
     private var cameraFormat: AVCaptureDevice.Format?
     private var cameraFps = 24
+    private var cameraCaptureHasStarted = false
     private var localVideoFrameCount: Int64 = 0
     private var lastLocalVideoFrameAt: Date?
     private var cameraRestartAttempts = 0
@@ -428,6 +429,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             self.cameraDevice = device
             self.cameraFormat = format
             self.cameraFps = captureFps
+            self.cameraCaptureHasStarted = false
             self.localVideoFrameCount = 0
             self.lastLocalVideoFrameAt = nil
             self.cameraRestartAttempts = 0
@@ -467,6 +469,20 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 // AVCaptureSession. On iOS the old same-turn start could call
                 // back successfully while the session was still stopped.
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+                    guard UIApplication.shared.applicationState == .active else {
+                        self.emitDiagnostic("native-camera-start-postponed", details: [
+                            "applicationState": UIApplication.shared.applicationState.rawValue
+                        ])
+                        self.queue.async {
+                            self.scheduleCameraRecoveryLocked(
+                                reason: "start-waiting-for-active",
+                                delay: .milliseconds(500)
+                            )
+                        }
+                        completion(.success(()))
+                        return
+                    }
+                    self.cameraCaptureHasStarted = true
                     capturer.startCapture(with: device, format: format, fps: captureFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
@@ -612,24 +628,48 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         lastLocalVideoFrameAt = nil
         emitDiagnostic("native-camera-restarting", details: [
             "reason": reason,
-            "attempt": cameraRestartAttempts
+            "attempt": cameraRestartAttempts,
+            "applicationState": UIApplication.shared.applicationState.rawValue,
+            "authorization": AVCaptureDevice.authorizationStatus(for: .video).rawValue,
+            "deviceAvailable": device.isConnected,
+            "sessionRunningBeforeStop": capturer.captureSession.isRunning,
+            "sessionInputsBeforeStop": capturer.captureSession.inputs.count,
+            "sessionOutputsBeforeStop": capturer.captureSession.outputs.count
         ])
         DispatchQueue.main.async {
-            capturer.stopCapture {
+            let startDirectly = !self.cameraCaptureHasStarted
+            let start: () -> Void = {
                 // Give AVCaptureSession one main-run-loop turn to become idle
                 // before starting it again; immediate stop/start is racy on
                 // iOS and was observed as sessionRunning=false forever.
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) {
-                    capturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
+                    self.cameraCaptureHasStarted = true
+                    guard let delegate = self.videoCaptureDelegate else {
+                        self.emitDiagnostic("native-camera-restart-failed", details: [
+                            "reason": reason,
+                            "error": "capture delegate released before restart"
+                        ])
+                        return
+                    }
+                    // Recreate the capturer after a completed stop. This
+                    // releases the previous AVCaptureSession instead of
+                    // allowing generation-only recovery to reuse a poisoned
+                    // session that is no longer running.
+                    let freshCapturer = LKRTCCameraVideoCapturer(delegate: delegate)
+                    self.cameraCapturer = freshCapturer
+                    freshCapturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-restart-failed", details: [
                                 "reason": reason,
-                                "error": error.localizedDescription
+                                "error": error.localizedDescription,
+                                "deviceAvailable": device.isConnected
                             ])
                         } else {
                             self.emitDiagnostic("native-camera-restarted", details: [
                                 "reason": reason,
-                                "sessionRunning": capturer.captureSession.isRunning
+                                "sessionRunning": freshCapturer.captureSession.isRunning,
+                                "sessionInputs": freshCapturer.captureSession.inputs.count,
+                                "sessionOutputs": freshCapturer.captureSession.outputs.count
                             ])
                         }
                         self.queue.async {
@@ -637,6 +677,14 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                             self.scheduleCameraFrameWatchdogLocked(generation: generation)
                         }
                     }
+                }
+            }
+            if startDirectly {
+                self.emitDiagnostic("native-camera-starting-after-inactive")
+                start()
+            } else {
+                capturer.stopCapture {
+                    start()
                 }
             }
         }
@@ -1016,6 +1064,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         cameraRecoveryWorkItem = nil
         cameraCaptureGeneration += 1
         cameraCapturer?.stopCapture(completionHandler: nil)
+        cameraCaptureHasStarted = false
         peer?.close()
         peer = nil
         factory = nil

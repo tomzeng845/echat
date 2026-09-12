@@ -232,6 +232,16 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("cameraRecoveryWorkItem?.cancel()");
     expect(nativePlugin).toContain("native-camera-session-verified");
     expect(nativePlugin).toContain("capture-session-not-running");
+    expect(nativePlugin).toContain("cameraCaptureHasStarted");
+    expect(nativePlugin).toContain("native-camera-starting-after-inactive");
+    expect(nativePlugin).toContain("start-waiting-for-active");
+    expect(nativePlugin).toContain("sessionRunningBeforeStop");
+    expect(nativePlugin).toContain("sessionInputsBeforeStop");
+    expect(nativePlugin).toContain("sessionOutputsBeforeStop");
+    expect(nativePlugin).toContain(
+      "let freshCapturer = LKRTCCameraVideoCapturer"
+    );
+    expect(nativePlugin).toContain("self.cameraCapturer = freshCapturer");
     expect(nativePlugin).toContain(
       "asyncAfter(deadline: .now() + .milliseconds(250))"
     );
