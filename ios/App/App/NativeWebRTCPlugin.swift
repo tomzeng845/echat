@@ -643,6 +643,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 // before starting it again; immediate stop/start is racy on
                 // iOS and was observed as sessionRunning=false forever.
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) {
+                    self.resetCaptureSession(capturer.captureSession, reason: reason)
                     self.cameraCaptureHasStarted = true
                     guard let delegate = self.videoCaptureDelegate else {
                         self.emitDiagnostic("native-camera-restart-failed", details: [
@@ -665,11 +666,26 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                                 "deviceAvailable": device.isConnected
                             ])
                         } else {
+                            let session = freshCapturer.captureSession
+                            let wasRunning = session.isRunning
+                            if !wasRunning {
+                                self.emitDiagnostic("native-camera-start-running", details: [
+                                    "before": false,
+                                    "deviceAvailable": device.isConnected,
+                                    "deviceLocked": device.isSubjectAreaChangeMonitoringEnabled,
+                                    "sessionInputs": session.inputs.count,
+                                    "sessionOutputs": session.outputs.count
+                                ])
+                                session.startRunning()
+                            }
                             self.emitDiagnostic("native-camera-restarted", details: [
                                 "reason": reason,
-                                "sessionRunning": freshCapturer.captureSession.isRunning,
-                                "sessionInputs": freshCapturer.captureSession.inputs.count,
-                                "sessionOutputs": freshCapturer.captureSession.outputs.count
+                                "sessionRunning": session.isRunning,
+                                "startRunningWasCalled": !wasRunning,
+                                "deviceAvailable": device.isConnected,
+                                "deviceLocked": device.isSubjectAreaChangeMonitoringEnabled,
+                                "sessionInputs": session.inputs.count,
+                                "sessionOutputs": session.outputs.count
                             ])
                         }
                         self.queue.async {
@@ -688,6 +704,33 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 }
             }
         }
+    }
+
+    private func resetCaptureSession(_ session: AVCaptureSession, reason: String) {
+        let inputs = session.inputs
+        let outputs = session.outputs
+        emitDiagnostic("native-camera-session-reset", details: [
+            "reason": reason,
+            "wasRunning": session.isRunning,
+            "inputsBefore": inputs.count,
+            "outputsBefore": outputs.count
+        ])
+        if session.isRunning {
+            session.stopRunning()
+        }
+        session.beginConfiguration()
+        for output in outputs {
+            session.removeOutput(output)
+        }
+        for input in inputs {
+            session.removeInput(input)
+        }
+        session.commitConfiguration()
+        emitDiagnostic("native-camera-session-reset-complete", details: [
+            "isRunning": session.isRunning,
+            "inputsAfter": session.inputs.count,
+            "outputsAfter": session.outputs.count
+        ])
     }
 
     func createOffer(completion: @escaping (Result<String, Error>) -> Void) {

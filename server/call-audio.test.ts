@@ -242,6 +242,13 @@ describe("Android call audio routing", () => {
       "let freshCapturer = LKRTCCameraVideoCapturer"
     );
     expect(nativePlugin).toContain("self.cameraCapturer = freshCapturer");
+    expect(nativePlugin).toContain("native-camera-session-reset");
+    expect(nativePlugin).toContain("native-camera-session-reset-complete");
+    expect(nativePlugin).toContain("session.stopRunning()");
+    expect(nativePlugin).toContain("session.removeOutput(output)");
+    expect(nativePlugin).toContain("session.removeInput(input)");
+    expect(nativePlugin).toContain("native-camera-start-running");
+    expect(nativePlugin).toContain("startRunningWasCalled");
     expect(nativePlugin).toContain(
       "asyncAfter(deadline: .now() + .milliseconds(250))"
     );
