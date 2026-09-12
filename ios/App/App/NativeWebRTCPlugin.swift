@@ -228,6 +228,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var lastLocalVideoFrameAt: Date?
     private var cameraRestartAttempts = 0
     private var cameraCaptureGeneration = 0
+    private var cameraRecoveryWorkItem: DispatchWorkItem?
     private var videoStatsTimer: DispatchSourceTimer?
     private var pendingCandidates: [LKRTCIceCandidate] = []
     private var remoteDescriptionReady = false
@@ -261,11 +262,14 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     @objc private func applicationDidBecomeActive() {
         queue.async {
             guard self._isRunning, self.mode == "video", self.cameraEnabled else { return }
-            let frameIsStale = self.lastLocalVideoFrameAt.map {
-                Date().timeIntervalSince($0) > 2
-            } ?? true
-            guard frameIsStale else { return }
-            self.restartCameraCaptureLocked(reason: "application-became-active")
+            // didBecomeActive can arrive while the first asynchronous camera
+            // start is still settling. Restarting immediately cancels that
+            // start before AVCaptureSession becomes running. Debounce recovery
+            // and only restart if no frames arrive during the stability window.
+            self.scheduleCameraRecoveryLocked(
+                reason: "application-became-active",
+                delay: .milliseconds(1200)
+            )
         }
     }
 
@@ -443,6 +447,22 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     "height": CMVideoFormatDescriptionGetDimensions(format.formatDescription).height,
                     "renderer": String(describing: type(of: localRenderer))
                 ])
+                self.queue.async { self.startVideoStatsLocked() }
+                guard UIApplication.shared.applicationState == .active else {
+                    self.emitDiagnostic("native-camera-start-deferred", details: [
+                        "applicationState": UIApplication.shared.applicationState.rawValue
+                    ])
+                    self.queue.async {
+                        self.scheduleCameraRecoveryLocked(
+                            reason: "waiting-for-foreground",
+                            delay: .milliseconds(500)
+                        )
+                    }
+                    // Keep the negotiated video sender alive. Camera capture
+                    // will start from didBecomeActive once iOS permits it.
+                    completion(.success(()))
+                    return
+                }
                 capturer.startCapture(with: device, format: format, fps: captureFps) { error in
                     if let error {
                         self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
@@ -455,7 +475,6 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                             "senderTrack": videoSender.track?.trackId ?? ""
                         ])
                         self.queue.async {
-                            self.startVideoStatsLocked()
                             self.scheduleCameraFrameWatchdogLocked(generation: generation)
                         }
                         completion(.success(()))
@@ -523,15 +542,32 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 "sessionRunning": self.cameraCapturer?.captureSession.isRunning ?? false,
                 "attempt": self.cameraRestartAttempts + 1
             ])
-            self.restartCameraCaptureLocked(reason: "no-first-frame")
+            self.scheduleCameraRecoveryLocked(reason: "no-first-frame", delay: .milliseconds(200))
         }
+    }
+
+    private func scheduleCameraRecoveryLocked(
+        reason: String,
+        delay: DispatchTimeInterval
+    ) {
+        cameraRecoveryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self._isRunning, self.mode == "video", self.cameraEnabled else { return }
+            let frameIsStale = self.lastLocalVideoFrameAt.map {
+                Date().timeIntervalSince($0) > 2
+            } ?? true
+            guard frameIsStale else { return }
+            self.restartCameraCaptureLocked(reason: reason)
+        }
+        cameraRecoveryWorkItem = work
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func restartCameraCaptureLocked(reason: String) {
         guard _isRunning,
               mode == "video",
               cameraEnabled,
-              cameraRestartAttempts < 3,
+              cameraRestartAttempts < 8,
               let capturer = cameraCapturer,
               let device = cameraDevice,
               let format = cameraFormat
@@ -762,6 +798,13 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 } else {
                     self.scheduleAudioActivationRetryLocked()
                 }
+                if self.mode == "video" {
+                    self.cameraRestartAttempts = 0
+                    self.scheduleCameraRecoveryLocked(
+                        reason: "audio-interruption-ended",
+                        delay: .milliseconds(500)
+                    )
+                }
             } else {
                 self.interruptionActive = true
                 rtcAudioSession.isAudioEnabled = false
@@ -930,6 +973,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         audioStatsTimer = nil
         videoStatsTimer?.cancel()
         videoStatsTimer = nil
+        cameraRecoveryWorkItem?.cancel()
+        cameraRecoveryWorkItem = nil
         cameraCaptureGeneration += 1
         cameraCapturer?.stopCapture(completionHandler: nil)
         peer?.close()

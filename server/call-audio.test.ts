@@ -227,6 +227,9 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("native-camera-first-frame");
     expect(nativePlugin).toContain("native-camera-no-frames");
     expect(nativePlugin).toContain("restartCameraCaptureLocked");
+    expect(nativePlugin).toContain("native-camera-start-deferred");
+    expect(nativePlugin).toContain('reason: "audio-interruption-ended"');
+    expect(nativePlugin).toContain("cameraRecoveryWorkItem?.cancel()");
     expect(nativePlugin).toContain("native-webrtc-video-outbound-stats");
     expect(nativePlugin).toContain("native-webrtc-video-inbound-stats");
     expect(nativePlugin).toContain("native-video-sdp");
