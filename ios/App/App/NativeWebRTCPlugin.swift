@@ -230,6 +230,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var cameraRestartAttempts = 0
     private var cameraCaptureGeneration = 0
     private var cameraRecoveryWorkItem: DispatchWorkItem?
+    private var cameraSessionObservers: [NSObjectProtocol] = []
     private var videoStatsTimer: DispatchSourceTimer?
     private var pendingCandidates: [LKRTCIceCandidate] = []
     private var remoteDescriptionReady = false
@@ -396,6 +397,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
 
         let capturer = LKRTCCameraVideoCapturer(delegate: captureDelegate)
         cameraCapturer = capturer
+        observeCaptureSession(capturer.captureSession)
         let startCapture: () -> Void = { [weak self] in
             guard let self else { return }
             guard let device = LKRTCCameraVideoCapturer.captureDevices().first(where: {
@@ -658,6 +660,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     // session that is no longer running.
                     let freshCapturer = LKRTCCameraVideoCapturer(delegate: delegate)
                     self.cameraCapturer = freshCapturer
+                    self.observeCaptureSession(freshCapturer.captureSession)
                     freshCapturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-restart-failed", details: [
@@ -668,22 +671,51 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                         } else {
                             let session = freshCapturer.captureSession
                             let wasRunning = session.isRunning
+                            var deviceLockSucceeded = false
+                            var deviceLockError = ""
+                            do {
+                                try device.lockForConfiguration()
+                                deviceLockSucceeded = true
+                                device.unlockForConfiguration()
+                            } catch {
+                                deviceLockError = error.localizedDescription
+                            }
                             if !wasRunning {
                                 self.emitDiagnostic("native-camera-start-running", details: [
                                     "before": false,
                                     "deviceAvailable": device.isConnected,
-                                    "deviceLocked": device.isSubjectAreaChangeMonitoringEnabled,
+                                    "deviceLockSucceeded": deviceLockSucceeded,
+                                    "deviceLockError": deviceLockError,
                                     "sessionInputs": session.inputs.count,
                                     "sessionOutputs": session.outputs.count
                                 ])
-                                session.startRunning()
+                                var exceptionError: NSError?
+                                let startReturned = EChatExceptionCatcher.execute({
+                                    session.startRunning()
+                                }, exceptionError: &exceptionError)
+                                if let exceptionError {
+                                    self.emitDiagnostic("native-camera-start-running-exception", details: [
+                                        "message": exceptionError.localizedDescription,
+                                        "domain": exceptionError.domain,
+                                        "code": exceptionError.code,
+                                        "exceptionName": exceptionError.userInfo["exceptionName"] as? String ?? "",
+                                        "callStack": exceptionError.userInfo["callStackSymbols"] as? [String] ?? []
+                                    ])
+                                }
+                                self.emitDiagnostic("native-camera-start-running-returned", details: [
+                                    "completedWithoutException": startReturned,
+                                    "sessionRunning": session.isRunning,
+                                    "sessionInputs": session.inputs.count,
+                                    "sessionOutputs": session.outputs.count
+                                ])
                             }
                             self.emitDiagnostic("native-camera-restarted", details: [
                                 "reason": reason,
                                 "sessionRunning": session.isRunning,
                                 "startRunningWasCalled": !wasRunning,
                                 "deviceAvailable": device.isConnected,
-                                "deviceLocked": device.isSubjectAreaChangeMonitoringEnabled,
+                                "deviceLockSucceeded": deviceLockSucceeded,
+                                "deviceLockError": deviceLockError,
                                 "sessionInputs": session.inputs.count,
                                 "sessionOutputs": session.outputs.count
                             ])
@@ -731,6 +763,67 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             "inputsAfter": session.inputs.count,
             "outputsAfter": session.outputs.count
         ])
+    }
+
+    private func observeCaptureSession(_ session: AVCaptureSession) {
+        removeCaptureSessionObservers()
+        let center = NotificationCenter.default
+        let sessionId = String(describing: ObjectIdentifier(session))
+        let notifications: [Notification.Name] = [
+            AVCaptureSession.runtimeErrorNotification,
+            AVCaptureSession.wasInterruptedNotification,
+            AVCaptureSession.interruptionEndedNotification,
+            AVCaptureSession.didStartRunningNotification,
+            AVCaptureSession.didStopRunningNotification
+        ]
+        cameraSessionObservers = notifications.map { name in
+            center.addObserver(forName: name, object: session, queue: .main) { [weak self, weak session] notification in
+                guard let self, let session else { return }
+                var details: [String: Any] = [
+                    "notification": name.rawValue,
+                    "sessionId": sessionId,
+                    "sessionRunning": session.isRunning,
+                    "sessionInputs": session.inputs.count,
+                    "sessionOutputs": session.outputs.count,
+                    "applicationState": UIApplication.shared.applicationState.rawValue
+                ]
+                if let error = notification.userInfo?[AVCaptureSessionErrorKey] as? NSError {
+                    details["errorMessage"] = error.localizedDescription
+                    details["errorDomain"] = error.domain
+                    details["errorCode"] = error.code
+                    details["errorUserInfo"] = error.userInfo.description
+                }
+                if let reason = notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber {
+                    details["interruptionReason"] = reason.intValue
+                }
+                let event: String
+                switch name {
+                case AVCaptureSession.runtimeErrorNotification:
+                    event = "native-camera-session-runtime-error"
+                case AVCaptureSession.wasInterruptedNotification:
+                    event = "native-camera-session-interrupted"
+                case AVCaptureSession.interruptionEndedNotification:
+                    event = "native-camera-session-interruption-ended"
+                case AVCaptureSession.didStartRunningNotification:
+                    event = "native-camera-session-did-start-running"
+                case AVCaptureSession.didStopRunningNotification:
+                    event = "native-camera-session-did-stop-running"
+                default:
+                    event = "native-camera-session-notification"
+                }
+                self.emitDiagnostic(event, details: details)
+            }
+        }
+        emitDiagnostic("native-camera-session-observers-installed", details: [
+            "sessionId": sessionId,
+            "observerCount": cameraSessionObservers.count
+        ])
+    }
+
+    private func removeCaptureSessionObservers() {
+        let center = NotificationCenter.default
+        cameraSessionObservers.forEach { center.removeObserver($0) }
+        cameraSessionObservers.removeAll()
     }
 
     func createOffer(completion: @escaping (Result<String, Error>) -> Void) {
@@ -1106,6 +1199,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         cameraRecoveryWorkItem?.cancel()
         cameraRecoveryWorkItem = nil
         cameraCaptureGeneration += 1
+        removeCaptureSessionObservers()
         cameraCapturer?.stopCapture(completionHandler: nil)
         cameraCaptureHasStarted = false
         peer?.close()

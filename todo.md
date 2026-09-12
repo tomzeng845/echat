@@ -58,6 +58,10 @@
 - [x] Build 248（0.9.0）基于现有 SignalR + iOS 原生 WebRTC/CallKit/PushKit 路线构建并上传 TestFlight；Delivery UUID `0acd3ac8-bac8-4be2-9833-49ce983a2086`
 - [x] Build 249（0.9.0）包含 PushKit 冷启动修复，已成功上传 TestFlight；Delivery UUID `1b968391-c27e-4421-8673-3c1ba6c8e804`
 - [x] Android APK 构建成功，artifact `EChat-Android-debug-31`，包含鸿蒙后台服务自动恢复和任务移除重启修复
+- [x] Build 261 真机日志确认旧 capture session 的 output 从 2 递增到 9，锁定重启清理缺失问题
+- [x] Build 262 已在重启前 stop 并移除旧 session 全部 input/output；真机日志确认 output 稳定为 1，但 `startRunning()` 返回后仍未运行
+- [x] 为 `startRunning()` 增加 Objective-C `NSException` 捕获桥接，并监听 runtime error、interrupted、interruption ended、did start/stop running 五类 AVCaptureSession 通知
+- [ ] 构建并通过 TestFlight 真机日志确认底层异常/运行时错误，或验证 `sessionRunning=true`、`capturedFrames>0`
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布

@@ -220,6 +220,14 @@ describe("Android call audio routing", () => {
       new URL("../ios/App/App/NativeWebRTCPlugin.swift", import.meta.url),
       "utf8"
     );
+    const exceptionCatcher = readFileSync(
+      new URL("../ios/App/App/EChatExceptionCatcher.m", import.meta.url),
+      "utf8"
+    );
+    const xcodeProject = readFileSync(
+      new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url),
+      "utf8"
+    );
     expect(nativePlugin).toContain("NativeVideoCaptureDelegate");
     expect(nativePlugin).toContain(
       "source.capturer(capturer, didCapture: frame)"
@@ -248,7 +256,29 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("session.removeOutput(output)");
     expect(nativePlugin).toContain("session.removeInput(input)");
     expect(nativePlugin).toContain("native-camera-start-running");
+    expect(nativePlugin).toContain("native-camera-start-running-returned");
+    expect(nativePlugin).toContain("native-camera-start-running-exception");
     expect(nativePlugin).toContain("startRunningWasCalled");
+    expect(nativePlugin).toContain("AVCaptureSession.runtimeErrorNotification");
+    expect(nativePlugin).toContain(
+      "AVCaptureSession.wasInterruptedNotification"
+    );
+    expect(nativePlugin).toContain(
+      "AVCaptureSession.interruptionEndedNotification"
+    );
+    expect(nativePlugin).toContain(
+      "AVCaptureSession.didStartRunningNotification"
+    );
+    expect(nativePlugin).toContain(
+      "AVCaptureSession.didStopRunningNotification"
+    );
+    expect(nativePlugin).toContain("native-camera-session-runtime-error");
+    expect(nativePlugin).toContain("native-camera-session-interrupted");
+    expect(exceptionCatcher).toContain("@catch (NSException *exception)");
+    expect(xcodeProject).toContain("EChatExceptionCatcher.m in Sources");
+    expect(xcodeProject).toContain(
+      'SWIFT_OBJC_BRIDGING_HEADER = "App/EChat-Bridging-Header.h"'
+    );
     expect(nativePlugin).toContain(
       "asyncAfter(deadline: .now() + .milliseconds(250))"
     );
