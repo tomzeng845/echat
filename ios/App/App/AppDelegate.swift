@@ -88,10 +88,15 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clearCallListenerAlert", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPendingCall", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getVoipToken", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startVoiceRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopVoiceRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelVoiceRecording", returnType: CAPPluginReturnPromise)
     ]
 
     private var alertPlayer: AVAudioPlayer?
+    private var voiceRecorder: AVAudioRecorder?
+    private var voiceRecordingURL: URL?
 
     override public func load() {
         EChatVoipManager.shared.plugin = self
@@ -153,6 +158,118 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
                 "microphone": !wantsMicrophone || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
             ])
         }
+    }
+
+    @objc func startVoiceRecording(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+                call.reject("请允许麦克风权限后重试", "MICROPHONE_PERMISSION_DENIED")
+                return
+            }
+            self.cleanupVoiceRecording(deleteFile: true)
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .default,
+                    options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
+                )
+                try session.setActive(true)
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("echat-voice-\(UUID().uuidString).m4a")
+                let settings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: 48_000,
+                    AVNumberOfChannelsKey: 1,
+                    AVEncoderBitRateKey: 64_000,
+                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+                ]
+                let recorder = try AVAudioRecorder(url: url, settings: settings)
+                recorder.isMeteringEnabled = true
+                guard recorder.prepareToRecord(), recorder.record() else {
+                    throw NSError(
+                        domain: "EChatVoiceRecorder",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "AVAudioRecorder 无法开始录音"]
+                    )
+                }
+                self.voiceRecorder = recorder
+                self.voiceRecordingURL = url
+                call.resolve([
+                    "recording": true,
+                    "mimeType": "audio/mp4",
+                    "fileExtension": "m4a"
+                ])
+            } catch {
+                self.cleanupVoiceRecording(deleteFile: true)
+                self.finishVoiceRecordingAudioSession()
+                call.reject("无法启动语音录音", "VOICE_RECORDING_START_FAILED", error)
+            }
+        }
+    }
+
+    @objc func stopVoiceRecording(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let recorder = self.voiceRecorder,
+                  let url = self.voiceRecordingURL,
+                  recorder.isRecording else {
+                call.reject("当前没有正在进行的录音", "VOICE_RECORDING_NOT_ACTIVE")
+                return
+            }
+            let duration = max(0.1, recorder.currentTime)
+            recorder.stop()
+            self.voiceRecorder = nil
+            self.voiceRecordingURL = nil
+            self.finishVoiceRecordingAudioSession()
+            do {
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                try? FileManager.default.removeItem(at: url)
+                guard !data.isEmpty else {
+                    throw NSError(
+                        domain: "EChatVoiceRecorder",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "录音文件为空"]
+                    )
+                }
+                call.resolve([
+                    "dataBase64": data.base64EncodedString(),
+                    "duration": duration,
+                    "mimeType": "audio/mp4",
+                    "fileExtension": "m4a",
+                    "size": data.count
+                ])
+            } catch {
+                call.reject("无法读取录音文件", "VOICE_RECORDING_READ_FAILED", error)
+            }
+        }
+    }
+
+    @objc func cancelVoiceRecording(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.cleanupVoiceRecording(deleteFile: true)
+            self.finishVoiceRecordingAudioSession()
+            call.resolve()
+        }
+    }
+
+    private func cleanupVoiceRecording(deleteFile: Bool) {
+        voiceRecorder?.stop()
+        voiceRecorder = nil
+        if deleteFile, let url = voiceRecordingURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        voiceRecordingURL = nil
+    }
+
+    private func finishVoiceRecordingAudioSession() {
+        if EChatVoipManager.shared.callAudioSessionRequested {
+            EChatVoipManager.shared.reassertAudioSession(reason: "voice-recording-finished")
+            return
+        }
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: [.notifyOthersOnDeactivation]
+        )
     }
 
     @objc func playAlertSound(_ call: CAPPluginCall) {

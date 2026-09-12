@@ -386,6 +386,54 @@ describe("Android call audio routing", () => {
     expect(packageManifest).not.toContain("RustLiveKitUniFFI");
   });
 
+  it("records iOS voice messages as AAC/M4A and diagnoses playback errors", () => {
+    const appDelegate = readFileSync(
+      new URL("../ios/App/App/AppDelegate.swift", import.meta.url),
+      "utf8"
+    );
+    const recorder = readFileSync(
+      new URL(
+        "../client/src/components/chat/VoiceRecorderButton.tsx",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    const media = readFileSync(
+      new URL("../client/src/lib/echat-media.ts", import.meta.url),
+      "utf8"
+    );
+    const player = readFileSync(
+      new URL(
+        "../client/src/components/chat/RichMessageContent.tsx",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    expect(appDelegate).toContain(
+      'CAPPluginMethod(name: "startVoiceRecording"'
+    );
+    expect(appDelegate).toContain(
+      "AVAudioRecorder(url: url, settings: settings)"
+    );
+    expect(appDelegate).toContain("kAudioFormatMPEG4AAC");
+    expect(appDelegate).toContain('"mimeType": "audio/mp4"');
+    expect(appDelegate).toContain('"fileExtension": "m4a"');
+    expect(recorder.indexOf('"audio/mp4"')).toBeLessThan(
+      recorder.indexOf('"audio/webm;codecs=opus"')
+    );
+    expect(recorder).toContain("startNativeVoiceRecording");
+    expect(recorder).toContain("stopNativeVoiceRecording");
+    expect(recorder).toContain("Voice recording start failed");
+    expect(media).toContain("effectiveMediaMimeType");
+    expect(media).toContain('return "audio/webm;codecs=opus"');
+    expect(media).toContain("blob.slice(0, blob.size, mimeType)");
+    expect(player).toContain("Voice message playback failed");
+    expect(player).toContain(
+      "<source src={url} type={effectiveMediaMimeType(payload)} />"
+    );
+    expect(player).toContain("mediaErrorCode");
+  });
+
   it("records HTTP, SignalR and native bridge API calls in exportable logs", () => {
     const diagnostics = readFileSync(
       new URL("../client/src/lib/runtime-diagnostics.ts", import.meta.url),

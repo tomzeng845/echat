@@ -55,6 +55,12 @@ export type NativeCallInvite = {
   callerAvatarUrl: string;
   answerRequested?: boolean;
 };
+export type NativeVoiceRecording = {
+  blob: Blob;
+  duration: number;
+  mimeType: string;
+  fileExtension: string;
+};
 
 type MediaPermissionsPlugin = {
   getCapabilities(): Promise<{
@@ -114,6 +120,19 @@ type MediaPermissionsPlugin = {
     camera: boolean;
     microphone: boolean;
   }): Promise<{ camera: boolean; microphone: boolean }>;
+  startVoiceRecording(): Promise<{
+    recording: boolean;
+    mimeType: string;
+    fileExtension: string;
+  }>;
+  stopVoiceRecording(): Promise<{
+    dataBase64: string;
+    duration: number;
+    mimeType: string;
+    fileExtension: string;
+    size: number;
+  }>;
+  cancelVoiceRecording(): Promise<void>;
 };
 
 const MediaPermissions =
@@ -701,6 +720,41 @@ export async function ensureNativeMediaPermissions(options: {
     throw new DOMException("Camera permission denied", "NotAllowedError");
   if (options.microphone && !result.microphone)
     throw new DOMException("Microphone permission denied", "NotAllowedError");
+}
+
+function decodeBase64Blob(value: string, mimeType: string) {
+  const binary = atob(value);
+  const chunks: ArrayBuffer[] = [];
+  for (let offset = 0; offset < binary.length; offset += 8192) {
+    const segment = binary.slice(offset, offset + 8192);
+    const buffer = new ArrayBuffer(segment.length);
+    const bytes = new Uint8Array(buffer);
+    for (let index = 0; index < segment.length; index += 1)
+      bytes[index] = segment.charCodeAt(index);
+    chunks.push(buffer);
+  }
+  return new Blob(chunks, { type: mimeType });
+}
+
+export async function startNativeVoiceRecording() {
+  if (!isNativeIos()) return false;
+  const result = await MediaPermissions.startVoiceRecording();
+  return result.recording;
+}
+
+export async function stopNativeVoiceRecording(): Promise<NativeVoiceRecording> {
+  const result = await MediaPermissions.stopVoiceRecording();
+  return {
+    blob: decodeBase64Blob(result.dataBase64, result.mimeType || "audio/mp4"),
+    duration: result.duration,
+    mimeType: result.mimeType || "audio/mp4",
+    fileExtension: result.fileExtension || "m4a",
+  };
+}
+
+export async function cancelNativeVoiceRecording() {
+  if (!isNativeIos()) return;
+  await MediaPermissions.cancelVoiceRecording();
 }
 
 export async function setNativeCallAudioRoute(speaker: boolean) {

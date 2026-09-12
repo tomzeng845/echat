@@ -79,6 +79,12 @@
 - [x] iOS 改用全 codec 编解码工厂并优先 VP8；SDP 增加 fmtp/rtcp-fb；RTP stats 按 codecId 排除 RTX/RED/FEC 并兼容 NSNumber/NSString 64 位计数
 - [x] Build 268（提交 `626505fe`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `08c42e73-715d-4cf0-b9b3-3322119acb4c`
 - [ ] 通过 TestFlight 真机验证 iPhone 能显示 Android 远端视频，并依据新增日志确认下行 RTP、解码和渲染均持续增长
+- [x] 定位 iOS 语音消息双重兼容问题：录音代码强制 `audio/webm`，而 WebKit 官方录制格式为 MP4/AAC；播放又未显式声明/修正 Blob MIME，失败时没有错误码日志或重试入口
+- [x] iOS 新增原生 `AVAudioRecorder`，显式激活 `playAndRecord/default`，以 48 kHz 单声道 AAC 64 kbps 生成 M4A；停止后恢复通话音频会话或释放 AVAudioSession
+- [x] Web/Android MediaRecorder 按 MP4/AAC、WebM/Opus、Ogg/Opus 顺序动态选择实际支持格式，并用对应扩展名上传，不再把所有语音强制命名为 `.webm`
+- [x] 下载语音按消息 MIME 与 `.m4a/.webm/.ogg/.wav` 扩展名重新封装 Blob；播放器使用显式 `<source type>`，记录 MediaError、networkState、readyState、canPlayType、Blob MIME/大小并提供重试
+- [x] `pnpm check`、Vitest 35（1 skipped）、xUnit 27、iOS sync 与静态项目校验通过
+- [ ] 构建并上传包含语音录制/播放修复的下一版 TestFlight，在 iPhone 真机验证录音发送、M4A 收听和旧 WebM/Opus 收听
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布
@@ -91,7 +97,8 @@
 - [x] 全局记录 `/api/*`、`/hubs/*` HTTP 请求/响应/状态/耗时/异常，以及全部 SignalR 入站事件和 `start/invoke/send` 调用；仅记录查询参数名，不记录请求体、Authorization 或 token
 - [x] JS 日志持久化并扩容至 1200 条；日志预览和导出合并最多 500 条 Android/鸿蒙独立进程日志
 - [x] `pnpm check`、Vitest 31（1 skipped）、xUnit 27、Android `test/lint/assembleDebug` 通过；最终 APK Manifest 已验证 Direct Boot、全屏来电与 remoteMessaging 前台服务权限
-- [ ] 构建签名 Android/鸿蒙 APK 并提供真机锁屏、后台、进程被杀和 API 日志导出验证
+- [x] GitHub workflow `34707957173` 基于提交 `0e274067` 构建 Android/鸿蒙测试 APK；包名 `com.echat.app`、版本 `0.9.0(19)`、SHA-256 `f8568d5b3eaf15f2a8bc5d019d65a2e480e4f54af6b99fceef2f9d53ec2a1392`
+- [ ] 在鸿蒙真机依次验证锁屏、切后台、划掉任务、系统回收 `:calls` 进程后 90 秒内来电，并导出日志确认 watchdog/SignalR/通知/API 全链路
 
 - [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥
 - [x] 发布密钥和凭据打包为 AES-256 加密备份，密码单独保存

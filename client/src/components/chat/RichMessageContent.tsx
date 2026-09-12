@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Download, FileText, Loader2 } from "lucide-react";
+import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
   downloadChatMedia,
+  effectiveMediaMimeType,
   formatFileSize,
   parseMediaPayload,
 } from "@/lib/echat-media";
+import { error as logError, info as logInfo } from "@/lib/runtime-diagnostics";
 
 export type RenderableMessage = Message & { plaintext: string };
 
@@ -18,17 +20,23 @@ export default function RichMessageContent({
   const [url, setUrl] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [playbackError, setPlaybackError] = useState("");
+  const [audioKey, setAudioKey] = useState(0);
+  const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
 
   useEffect(() => {
     if (!payload || message.kind === "File" || message.state === "Recalled")
       return;
     let active = true;
     let objectUrl = "";
+    setError("");
+    setPlaybackError("");
     setLoading(true);
     downloadChatMedia(message.conversationId, message.keyVersion || 1, payload)
       .then(blob => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
+        setLoadedMedia({ type: blob.type, size: blob.size });
         setUrl(objectUrl);
       })
       .catch(
@@ -81,7 +89,62 @@ export default function RichMessageContent({
   if (message.kind === "Voice" && url)
     return (
       <div className="min-w-56">
-        <audio controls preload="metadata" src={url} className="h-10 w-full" />
+        <audio
+          key={audioKey}
+          controls
+          playsInline
+          preload="metadata"
+          className="h-10 w-full"
+          onLoadedMetadata={event => {
+            setPlaybackError("");
+            logInfo("voice-message", "Voice message metadata loaded", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              declaredMimeType: payload.mimeType,
+              effectiveMimeType: effectiveMediaMimeType(payload),
+              blobMimeType: loadedMedia.type,
+              blobSize: loadedMedia.size,
+              duration: event.currentTarget.duration,
+            });
+          }}
+          onError={event => {
+            const audio = event.currentTarget;
+            const code = audio.error?.code || 0;
+            const effectiveMime = effectiveMediaMimeType(payload);
+            const unsupported = audio.canPlayType(effectiveMime) === "";
+            const messageText = unsupported
+              ? "当前 iPhone 不支持这条旧版语音格式，请让对方更新后重发"
+              : "语音加载失败，请点击重试";
+            setPlaybackError(messageText);
+            logError("voice-message", "Voice message playback failed", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              mediaErrorCode: code,
+              mediaErrorMessage: audio.error?.message || "",
+              networkState: audio.networkState,
+              readyState: audio.readyState,
+              declaredMimeType: payload.mimeType,
+              effectiveMimeType: effectiveMime,
+              blobMimeType: loadedMedia.type,
+              blobSize: loadedMedia.size,
+              canPlayType: audio.canPlayType(effectiveMime),
+              userAgent: navigator.userAgent,
+            });
+          }}
+        >
+          <source src={url} type={effectiveMediaMimeType(payload)} />
+        </audio>
+        {playbackError && (
+          <button
+            type="button"
+            onClick={() => {
+              setPlaybackError("");
+              setAudioKey(current => current + 1);
+            }}
+            className="mt-1 flex items-center gap-1 text-[10px] font-medium text-rose-100 underline underline-offset-2"
+          >
+            <RotateCcw size={11} />
+            {playbackError}
+          </button>
+        )}
         <p className="mt-1 text-[10px] opacity-60">
           {payload.duration ? `${Math.round(payload.duration)} 秒` : "语音消息"}
         </p>

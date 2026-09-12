@@ -62,6 +62,19 @@ export function parseMediaPayload(content: string): ChatMediaPayload | null {
   }
 }
 
+export function effectiveMediaMimeType(payload: ChatMediaPayload) {
+  const declared = payload.mimeType?.trim().toLowerCase();
+  if (declared && declared !== "application/octet-stream") return declared;
+  const fileName = payload.fileName.toLowerCase();
+  if (fileName.endsWith(".m4a") || fileName.endsWith(".mp4"))
+    return "audio/mp4";
+  if (fileName.endsWith(".webm")) return "audio/webm;codecs=opus";
+  if (fileName.endsWith(".ogg") || fileName.endsWith(".opus"))
+    return "audio/ogg;codecs=opus";
+  if (fileName.endsWith(".wav")) return "audio/wav";
+  return declared || "application/octet-stream";
+}
+
 export async function downloadChatMedia(
   conversationId: string,
   keyVersion: number,
@@ -71,7 +84,13 @@ export async function downloadChatMedia(
     `/api/media/${payload.assetId}/content`
   );
   if (!response.ok) throw new Error("媒体下载失败");
-  if (!payload.fileNonce) return response.blob();
+  const mimeType = effectiveMediaMimeType(payload);
+  if (!payload.fileNonce) {
+    const blob = await response.blob();
+    return blob.type.toLowerCase() === mimeType
+      ? blob
+      : blob.slice(0, blob.size, mimeType);
+  }
   const key = await getConversationKey(conversationId, keyVersion);
   if (!key) throw new Error("本设备缺少历史会话密钥");
   const decrypted = await decryptBinary(
@@ -79,7 +98,7 @@ export async function downloadChatMedia(
     await response.arrayBuffer(),
     payload.fileNonce
   );
-  return new Blob([decrypted], { type: payload.mimeType });
+  return new Blob([decrypted], { type: mimeType });
 }
 
 export function formatFileSize(size: number) {
