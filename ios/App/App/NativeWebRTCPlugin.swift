@@ -566,7 +566,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     }
 
     private func captureFps(for format: AVCaptureDevice.Format) -> Int {
-        if format.videoSupportedFrameRateRanges.contains({
+        if format.videoSupportedFrameRateRanges.contains(where: {
             $0.minFrameRate <= 24 && $0.maxFrameRate >= 24
         }) {
             return 24
