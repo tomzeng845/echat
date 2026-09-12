@@ -61,7 +61,10 @@
 - [x] Build 261 真机日志确认旧 capture session 的 output 从 2 递增到 9，锁定重启清理缺失问题
 - [x] Build 262 已在重启前 stop 并移除旧 session 全部 input/output；真机日志确认 output 稳定为 1，但 `startRunning()` 返回后仍未运行
 - [x] 为 `startRunning()` 增加 Objective-C `NSException` 捕获桥接，并监听 runtime error、interrupted、interruption ended、did start/stop running 五类 AVCaptureSession 通知
-- [ ] 构建并通过 TestFlight 真机日志确认底层异常/运行时错误，或验证 `sessionRunning=true`、`capturedFrames>0`
+- [x] Build 263（提交 `5fe0f7e2`）已通过 Xcode 编译、Apple 校验并上传 TestFlight；Delivery UUID `d7ccd0cc-59ed-4ec3-a10e-145c566a48df`
+- [x] Build 263 真机日志捕获 `AVFoundationErrorDomain -11873`，明确为当前前置摄像头 activeFormat 不受 capture session 支持
+- [x] 改为稳定 SDR 640×480/24fps 优先，启动前显式验证并设置 activeFormat；-11873 后切换下一候选格式，最多尝试 8 种
+- [ ] 构建并通过 TestFlight 真机日志验证格式回退后 `sessionRunning=true`、`capturedFrames>0`
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 
 ## Android 0.9.0 正式签名发布

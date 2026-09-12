@@ -223,6 +223,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
     private var videoCaptureDelegate: NativeVideoCaptureDelegate?
     private var cameraDevice: AVCaptureDevice?
     private var cameraFormat: AVCaptureDevice.Format?
+    private var cameraFormatCandidates: [AVCaptureDevice.Format] = []
+    private var cameraFormatCandidateIndex = 0
+    private var lastFormatFailureSessionId: String?
     private var cameraFps = 24
     private var cameraCaptureHasStarted = false
     private var localVideoFrameCount: Int64 = 0
@@ -408,28 +411,18 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                 return
             }
             let formats = LKRTCCameraVideoCapturer.supportedFormats(for: device)
-            let compatibleFormats = formats.filter { format in
-                format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= 30 }
-            }
-            guard let format = (compatibleFormats.isEmpty ? formats : compatibleFormats).min(by: { lhs, rhs in
-                let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-                let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-                let leftDistance = abs(Int(left.width) - 1280) + abs(Int(left.height) - 720)
-                let rightDistance = abs(Int(right.width) - 1280) + abs(Int(right.height) - 720)
-                return leftDistance < rightDistance
-            }) else {
+            let candidates = Array(self.orderedCameraFormats(device: device, formats: formats).prefix(8))
+            guard let format = candidates.first else {
                 self.emitDiagnostic("native-camera-format-unavailable")
                 completion(.failure(NativeWebRTCError.cameraUnavailable))
                 return
             }
-            let fpsRange = format.videoSupportedFrameRateRanges.max {
-                $0.maxFrameRate < $1.maxFrameRate
-            }
-            let maximumFps = Int(fpsRange?.maxFrameRate ?? 30)
-            let minimumFps = Int(ceil(fpsRange?.minFrameRate ?? 1))
-            let captureFps = max(minimumFps, min(30, maximumFps))
+            let captureFps = self.captureFps(for: format)
             self.cameraDevice = device
             self.cameraFormat = format
+            self.cameraFormatCandidates = candidates
+            self.cameraFormatCandidateIndex = 0
+            self.lastFormatFailureSessionId = nil
             self.cameraFps = captureFps
             self.cameraCaptureHasStarted = false
             self.localVideoFrameCount = 0
@@ -450,6 +443,12 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     "width": CMVideoFormatDescriptionGetDimensions(format.formatDescription).width,
                     "height": CMVideoFormatDescriptionGetDimensions(format.formatDescription).height,
                     "renderer": String(describing: type(of: localRenderer))
+                ])
+                self.emitDiagnostic("native-camera-format-candidates", details: [
+                    "count": candidates.count,
+                    "formats": candidates.enumerated().map { index, candidate in
+                        self.cameraFormatDescription(candidate, index: index)
+                    }
                 ])
                 self.queue.async { self.startVideoStatsLocked() }
                 guard UIApplication.shared.applicationState == .active else {
@@ -485,6 +484,11 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                         return
                     }
                     self.cameraCaptureHasStarted = true
+                    guard self.configureCameraDevice(device, format: format, fps: captureFps, reason: "initial") else {
+                        self.advanceCameraFormatLocked(reason: "initial-format-configuration-failed")
+                        completion(.success(()))
+                        return
+                    }
                     capturer.startCapture(with: device, format: format, fps: captureFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-capture-failed", details: ["error": error.localizedDescription])
@@ -528,6 +532,149 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             emitDiagnostic("native-camera-permission-denied")
             completion(.failure(NativeWebRTCError.cameraUnavailable))
         }
+    }
+
+    private func orderedCameraFormats(
+        device: AVCaptureDevice,
+        formats: [AVCaptureDevice.Format]
+    ) -> [AVCaptureDevice.Format] {
+        formats.filter { format in
+            !format.videoSupportedFrameRateRanges.isEmpty
+        }.sorted { lhs, rhs in
+            cameraFormatScore(lhs) < cameraFormatScore(rhs)
+        }
+    }
+
+    private func cameraFormatScore(_ format: AVCaptureDevice.Format) -> Int64 {
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        let width = Int64(dimensions.width)
+        let height = Int64(dimensions.height)
+        let resolutionRank: Int64
+        switch (width, height) {
+        case (640, 480), (480, 640): resolutionRank = 0
+        case (1280, 720), (720, 1280): resolutionRank = 1
+        case (352, 288), (288, 352): resolutionRank = 2
+        case (1920, 1080), (1080, 1920): resolutionRank = 3
+        default: resolutionRank = 4
+        }
+        let distance = abs(width - 640) + abs(height - 480)
+        let hdrPenalty: Int64 = format.isVideoHDRSupported ? 1_000_000 : 0
+        let fpsPenalty: Int64 = format.videoSupportedFrameRateRanges.contains {
+            $0.minFrameRate <= 24 && $0.maxFrameRate >= 24
+        } ? 0 : 100_000
+        return hdrPenalty + fpsPenalty + resolutionRank * 10_000 + distance
+    }
+
+    private func captureFps(for format: AVCaptureDevice.Format) -> Int {
+        if format.videoSupportedFrameRateRanges.contains({
+            $0.minFrameRate <= 24 && $0.maxFrameRate >= 24
+        }) {
+            return 24
+        }
+        guard let range = format.videoSupportedFrameRateRanges.max(by: {
+            $0.maxFrameRate < $1.maxFrameRate
+        }) else { return 15 }
+        return max(Int(ceil(range.minFrameRate)), min(24, Int(floor(range.maxFrameRate))))
+    }
+
+    private func cameraFormatDescription(
+        _ format: AVCaptureDevice.Format,
+        index: Int
+    ) -> [String: Any] {
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        return [
+            "index": index,
+            "width": dimensions.width,
+            "height": dimensions.height,
+            "pixelFormat": fourCC(CMFormatDescriptionGetMediaSubType(format.formatDescription)),
+            "hdr": format.isVideoHDRSupported,
+            "fps": captureFps(for: format)
+        ]
+    }
+
+    private func fourCC(_ value: FourCharCode) -> String {
+        let bytes: [UInt8] = [
+            UInt8((value >> 24) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8(value & 0xff)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? String(value)
+    }
+
+    private func configureCameraDevice(
+        _ device: AVCaptureDevice,
+        format: AVCaptureDevice.Format,
+        fps: Int,
+        reason: String
+    ) -> Bool {
+        guard device.formats.contains(where: { $0 === format }) else {
+            emitDiagnostic("native-camera-format-invalid", details: ["reason": reason])
+            return false
+        }
+        guard format.videoSupportedFrameRateRanges.contains(where: {
+            $0.minFrameRate <= Double(fps) && $0.maxFrameRate >= Double(fps)
+        }) else {
+            emitDiagnostic("native-camera-format-invalid", details: [
+                "reason": reason,
+                "error": "fps-not-supported",
+                "fps": fps
+            ])
+            return false
+        }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            let exception = EChatExceptionCatcher.captureException {
+                device.activeFormat = format
+                let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
+                device.activeVideoMinFrameDuration = duration
+                device.activeVideoMaxFrameDuration = duration
+            }
+            if let exception {
+                emitDiagnostic("native-camera-format-configuration-exception", details: [
+                    "reason": reason,
+                    "message": exception["message"] as? String ?? "",
+                    "exceptionName": exception["exceptionName"] as? String ?? "",
+                    "callStack": exception["callStackSymbols"] as? [String] ?? []
+                ])
+                return false
+            }
+            let active = device.activeFormat
+            let matches = active === format
+            var details = cameraFormatDescription(active, index: cameraFormatCandidateIndex)
+            details["reason"] = reason
+            details["requestedFps"] = fps
+            details["matchesRequestedFormat"] = matches
+            emitDiagnostic("native-camera-active-format-configured", details: details)
+            return matches
+        } catch {
+            let nsError = error as NSError
+            emitDiagnostic("native-camera-format-configuration-failed", details: [
+                "reason": reason,
+                "message": error.localizedDescription,
+                "domain": nsError.domain,
+                "code": nsError.code
+            ])
+            return false
+        }
+    }
+
+    private func advanceCameraFormatLocked(reason: String) {
+        guard cameraFormatCandidateIndex + 1 < cameraFormatCandidates.count else {
+            emitDiagnostic("native-camera-format-fallback-exhausted", details: [
+                "reason": reason,
+                "attemptedFormats": cameraFormatCandidateIndex + 1
+            ])
+            return
+        }
+        cameraFormatCandidateIndex += 1
+        let format = cameraFormatCandidates[cameraFormatCandidateIndex]
+        cameraFormat = format
+        cameraFps = captureFps(for: format)
+        var details = cameraFormatDescription(format, index: cameraFormatCandidateIndex)
+        details["reason"] = reason
+        emitDiagnostic("native-camera-format-fallback-selected", details: details)
     }
 
     fileprivate func didCaptureLocalVideoFrame(_ frame: LKRTCVideoFrame) {
@@ -631,6 +778,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         emitDiagnostic("native-camera-restarting", details: [
             "reason": reason,
             "attempt": cameraRestartAttempts,
+            "formatIndex": cameraFormatCandidateIndex,
+            "format": cameraFormatDescription(format, index: cameraFormatCandidateIndex),
             "applicationState": UIApplication.shared.applicationState.rawValue,
             "authorization": AVCaptureDevice.authorizationStatus(for: .video).rawValue,
             "deviceAvailable": device.isConnected,
@@ -661,6 +810,21 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     let freshCapturer = LKRTCCameraVideoCapturer(delegate: delegate)
                     self.cameraCapturer = freshCapturer
                     self.observeCaptureSession(freshCapturer.captureSession)
+                    guard self.configureCameraDevice(
+                        device,
+                        format: format,
+                        fps: self.cameraFps,
+                        reason: "restart-\(reason)"
+                    ) else {
+                        self.advanceCameraFormatLocked(reason: "restart-format-configuration-failed")
+                        self.queue.async {
+                            self.scheduleCameraRecoveryLocked(
+                                reason: "format-configuration-failed",
+                                delay: .milliseconds(300)
+                            )
+                        }
+                        return
+                    }
                     freshCapturer.startCapture(with: device, format: format, fps: self.cameraFps) { error in
                         if let error {
                             self.emitDiagnostic("native-camera-restart-failed", details: [
@@ -789,6 +953,13 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
                     details["errorDomain"] = error.domain
                     details["errorCode"] = error.code
                     details["errorUserInfo"] = error.userInfo.description
+                    if error.domain == AVFoundationErrorDomain, error.code == -11873 {
+                        self.queue.async {
+                            guard self.lastFormatFailureSessionId != sessionId else { return }
+                            self.lastFormatFailureSessionId = sessionId
+                            self.advanceCameraFormatLocked(reason: "runtime-error--11873")
+                        }
+                    }
                 }
                 if let reason = notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber {
                     details["interruptionReason"] = reason.intValue
@@ -1214,6 +1385,9 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         videoCaptureDelegate = nil
         cameraDevice = nil
         cameraFormat = nil
+        cameraFormatCandidates.removeAll()
+        cameraFormatCandidateIndex = 0
+        lastFormatFailureSessionId = nil
         localVideoFrameCount = 0
         lastLocalVideoFrameAt = nil
         cameraRestartAttempts = 0

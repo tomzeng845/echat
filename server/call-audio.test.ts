@@ -274,6 +274,15 @@ describe("Android call audio routing", () => {
     );
     expect(nativePlugin).toContain("native-camera-session-runtime-error");
     expect(nativePlugin).toContain("native-camera-session-interrupted");
+    expect(nativePlugin).toContain("orderedCameraFormats");
+    expect(nativePlugin).toContain("cameraFormatCandidates");
+    expect(nativePlugin).toContain("format.isVideoHDRSupported");
+    expect(nativePlugin).toContain("device.activeFormat = format");
+    expect(nativePlugin).toContain("native-camera-active-format-configured");
+    expect(nativePlugin).toContain("native-camera-format-fallback-selected");
+    expect(nativePlugin).toContain("error.code == -11873");
+    expect(nativePlugin).toContain("lastFormatFailureSessionId");
+    expect(nativePlugin).toContain("cameraRestartAttempts < 8");
     expect(exceptionCatcher).toContain("@catch (NSException *exception)");
     expect(xcodeProject).toContain("EChatExceptionCatcher.m in Sources");
     expect(xcodeProject).toContain(
