@@ -577,7 +577,7 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
         guard let output = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else {
             return []
         }
-        return output.availableVideoCVPixelFormatTypes.map { FourCharCode($0.uint32Value) }
+        return output.availableVideoPixelFormatTypes.map { FourCharCode($0) }
     }
 
     private func cameraFormatScore(_ format: AVCaptureDevice.Format) -> Int64 {
@@ -666,8 +666,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             return false
         }
         let mediaSubtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
-        let availableBefore = videoOutput.availableVideoCVPixelFormatTypes.map {
-            FourCharCode($0.uint32Value)
+        let availableBefore = videoOutput.availableVideoPixelFormatTypes.map {
+            FourCharCode($0)
         }
         guard availableBefore.contains(mediaSubtype) else {
             emitDiagnostic("native-camera-output-format-incompatible", details: [
@@ -705,8 +705,8 @@ final class NativeIosWebRTCManager: NSObject, LKRTCPeerConnectionDelegate {
             }
             let active = device.activeFormat
             let matches = active === format
-            let availableAfter = videoOutput.availableVideoCVPixelFormatTypes.map {
-                FourCharCode($0.uint32Value)
+            let availableAfter = videoOutput.availableVideoPixelFormatTypes.map {
+                FourCharCode($0)
             }
             let configuredOutputSubtype = (videoOutput.videoSettings[
                 kCVPixelBufferPixelFormatTypeKey as String

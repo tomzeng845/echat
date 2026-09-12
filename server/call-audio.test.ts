@@ -282,7 +282,7 @@ describe("Android call audio routing", () => {
     expect(nativePlugin).toContain("native-camera-format-fallback-selected");
     expect(nativePlugin).toContain("error.code == -11873");
     expect(nativePlugin).toContain("lastFormatFailureGeneration");
-    expect(nativePlugin).toContain("availableVideoCVPixelFormatTypes");
+    expect(nativePlugin).toContain("availableVideoPixelFormatTypes");
     expect(nativePlugin).toContain(
       "kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange"
     );
