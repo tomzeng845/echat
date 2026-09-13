@@ -26,5 +26,8 @@ describe("blocked conversation behavior", () => {
     expect(hub).toContain("CONVERSATION_BLOCKED");
     expect(home).toContain("该会话已被拉黑");
     expect(home).toContain("解除拉黑");
+    expect(home).toContain("无法进行语音通话");
+    expect(home).toContain("无法进行视频通话");
+    expect(home).not.toContain("disabled={blockedConversation}");
   });
 });

@@ -1689,18 +1689,24 @@ function Messenger({
                   <HeaderAction
                     icon={Phone}
                     label="语音通话"
-                    disabled={blockedConversation}
-                    onClick={() =>
-                      callManagerRef.current?.start(selected, "audio")
-                    }
+                    onClick={() => {
+                      if (blockedConversation)
+                        return toast.warning(
+                          "该会话已被拉黑，无法进行语音通话"
+                        );
+                      callManagerRef.current?.start(selected, "audio");
+                    }}
                   />
                   <HeaderAction
                     icon={Video}
                     label="视频通话"
-                    disabled={blockedConversation}
-                    onClick={() =>
-                      callManagerRef.current?.start(selected, "video")
-                    }
+                    onClick={() => {
+                      if (blockedConversation)
+                        return toast.warning(
+                          "该会话已被拉黑，无法进行视频通话"
+                        );
+                      callManagerRef.current?.start(selected, "video");
+                    }}
                   />
                   <div className="relative">
                     <HeaderAction
@@ -1789,13 +1795,9 @@ function Messenger({
               <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
                 <div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
                   <div className="flex items-center gap-1 px-1 pb-1">
-                    <EmojiPicker
-                      disabled={busy || blockedConversation}
-                      onSelect={sendEmoji}
-                    />
+                    <EmojiPicker disabled={busy} onSelect={sendEmoji} />
                     <button
                       type="button"
-                      disabled={busy || blockedConversation}
                       onClick={() => fileInputRef.current?.click()}
                       title="发送文件或视频"
                       className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
@@ -1804,7 +1806,6 @@ function Messenger({
                     </button>
                     <button
                       type="button"
-                      disabled={busy || blockedConversation}
                       onClick={() => imageInputRef.current?.click()}
                       title="发送图片"
                       className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
@@ -1812,7 +1813,7 @@ function Messenger({
                       <Image size={17} />
                     </button>
                     <VoiceRecorderButton
-                      disabled={busy || blockedConversation}
+                      disabled={busy}
                       onRecorded={(blob, duration) =>
                         sendMedia(blob, "Voice", duration)
                       }
@@ -1846,7 +1847,6 @@ function Messenger({
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
-                      disabled={blockedConversation}
                       onChange={e => setDraft(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -1855,14 +1855,12 @@ function Messenger({
                         }
                       }}
                       rows={1}
-                      placeholder={
-                        blockedConversation ? "该会话已被拉黑" : "输入消息"
-                      }
+                      placeholder="输入消息"
                       className="max-h-32 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400"
                     />
                     <button
                       aria-label="发送消息"
-                      disabled={!draft.trim() || busy || blockedConversation}
+                      disabled={!draft.trim() || busy}
                       onClick={sendMessage}
                       className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"
                     >
