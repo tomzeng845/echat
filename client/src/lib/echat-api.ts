@@ -105,6 +105,7 @@ export type ConversationMember = {
   displayName: string;
   avatarUrl: string;
   role: "Owner" | "Admin" | "Member";
+  muted: boolean;
   encryptionDevices: Array<{ deviceId: string; publicKeyJwk: string }>;
 };
 export type PublicKeyBundle = {

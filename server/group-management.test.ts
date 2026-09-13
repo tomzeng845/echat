@@ -36,6 +36,18 @@ describe("group management", () => {
     expect(controller).toContain("Role = MemberRole.Owner");
     expect(controller).toContain("Role = MemberRole.Member");
     expect(controller).toContain("user.Account");
+    expect(controller).toContain("members/mute");
+    expect(controller).toContain("request.UserIds.Distinct");
+    expect(controller).toContain("target.Muted = request.Muted");
+    expect(
+      readFileSync(
+        new URL(
+          "../Api/Controllers/ConversationsController.cs",
+          import.meta.url
+        ),
+        "utf8"
+      )
+    ).toContain("已被群管理员禁言");
     expect(qr).toContain("echat://group/");
     expect(qr).toContain("PreviewGroupQr");
     expect(qr).toContain("JoinGroupQr");
@@ -46,6 +58,8 @@ describe("group management", () => {
     expect(panel).toContain("发消息");
     expect(panel).toContain("语音通话");
     expect(panel).toContain("添加好友");
+    expect(panel).toContain("禁言选中成员");
+    expect(panel).toContain("解除禁言");
     expect(panel).toContain("查找聊天内容");
     expect(home).toContain("群聊信息与群管理");
     expect(home).toContain("showMentionList");

@@ -51,6 +51,22 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         member.Role = request.Role; await repository.UpdateConversationAsync(group, ct); await Notify(group, "role-updated", ct); return NoContent();
     }
 
+    [HttpPut("{id}/members/mute")]
+    public async Task<ActionResult> MuteMembers(string id, GroupMuteRequest request, CancellationToken ct)
+    {
+        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        var actor = group.Members.First(x => x.UserId == User.UserId());
+        var ids = request.UserIds.Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count is 0 or > 499) return BadRequest(new { error = "禁言成员数量无效" });
+        var targets = group.Members.Where(x => ids.Contains(x.UserId) && x.LeftAtSequence is null).ToList();
+        if (targets.Count != ids.Count || targets.Any(x => x.Role == MemberRole.Owner || (x.Role == MemberRole.Admin && actor.Role != MemberRole.Owner)))
+            return Forbid();
+        foreach (var target in targets) target.Muted = request.Muted;
+        await repository.UpdateConversationAsync(group, ct);
+        await Notify(group, request.Muted ? "members-muted" : "members-unmuted", ct);
+        return NoContent();
+    }
+
     [HttpPost("{id}/transfer-owner")]
     public async Task<ActionResult> TransferOwner(string id, GroupMemberRequest request, CancellationToken ct)
     {
@@ -94,6 +110,6 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     private async Task<Conversation?> RequireMember(string id, CancellationToken ct) { var group = await repository.GetConversationAsync(id, ct); return group is not null && !group.IsDissolved && group.Members.Any(x => x.UserId == User.UserId() && x.LeftAtSequence is null) ? group : null; }
     private async Task<Conversation?> RequireManager(string id, CancellationToken ct) { var group = await RequireMember(id, ct); var role = group?.Members.First(x => x.UserId == User.UserId()).Role; return group?.Type == ConversationType.Group && role is MemberRole.Owner or MemberRole.Admin ? group : null; }
     private async Task<Conversation?> RequireOwner(string id, CancellationToken ct) { var group = await RequireMember(id, ct); return group?.Type == ConversationType.Group && group.Members.First(x => x.UserId == User.UserId()).Role == MemberRole.Owner ? group : null; }
-    private async Task<IReadOnlyList<ConversationMemberView>> MemberViews(Conversation group, CancellationToken ct) { var list = new List<ConversationMemberView>(); foreach (var member in group.Members.Where(x => x.LeftAtSequence is null)) { var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is not null) list.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, [])); } return list; }
+    private async Task<IReadOnlyList<ConversationMemberView>> MemberViews(Conversation group, CancellationToken ct) { var list = new List<ConversationMemberView>(); foreach (var member in group.Members.Where(x => x.LeftAtSequence is null)) { var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is not null) list.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, member.Muted, [])); } return list; }
     private Task Notify(Conversation group, string action, CancellationToken ct) => hub.Clients.Users(group.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = group.Id, action, name = group.Name }, ct);
 }

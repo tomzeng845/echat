@@ -319,6 +319,7 @@ public sealed record GroupAnnouncementRequest(string Announcement);
 public sealed record GroupRemarkRequest(string Remark);
 public sealed record GroupJoinApprovalRequest(bool RequireApproval);
 public sealed record GroupMemberRequest(string UserId, MemberRole? Role = null);
+public sealed record GroupMuteRequest(IReadOnlyList<string> UserIds, bool Muted);
 public sealed record GroupRoleRequest(string UserId, MemberRole Role);
 public sealed record GroupJoinDecisionRequest(string UserId, bool Approve);
 public sealed record AuthResponse(bool Success, string? AccessToken, string? RefreshToken, DateTime? ExpiresAtUtc, UserView? User, bool RequiresTotp = false, string? PendingToken = null, string? Error = null, string? SessionId = null, string? DeviceId = null);
@@ -337,7 +338,7 @@ public sealed record MomentLikeView(string UserId, string DisplayName, string Av
 public sealed record MomentCommentView(string Id, string UserId, string DisplayName, string AvatarUrl, string Text, DateTime CreatedAtUtc);
 public sealed record MomentView(string Id, UserView Author, string Text, IReadOnlyList<MediaAssetView> Media, IReadOnlyList<MomentLikeView> Likes, IReadOnlyList<MomentCommentView> Comments, bool LikedByMe, DateTime CreatedAtUtc, MomentVisibility Visibility);
 public sealed record EncryptionDeviceView(string DeviceId, string PublicKeyJwk);
-public sealed record ConversationMemberView(string UserId, string Account, string DisplayName, string AvatarUrl, MemberRole Role, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
+public sealed record ConversationMemberView(string UserId, string Account, string DisplayName, string AvatarUrl, MemberRole Role, bool Muted, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
 public sealed record QrLoginStartRequest(string DeviceName = "Web", string? DeviceId = null);
 public sealed record QrLoginStartResponse(string ChallengeId, string PollToken, string QrPayload, DateTime ExpiresAtUtc);
 public sealed record QrLoginTokenRequest(string ChallengeId, string Token);

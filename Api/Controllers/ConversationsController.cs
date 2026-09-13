@@ -116,7 +116,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 .ToList();
             if (!string.IsNullOrWhiteSpace(account.PublicKeyJwk) && devices.All(item => item.PublicKeyJwk != account.PublicKeyJwk))
                 devices.Add(new EncryptionDeviceView("legacy-primary", account.PublicKeyJwk));
-            result.Add(new ConversationMemberView(account.Id, account.Account, account.DisplayName, account.AvatarUrl, member.Role, devices));
+            result.Add(new ConversationMemberView(account.Id, account.Account, account.DisplayName, account.AvatarUrl, member.Role, member.Muted, devices));
         }
         return Ok(result);
     }
@@ -171,6 +171,10 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 return StatusCode(403, new { error = "该会话已被拉黑，无法发送消息或发起通话" });
             if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend)
                 return StatusCode(403, new { error = "你们当前不是好友，无法发送消息" });
+        }
+        else if (conversation.Type == ConversationType.Group && conversation.Members.First(member => member.UserId == User.UserId()).Muted)
+        {
+            return StatusCode(403, new { error = "你已被群管理员禁言，暂时不能发言" });
         }
         var plaintext = string.Equals(request.Algorithm, "PLAINTEXT", StringComparison.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(request.ClientMessageId)) return BadRequest(new { error = "消息编号不能为空" });

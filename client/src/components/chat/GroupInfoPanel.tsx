@@ -11,6 +11,7 @@ import {
   Shield,
   UserMinus,
   UserPlus,
+  VolumeX,
   X,
 } from "lucide-react";
 import { api, type ConversationMember } from "@/lib/echat-api";
@@ -74,10 +75,15 @@ export default function GroupInfoPanel({
   const [profileMember, setProfileMember] = useState<ConversationMember | null>(
     null
   );
+  const [selectedMuteIds, setSelectedMuteIds] = useState<string[]>([]);
 
   async function load() {
     try {
-      setInfo(await api<GroupInfo>(`/api/groups/${conversationId}`));
+      const next = await api<GroupInfo>(`/api/groups/${conversationId}`);
+      setInfo(next);
+      setSelectedMuteIds(
+        next.members.filter(member => member.muted).map(member => member.userId)
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "群资料加载失败");
     }
@@ -105,6 +111,15 @@ export default function GroupInfoPanel({
     await api(`/api/groups/${conversationId}/announcement`, {
       method: "PUT",
       body: JSON.stringify({ announcement: "" }),
+    });
+    await load();
+    onChanged();
+  }
+  async function updateMute(muted: boolean) {
+    if (selectedMuteIds.length === 0) return;
+    await api(`/api/groups/${conversationId}/members/mute`, {
+      method: "PUT",
+      body: JSON.stringify({ userIds: selectedMuteIds, muted }),
     });
     await load();
     onChanged();
@@ -394,9 +409,40 @@ export default function GroupInfoPanel({
             </div>
             <div className="rounded-2xl bg-white p-4">
               <h3 className="font-semibold">群成员</h3>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void updateMute(true)}
+                  disabled={selectedMuteIds.length === 0}
+                  className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-2 text-xs text-white disabled:opacity-40"
+                >
+                  <VolumeX size={14} /> 禁言选中成员
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void updateMute(false)}
+                  disabled={selectedMuteIds.length === 0}
+                  className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700 disabled:opacity-40"
+                >
+                  解除禁言
+                </button>
+              </div>
               <div className="mt-3 space-y-2">
                 {info.members.map(member => (
                   <div key={member.userId} className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`选择${member.displayName}禁言`}
+                      checked={selectedMuteIds.includes(member.userId)}
+                      disabled={member.role === "Owner"}
+                      onChange={event =>
+                        setSelectedMuteIds(current =>
+                          event.target.checked
+                            ? [...current, member.userId]
+                            : current.filter(id => id !== member.userId)
+                        )
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => setProfileMember(member)}
@@ -416,6 +462,9 @@ export default function GroupInfoPanel({
                             ? "群管理员"
                             : "成员"}
                       </p>
+                      {member.muted && (
+                        <p className="text-xs text-amber-600">已禁言</p>
+                      )}
                     </div>
                     {member.role !== "Owner" && (
                       <div className="flex gap-1">
