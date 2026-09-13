@@ -27,6 +27,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { resolveBuiltinAvatar } from "@/lib/builtin-avatars";
 import { createUuid } from "@/lib/uuid";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 import {
@@ -131,7 +132,7 @@ function Avatar({
   size?: "sm" | "md" | "lg";
   online?: boolean;
 }) {
-  const imageUrl = useAuthenticatedImage(src);
+  const imageUrl = useAuthenticatedImage(resolveBuiltinAvatar(src));
   const dimensions =
     size === "lg"
       ? "h-12 w-12 text-base"
@@ -1756,6 +1757,18 @@ function Messenger({
                           key={message.id}
                           message={message}
                           mine={message.senderId === user.id}
+                          avatarName={
+                            message.senderId === user.id
+                              ? user.displayName
+                              : selectedContact?.user.displayName ||
+                                selected.name
+                          }
+                          avatarSrc={
+                            message.senderId === user.id
+                              ? user.avatarUrl
+                              : selectedContact?.user.avatarUrl ||
+                                selected.avatarUrl
+                          }
                           onRecall={() => recall(message)}
                         />
                       ))}
@@ -2039,10 +2052,14 @@ function HeaderAction({
 function MessageBubble({
   message,
   mine,
+  avatarName,
+  avatarSrc,
   onRecall,
 }: {
   message: DecryptedMessage;
   mine: boolean;
+  avatarName: string;
+  avatarSrc?: string;
   onRecall: () => void;
 }) {
   const rich =
@@ -2061,8 +2078,9 @@ function MessageBubble({
     );
   return (
     <div
-      className={`group mb-4 flex ${mine ? "justify-end" : "justify-start"}`}
+      className={`group mb-4 flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}
     >
+      {!mine && <Avatar name={avatarName} src={avatarSrc} size="sm" />}
       <div
         className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}
       >
@@ -2093,6 +2111,7 @@ function MessageBubble({
           )}
         </div>
       </div>
+      {mine && <Avatar name={avatarName} src={avatarSrc} size="sm" />}
     </div>
   );
 }

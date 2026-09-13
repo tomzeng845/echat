@@ -43,6 +43,11 @@ import {
 import { pushStatusLabel } from "@/lib/push-status";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 import {
+  BUILTIN_AVATARS,
+  builtinAvatarSource,
+  resolveBuiltinAvatar,
+} from "@/lib/builtin-avatars";
+import {
   exportDiagnosticLog,
   info as logInfo,
   snapshot as snapshotDiagnosticLog,
@@ -81,9 +86,18 @@ export default function P1ProfilePanel({
   const [signature, setSignature] = useState(user.signature || "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState(user.avatarUrl);
+  const [builtinAvatarId, setBuiltinAvatarId] = useState(
+    user.avatarUrl.startsWith("builtin://")
+      ? user.avatarUrl.slice("builtin://".length)
+      : user.avatarUrl
+        ? ""
+        : BUILTIN_AVATARS[0].id
+  );
   const [profileBusy, setProfileBusy] = useState(false);
   const [logEntries, setLogEntries] = useState<DiagnosticEntry[]>([]);
-  const avatarImageUrl = useAuthenticatedImage(avatarPreview);
+  const avatarImageUrl = useAuthenticatedImage(
+    resolveBuiltinAvatar(avatarPreview)
+  );
 
   async function load() {
     const [nextDevices, nextCalls, nextRtc, nextBlocked] = await Promise.all([
@@ -188,11 +202,17 @@ export default function P1ProfilePanel({
           displayName: displayName.trim(),
           signature: signature.trim(),
           avatarAssetId,
+          builtinAvatarId: avatarFile ? null : builtinAvatarId || null,
         }),
       });
       onProfileUpdated(updated);
       setAvatarFile(null);
       setAvatarPreview(updated.avatarUrl);
+      setBuiltinAvatarId(
+        updated.avatarUrl.startsWith("builtin://")
+          ? updated.avatarUrl.slice("builtin://".length)
+          : ""
+      );
       setSection("home");
       toast.success("个人资料已更新");
     } catch (cause) {
@@ -340,6 +360,13 @@ export default function P1ProfilePanel({
             setDisplayName(user.displayName);
             setSignature(user.signature || "");
             setAvatarFile(null);
+            setBuiltinAvatarId(
+              user.avatarUrl.startsWith("builtin://")
+                ? user.avatarUrl.slice("builtin://".length)
+                : user.avatarUrl
+                  ? ""
+                  : BUILTIN_AVATARS[0].id
+            );
             setSection("home");
           }}
         />
@@ -370,6 +397,33 @@ export default function P1ProfilePanel({
               onChange={event => setAvatarFile(event.target.files?.[0] || null)}
             />
           </label>
+          <div className="mt-6">
+            <p className="text-xs font-medium text-slate-500">选择内置头像</p>
+            <div className="mt-3 grid grid-cols-5 gap-2">
+              {BUILTIN_AVATARS.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={`内置头像 ${item.id.slice(-2)}`}
+                  onClick={() => {
+                    setBuiltinAvatarId(item.id);
+                    setAvatarPreview(builtinAvatarSource(item.id));
+                    setAvatarFile(null);
+                  }}
+                  className={`rounded-2xl p-1 transition ${builtinAvatarId === item.id ? "bg-teal-100 ring-2 ring-teal-500" : "hover:bg-slate-100"}`}
+                >
+                  <img
+                    src={item.url}
+                    alt={`内置头像 ${item.id.slice(-2)}`}
+                    className="aspect-square w-full rounded-xl"
+                  />
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              未设置自定义头像时，将默认使用第一个内置头像。
+            </p>
+          </div>
           <label className="mt-6 block text-xs font-medium text-slate-500">
             昵称
             <input

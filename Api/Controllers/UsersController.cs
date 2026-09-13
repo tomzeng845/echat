@@ -24,6 +24,13 @@ public sealed class UsersController(IChatRepository repository, IHubContext<Chat
                 return BadRequest(new { error = "头像文件无效" });
             user.AvatarUrl = $"/api/media/{asset.Id}/content";
         }
+        else if (!string.IsNullOrWhiteSpace(request.BuiltinAvatarId))
+        {
+            var builtinId = request.BuiltinAvatarId.Trim().ToLowerInvariant();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(builtinId, @"^builtin-(0[1-9]|1[0-9]|20)$"))
+                return BadRequest(new { error = "内置头像编号无效" });
+            user.AvatarUrl = $"builtin://{builtinId}";
+        }
         user.DisplayName = displayName;
         user.Signature = signature;
         await repository.UpdateUserAsync(user, ct);
