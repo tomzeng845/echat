@@ -552,7 +552,7 @@ export default function P1ProfilePanel({
               <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-slate-100 text-sm font-semibold text-slate-500">
                 {item.avatarUrl ? (
                   <img
-                    src={item.avatarUrl}
+                    src={resolveBuiltinAvatar(item.avatarUrl)}
                     alt=""
                     className="h-full w-full object-cover"
                   />

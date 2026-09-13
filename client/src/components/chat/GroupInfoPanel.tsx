@@ -227,7 +227,7 @@ export default function GroupInfoPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/50 p-0 md:p-6">
-      <div className="h-full w-full max-w-xl overflow-y-auto bg-[#f3f6f7] shadow-2xl md:rounded-3xl">
+      <div className="echat-drawer-enter h-full w-full max-w-xl overflow-y-auto bg-[#f3f6f7] shadow-2xl md:rounded-3xl">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white/95 px-4 py-4 backdrop-blur">
           <button
             onClick={onClose}

@@ -1489,7 +1489,7 @@ function Messenger({
           )}
           <Avatar
             name={user.displayName}
-            src={user.avatarUrl}
+            src={resolveBuiltinAvatar(user.avatarUrl)}
             size="sm"
             online
           />
@@ -1566,7 +1566,7 @@ function Messenger({
                   >
                     <Avatar
                       name={item.name}
-                      src={item.avatarUrl}
+                      src={resolveBuiltinAvatar(item.avatarUrl)}
                       online={item.type === "Direct"}
                     />
                     <div className="min-w-0 flex-1">
@@ -1709,7 +1709,7 @@ function Messenger({
                       >
                         <Avatar
                           name={contact.user.displayName}
-                          src={contact.user.avatarUrl}
+                          src={resolveBuiltinAvatar(contact.user.avatarUrl)}
                           size="sm"
                           online
                         />
@@ -1771,7 +1771,7 @@ function Messenger({
                 </button>
                 <Avatar
                   name={selected.name}
-                  src={selected.avatarUrl}
+                  src={resolveBuiltinAvatar(selected.avatarUrl)}
                   size="sm"
                   online={selected.type === "Direct"}
                 />
@@ -2200,7 +2200,7 @@ function Messenger({
                     >
                       <Avatar
                         name={contact.user.displayName}
-                        src={contact.user.avatarUrl}
+                        src={resolveBuiltinAvatar(contact.user.avatarUrl)}
                         size="sm"
                       />
                       <span className="flex-1 text-sm font-medium">
@@ -2454,14 +2454,14 @@ function UserProfileDialog({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex justify-end bg-slate-950/45 p-0 backdrop-blur-sm md:p-6"
         role="dialog"
         aria-modal="true"
         aria-label="好友个人资料"
         onClick={() => !busy && onClose()}
       >
         <div
-          className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
+          className="echat-drawer-enter h-full w-full max-w-sm overflow-y-auto rounded-l-3xl bg-white shadow-2xl md:rounded-3xl"
           onClick={event => event.stopPropagation()}
         >
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -2681,7 +2681,7 @@ function ProfilePanel({
         <div className="flex items-center gap-4">
           <Avatar
             name={user.displayName}
-            src={user.avatarUrl}
+            src={resolveBuiltinAvatar(user.avatarUrl)}
             size="lg"
             online
           />

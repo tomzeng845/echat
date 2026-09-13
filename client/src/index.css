@@ -323,3 +323,22 @@ button:active {
     animation-iteration-count: 1 !important;
   }
 }
+
+@keyframes echat-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.echat-drawer-enter {
+  animation: echat-drawer-in 220ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .echat-drawer-enter {
+    animation: none;
+  }
+}
