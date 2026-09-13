@@ -20,12 +20,16 @@ describe("built-in avatars", () => {
       "utf8"
     );
 
-    expect(catalog).toContain("Array.from({ length: 20 }");
+    expect(catalog).toContain("avatarUrls");
     expect(catalog).toContain("BUILTIN_AVATARS");
     expect(catalog).toContain("DEFAULT_BUILTIN_AVATAR");
-    expect(catalog).toContain(
-      "apiUrl(`/builtin-avatars/builtin-${number}.jpg`)"
-    );
+    expect(
+      (
+        catalog.match(
+          /https:\/\/files\.manuscdn\.com\/user_upload_by_module/g
+        ) || []
+      ).length
+    ).toBe(20);
     expect(catalog).not.toContain("/manus-storage/");
     expect(home).toContain("resolveBuiltinAvatar(user.avatarUrl)");
     expect(home).toContain("resolveBuiltinAvatar(src)");
@@ -33,12 +37,5 @@ describe("built-in avatars", () => {
     expect(profile).toContain("BUILTIN_AVATARS.map");
     expect(domain).toContain("BuiltinAvatarId");
     expect(domain).toContain("builtin-(0[1-9]|1[0-9]|20)");
-
-    for (let index = 1; index <= 20; index += 1) {
-      const filename = `../Api/wwwroot/builtin-avatars/builtin-${String(index).padStart(2, "0")}.jpg`;
-      expect(
-        readFileSync(new URL(filename, import.meta.url)).length
-      ).toBeGreaterThan(0);
-    }
   });
 });

@@ -1,12 +1,30 @@
-import { apiUrl } from "./runtime-config";
+const avatarUrls = [
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ReOJllDSmtIVEfgL.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ZdCugrnWlMZnuyQn.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ioHiqLWIxfhjZWBG.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/cbkBVDUbIKXRemNK.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/KxUMPNpIIHnBXdsq.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/XzhECxqWzLZsHxeo.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/VLQKdvAPpEqxPpZt.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/AAaZwQCEHPHHfOpy.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/IomgLBOvISKQxQAD.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/axMAKFIAHkccOxHD.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/wIQNYAhpBNsGEpbE.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/bnKvoFtjRduybYyh.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/skMBUVqzAIaKZZli.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/SEeVUcEBWzIBYICg.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/huxbIQaTZCPqeNzW.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/QuavxGtaFTLwDyIr.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/pxvXjGcTQklKaexK.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/FAewNPnsEfxAMuLY.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/aGsKDQHWohSakJxg.jpg",
+  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ZqmMKKIFsyVGRrSq.jpg",
+] as const;
 
-export const BUILTIN_AVATARS = Array.from({ length: 20 }, (_, index) => {
-  const number = String(index + 1).padStart(2, "0");
-  return {
-    id: `builtin-${number}`,
-    url: apiUrl(`/builtin-avatars/builtin-${number}.jpg`),
-  };
-});
+export const BUILTIN_AVATARS = avatarUrls.map((url, index) => ({
+  id: `builtin-${String(index + 1).padStart(2, "0")}`,
+  url,
+}));
 
 export const DEFAULT_BUILTIN_AVATAR = BUILTIN_AVATARS[0];
 
