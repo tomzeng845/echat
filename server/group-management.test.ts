@@ -22,6 +22,13 @@ describe("group management", () => {
       new URL("../client/src/pages/Home.tsx", import.meta.url),
       "utf8"
     );
+    const richMessage = readFileSync(
+      new URL(
+        "../client/src/components/chat/RichMessageContent.tsx",
+        import.meta.url
+      ),
+      "utf8"
+    );
 
     expect(controller).toContain("transfer-owner");
     expect(controller).toContain("join-requests");
@@ -33,5 +40,8 @@ describe("group management", () => {
     expect(panel).toContain("转让群主");
     expect(panel).toContain("查找聊天内容");
     expect(home).toContain("群聊信息与群管理");
+    expect(home).toContain("showMentionList");
+    expect(home).toContain("groupAnnouncement");
+    expect(richMessage).toContain("text-amber-600");
   });
 });

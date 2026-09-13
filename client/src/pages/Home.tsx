@@ -472,6 +472,15 @@ function Messenger({
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [groupMentionMembers, setGroupMentionMembers] = useState<
+    ConversationMember[]
+  >([]);
+  const [groupAnnouncement, setGroupAnnouncement] = useState("");
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [showMentionList, setShowMentionList] = useState(false);
+  const [mentionMap, setMentionMap] = useState<
+    Record<string, { userId: string; displayName: string }>
+  >({});
   const [identityReady, setIdentityReady] = useState(false);
   const [realtimeConnection, setRealtimeConnection] =
     useState<HubConnection | null>(null);
@@ -1042,6 +1051,27 @@ function Messenger({
       .catch(() => undefined);
   }, [chatVisible, loadMessages, selectedId]);
 
+  useEffect(() => {
+    setMentionMap({});
+    setShowMentionList(false);
+    if (!selectedId || selected?.type !== "Group") {
+      setGroupMentionMembers([]);
+      setGroupAnnouncement("");
+      return;
+    }
+    api<{ members: ConversationMember[]; announcement: string }>(
+      `/api/groups/${selectedId}`
+    )
+      .then(group => {
+        setGroupMentionMembers(group.members);
+        setGroupAnnouncement(group.announcement || "");
+      })
+      .catch(() => {
+        setGroupMentionMembers([]);
+        setGroupAnnouncement("");
+      });
+  }, [selectedId, selected?.type]);
+
   async function addFriend() {
     if (!addAccount.trim()) return;
     setBusy(true);
@@ -1139,6 +1169,22 @@ function Messenger({
     }
   }
 
+  function selectMention(member: ConversationMember) {
+    const match = /(?:^|\s)@([^\s@]*)$/.exec(draft);
+    const start = match
+      ? draft.length - match[0].length + (match[0].startsWith(" ") ? 1 : 0)
+      : draft.length;
+    setDraft(`${draft.slice(0, start)}@${member.displayName} `);
+    setMentionMap(current => ({
+      ...current,
+      [member.userId]: {
+        userId: member.userId,
+        displayName: member.displayName,
+      },
+    }));
+    setShowMentionList(false);
+  }
+
   async function sendMessage() {
     const text = draft.trim();
     if (!text || !selectedId || !selected || busy || blockedConversation) {
@@ -1160,10 +1206,15 @@ function Messenger({
             content: text,
             ciphertext: "",
             nonce: "",
+            metadata:
+              selected.type === "Group" && Object.keys(mentionMap).length
+                ? { mentions: JSON.stringify(Object.values(mentionMap)) }
+                : undefined,
           }),
         }
       );
       const value = { ...created, plaintext: text };
+      setMentionMap({});
       setMessages(current =>
         current.some(x => x.id === value.id)
           ? current.map(item => (item.id === value.id ? value : item))
@@ -1763,6 +1814,23 @@ function Messenger({
                   </div>
                 </div>
               </header>
+              {selected.type === "Group" && groupAnnouncement && (
+                <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm md:px-8">
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    群公告
+                  </span>
+                  <p className="min-w-0 flex-1 whitespace-pre-wrap">
+                    {groupAnnouncement}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowGroupInfo(true)}
+                    className="shrink-0 text-xs text-amber-700 underline"
+                  >
+                    查看
+                  </button>
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   {messages.length ? (
@@ -1821,7 +1889,7 @@ function Messenger({
                 </div>
               </div>
               <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
-                <div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
+                <div className="relative mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
                   <div className="flex items-center gap-1 px-1 pb-1">
                     <EmojiPicker disabled={busy} onSelect={sendEmoji} />
                     <button
@@ -1875,7 +1943,17 @@ function Messenger({
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
-                      onChange={e => setDraft(e.target.value)}
+                      onChange={e => {
+                        const next = e.target.value;
+                        setDraft(next);
+                        const match = /(?:^|\s)@([^\s@]*)$/.exec(next);
+                        if (selected.type === "Group" && match) {
+                          setMentionQuery(match[1].toLowerCase());
+                          setShowMentionList(true);
+                        } else {
+                          setShowMentionList(false);
+                        }
+                      }}
                       onKeyDown={e => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
@@ -1886,6 +1964,45 @@ function Messenger({
                       placeholder="输入消息"
                       className="max-h-32 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400"
                     />
+                    {selected.type === "Group" && showMentionList && (
+                      <div className="absolute bottom-16 left-3 right-3 z-30 max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl md:left-auto md:right-5 md:w-72">
+                        {groupMentionMembers
+                          .filter(member =>
+                            member.displayName
+                              .toLowerCase()
+                              .includes(mentionQuery)
+                          )
+                          .map(member => (
+                            <button
+                              key={member.userId}
+                              type="button"
+                              onClick={() => selectMention(member)}
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-teal-50"
+                            >
+                              <span className="grid h-8 w-8 place-items-center rounded-lg bg-teal-100 text-xs font-semibold text-teal-700">
+                                {member.displayName.slice(-2)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {member.displayName}
+                              </span>
+                              {member.role === "Owner" && (
+                                <span className="text-[10px] text-amber-600">
+                                  群主
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        {!groupMentionMembers.some(member =>
+                          member.displayName
+                            .toLowerCase()
+                            .includes(mentionQuery)
+                        ) && (
+                          <p className="px-3 py-2 text-xs text-slate-400">
+                            没有匹配的群成员
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <button
                       aria-label="发送消息"
                       disabled={!draft.trim() || busy}
@@ -1936,7 +2053,12 @@ function Messenger({
           conversationId={selected.id}
           messages={messages}
           onClose={() => setShowGroupInfo(false)}
-          onChanged={() => loadData()}
+          onChanged={() => {
+            loadData();
+            api<{ announcement: string }>(`/api/groups/${selected.id}`)
+              .then(group => setGroupAnnouncement(group.announcement || ""))
+              .catch(() => undefined);
+          }}
           onClear={clearChatHistory}
           onLeave={async () => {
             if (!window.confirm("确定退出该群聊吗？")) return;

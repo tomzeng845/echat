@@ -66,7 +66,18 @@ export default function RichMessageContent({
   )
     return (
       <span className="whitespace-pre-wrap break-words">
-        {message.plaintext}
+        {message.plaintext.split(/(@[^\s@]+)/g).map((part, index) =>
+          part.startsWith("@") ? (
+            <strong
+              key={`${part}-${index}`}
+              className="font-semibold text-amber-600"
+            >
+              {part}
+            </strong>
+          ) : (
+            <span key={`${part}-${index}`}>{part}</span>
+          )
+        )}
       </span>
     );
   if (loading)
