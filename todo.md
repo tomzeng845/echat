@@ -85,6 +85,7 @@
 - [x] 下载语音按消息 MIME 与 `.m4a/.webm/.ogg/.wav` 扩展名重新封装 Blob；播放器使用显式 `<source type>`，记录 MediaError、networkState、readyState、canPlayType、Blob MIME/大小并提供重试
 - [x] `pnpm check`、Vitest 35（1 skipped）、xUnit 27、iOS sync 与静态项目校验通过
 - [x] Build 269（提交 `a663da53`）已通过 Xcode 26.6 编译、签名、Apple 校验并上传 TestFlight；Delivery UUID `9ddabdea-d8f1-45d2-8578-71fb6de8abcf`
+- [x] 注册表单邀请码初始值改为空，关闭浏览器自动填充，并移除页面上的 `ECHAT2026` 默认邀请码提示；邀请码机制与服务端校验保持不变
 - [ ] 在 iPhone 真机验证 Build 269 的录音发送、M4A 收听和旧 WebM/Opus 收听；若旧消息失败，依据新增 `mediaErrorCode/canPlayType/blobMimeType` 日志处理历史格式
 - [ ] 在 Build 247 真机完成前台接听、锁屏接听、听筒/外放、蓝牙、系统电话中断恢复、语音/视频双向媒体和挂断后下一通复测
 

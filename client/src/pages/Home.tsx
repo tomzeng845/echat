@@ -165,7 +165,7 @@ function AuthScreen({
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [inviteCode, setInviteCode] = useState("ECHAT2026");
+  const [inviteCode, setInviteCode] = useState("");
   const [agreement, setAgreement] = useState(false);
   const [pendingToken, setPendingToken] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -383,6 +383,7 @@ function AuthScreen({
                         onChange={e =>
                           setInviteCode(e.target.value.toUpperCase())
                         }
+                        autoComplete="off"
                         placeholder="输入邀请码"
                         className="auth-input font-mono tracking-wider"
                       />
@@ -427,12 +428,6 @@ function AuthScreen({
                 )}
               </button>
             </form>
-            {mode === "register" && !pendingToken && (
-              <p className="mt-5 text-center text-xs text-slate-500">
-                本地预览邀请码：
-                <span className="font-mono text-slate-300">ECHAT2026</span>
-              </p>
-            )}
           </div>
         </div>
       </section>
@@ -497,13 +492,16 @@ function Messenger({
     const handleCallSummary = (event: Event) => {
       const summary = (event as CustomEvent<CallSummary>).detail;
       if (!summary?.conversationId || !summary.callId) return;
-      setCallSummaries(current => [
-        ...current.filter(item => item.callId !== summary.callId),
-        summary,
-      ].slice(-100));
+      setCallSummaries(current =>
+        [
+          ...current.filter(item => item.callId !== summary.callId),
+          summary,
+        ].slice(-100)
+      );
     };
     window.addEventListener("echat-call-summary", handleCallSummary);
-    return () => window.removeEventListener("echat-call-summary", handleCallSummary);
+    return () =>
+      window.removeEventListener("echat-call-summary", handleCallSummary);
   }, []);
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
@@ -1272,9 +1270,16 @@ function Messenger({
 
   async function clearChatHistory() {
     if (!selected) return;
-    if (!window.confirm("清空后，当前会话中的聊天记录将对所有成员删除，且无法恢复。确定继续吗？")) return;
+    if (
+      !window.confirm(
+        "清空后，当前会话中的聊天记录将对所有成员删除，且无法恢复。确定继续吗？"
+      )
+    )
+      return;
     try {
-      await api(`/api/conversations/${selected.id}/messages`, { method: "DELETE" });
+      await api(`/api/conversations/${selected.id}/messages`, {
+        method: "DELETE",
+      });
       setMessages([]);
       setShowConversationMenu(false);
       await loadData();
@@ -1740,13 +1745,23 @@ function Messenger({
                       {callSummaries
                         .filter(item => item.conversationId === selectedId)
                         .map(summary => (
-                          <CallSummaryBubble key={summary.callId} summary={summary} />
+                          <CallSummaryBubble
+                            key={summary.callId}
+                            summary={summary}
+                          />
                         ))}
                     </>
-                  ) : callSummaries.some(item => item.conversationId === selectedId) ? (
+                  ) : callSummaries.some(
+                      item => item.conversationId === selectedId
+                    ) ? (
                     callSummaries
                       .filter(item => item.conversationId === selectedId)
-                      .map(summary => <CallSummaryBubble key={summary.callId} summary={summary} />)
+                      .map(summary => (
+                        <CallSummaryBubble
+                          key={summary.callId}
+                          summary={summary}
+                        />
+                      ))
                   ) : (
                     <div className="my-auto text-center">
                       <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white shadow-sm">
@@ -2076,10 +2091,18 @@ function CallSummaryBubble({ summary }: { summary: CallSummary }) {
   return (
     <div className="mb-4 flex justify-center">
       <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-xs text-slate-500">
-        <Phone size={13} className={summary.status === "missed" ? "text-rose-500" : "text-teal-600"} />
+        <Phone
+          size={13}
+          className={
+            summary.status === "missed" ? "text-rose-500" : "text-teal-600"
+          }
+        />
         <span>{label}</span>
         <time className="text-[10px] text-slate-400">
-          {new Date(summary.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+          {new Date(summary.at).toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
         </time>
       </div>
     </div>
@@ -2395,7 +2418,9 @@ export default function Home() {
   const [session, setCurrentSession] = useState<AuthResponse | null>(() =>
     getSession()
   );
-  const [sessionRestored, setSessionRestored] = useState(() => Boolean(getSession()));
+  const [sessionRestored, setSessionRestored] = useState(() =>
+    Boolean(getSession())
+  );
   const onLogout = () => {
     unregisterNativePush().catch(() => undefined);
     setSession(null);
