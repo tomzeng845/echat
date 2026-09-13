@@ -85,10 +85,11 @@
 - [x] 下载语音按消息 MIME 与 `.m4a/.webm/.ogg/.wav` 扩展名重新封装 Blob；播放器使用显式 `<source type>`，记录 MediaError、networkState、readyState、canPlayType、Blob MIME/大小并提供重试
 - [x] `pnpm check`、Vitest 35（1 skipped）、xUnit 27、iOS sync 与静态项目校验通过
 - [x] Build 269（提交 `a663da53`）已通过 Xcode 26.6 编译、签名、Apple 校验并上传 TestFlight；Delivery UUID `9ddabdea-d8f1-45d2-8578-71fb6de8abcf`
+- [x] Build 271（提交 `ca266d2`）已通过 macOS/Xcode 签名、Apple 校验并上传 TestFlight；GitHub workflow `34787427314` 成功
 - [x] 注册表单邀请码初始值改为空，关闭浏览器自动填充，并移除页面上的 `ECHAT2026` 默认邀请码提示；邀请码机制与服务端校验保持不变
 - [x] 好友/群资料抽屉改为移动端 `100dvh` 满屏布局，加入刘海屏与底部系统手势安全区，桌面端保留边距与圆角
 - [x] 抽屉关闭操作统一为左上角返回箭头，移除右上角关闭按钮；登录卡片和聊天标题栏加入玻璃渐变与阴影层次
-- [ ] 生成并验证新的 iOS 1024px AppIcon，重新构建 TestFlight 后更新 iPhone 主屏幕图标
+- [x] 生成并验证新的 iOS 1024px AppIcon，并随 Build 271 重新构建上传 TestFlight；iPhone 主屏幕更新需在真机安装后确认
 - [x] 拉黑改为保留好友关系但双向禁止直接会话消息、语音和视频通话；会话继续保留，解除拉黑恢复好友关系并支持继续通信
 - [x] 增加 20 个本地内置头像；无头像用户默认使用第一个，资料页可选择并保存内置头像，聊天列表、联系人和每条聊天记录均显示头像
 - [x] 群聊左上角更多菜单增加群资料页：成员/加群员、群名称、群二维码、群公告、群管理、备注、聊天内容搜索、清空记录和退出群聊
@@ -109,6 +110,7 @@
 - [x] JS 日志持久化并扩容至 1200 条；日志预览和导出合并最多 500 条 Android/鸿蒙独立进程日志
 - [x] `pnpm check`、Vitest 31（1 skipped）、xUnit 27、Android `test/lint/assembleDebug` 通过；最终 APK Manifest 已验证 Direct Boot、全屏来电与 remoteMessaging 前台服务权限
 - [x] GitHub workflow `34707957173` 基于提交 `0e274067` 构建 Android/鸿蒙测试 APK；包名 `com.echat.app`、版本 `0.9.0(19)`、SHA-256 `f8568d5b3eaf15f2a8bc5d019d65a2e480e4f54af6b99fceef2f9d53ec2a1392`
+- [x] GitHub workflow `34787425959` 基于提交 `ca266d2` 构建 Android debug APK；artifact `EChat-Android-debug-40`，SHA-256 `7e983c9df1e1e0ae542e13f1bc1c46b2b6af8d10fbe3c47315d8a9691d7f5c3a`
 - [ ] 在鸿蒙真机依次验证锁屏、切后台、划掉任务、系统回收 `:calls` 进程后 90 秒内来电，并导出日志确认 watchdog/SignalR/通知/API 全链路
 
 - [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥
