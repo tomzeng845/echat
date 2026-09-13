@@ -1708,17 +1708,6 @@ function Messenger({
                         )}
                         <button
                           type="button"
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-500 hover:bg-slate-100"
-                          onClick={() => {
-                            setShowConversationMenu(false);
-                            toast.info("会话设置即将开放");
-                          }}
-                        >
-                          <Settings size={16} className="text-slate-400" />
-                          会话设置
-                        </button>
-                        <button
-                          type="button"
                           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-rose-50"
                           onClick={clearChatHistory}
                         >
