@@ -86,7 +86,7 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         var userId = User.UserId();
         if (await repository.GetUserByIdAsync(peerId, ct) is null) return NotFound();
         await repository.UpsertRelationAsync(new ContactRelation { Id = $"{userId}:{peerId}", UserId = userId, PeerUserId = peerId, Status = RelationStatus.Blocked }, ct);
-        await repository.UpsertRelationAsync(new ContactRelation { Id = $"{peerId}:{userId}", UserId = peerId, PeerUserId = userId, Status = RelationStatus.Deleted }, ct);
+        await repository.UpsertRelationAsync(new ContactRelation { Id = $"{peerId}:{userId}", UserId = peerId, PeerUserId = userId, Status = RelationStatus.Blocked }, ct);
         await NotifyContactUpdated(userId, peerId, RelationStatus.Blocked, ct);
         return NoContent();
     }
@@ -112,9 +112,16 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
             Id = $"{userId}:{peerId}",
             UserId = userId,
             PeerUserId = peerId,
-            Status = RelationStatus.Deleted
+            Status = RelationStatus.Friend
         }, ct);
-        await hub.Clients.Group($"user:{userId}").SendAsync("contact.updated", new { status = RelationStatus.Deleted, peerId }, ct);
+        await repository.UpsertRelationAsync(new ContactRelation
+        {
+            Id = $"{peerId}:{userId}",
+            UserId = peerId,
+            PeerUserId = userId,
+            Status = RelationStatus.Friend
+        }, ct);
+        await NotifyContactUpdated(userId, peerId, RelationStatus.Friend, ct);
         return NoContent();
     }
 

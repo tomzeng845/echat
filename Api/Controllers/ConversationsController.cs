@@ -167,6 +167,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             var peerId = conversation.Members.First(member => member.UserId != userId).UserId;
             var relation = await repository.GetRelationAsync(userId, peerId, ct);
             var reverseRelation = await repository.GetRelationAsync(peerId, userId, ct);
+            if (relation?.Status == RelationStatus.Blocked || reverseRelation?.Status == RelationStatus.Blocked)
+                return StatusCode(403, new { error = "该会话已被拉黑，无法发送消息或发起通话" });
             if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend)
                 return StatusCode(403, new { error = "你们当前不是好友，无法发送消息" });
         }

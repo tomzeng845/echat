@@ -83,6 +83,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var conversation = await RequireConversationMemberAsync(conversationId);
         if (mode is not ("audio" or "video")) throw new HubException("INVALID_CALL_MODE");
         if (!Guid.TryParse(callId, out _)) throw new HubException("INVALID_CALL_ID");
+        await EnsureDirectConversationNotBlockedAsync(conversation);
         var participants = conversation.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId).ToList();
         if (participants.Count > 4 && string.IsNullOrWhiteSpace(configuration["Rtc:SfuUrl"] ?? Environment.GetEnvironmentVariable("SFU_URL"))) throw new HubException("SFU_REQUIRED");
         var caller = await repository.GetUserByIdAsync(Context.User!.UserId()) ?? throw new HubException("USER_NOT_FOUND");
@@ -99,6 +100,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
     {
         RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
+        await EnsureDirectConversationNotBlockedAsync(conversation);
         var call = await RequireCallAsync(conversationId, callId);
         // CallKit and the foreground UI can both report the same answer. Once
         // a direct call is active, the second accept is a harmless retry.
@@ -120,6 +122,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
     {
         RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
+        await EnsureDirectConversationNotBlockedAsync(conversation);
         var call = await RequireCallAsync(conversationId, callId);
         if (conversation.Type == ConversationType.Direct && call.Status == CallRecordStatus.Active)
             return;
@@ -149,6 +152,7 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
     {
         RequireInteractiveScope();
         var conversation = await RequireConversationMemberAsync(conversationId);
+        await EnsureDirectConversationNotBlockedAsync(conversation);
         var call = await RequireCallAsync(conversationId, callId);
         if (!conversation.Members.Any(x => x.UserId == targetUserId && x.LeftAtSequence is null) || !call.ParticipantIds.Contains(targetUserId)) throw new HubException("TARGET_NOT_IN_CALL");
         if (payload.Length > 24_000 || signalType is not ("offer" or "answer" or "ice")) throw new HubException("INVALID_SIGNAL");
@@ -190,5 +194,16 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         var call = await repository.GetCallAsync(callId) ?? throw new HubException("CALL_NOT_FOUND");
         if (call.ConversationId != conversationId || !call.ParticipantIds.Contains(Context.User!.UserId())) throw new HubException("FORBIDDEN");
         return call;
+    }
+
+    private async Task EnsureDirectConversationNotBlockedAsync(Conversation conversation)
+    {
+        if (conversation.Type != ConversationType.Direct) return;
+        var userId = Context.User!.UserId();
+        var peerId = conversation.Members.First(member => member.UserId != userId).UserId;
+        var relation = await repository.GetRelationAsync(userId, peerId);
+        var reverseRelation = await repository.GetRelationAsync(peerId, userId);
+        if (relation?.Status == RelationStatus.Blocked || reverseRelation?.Status == RelationStatus.Blocked)
+            throw new HubException("CONVERSATION_BLOCKED");
     }
 }

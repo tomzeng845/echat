@@ -509,9 +509,12 @@ function Messenger({
     selected?.type === "Direct"
       ? (contacts.find(
           contact =>
-            contact.status === "Friend" && contact.user.id === selected.peerId
+            (contact.status === "Friend" || contact.status === "Blocked") &&
+            contact.user.id === selected.peerId
         ) ?? null)
       : null;
+  const blockedConversation =
+    selected?.type === "Direct" && selectedContact?.status === "Blocked";
   const filteredConversations = conversations.filter(item =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -1135,7 +1138,10 @@ function Messenger({
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || !selectedId || !selected || busy) return;
+    if (!text || !selectedId || !selected || busy || blockedConversation) {
+      if (blockedConversation) toast.warning("该会话已被拉黑，无法发送消息");
+      return;
+    }
     setBusy(true);
     setDraft("");
     try {
@@ -1174,7 +1180,10 @@ function Messenger({
   }
 
   async function sendEmoji(emoji: string) {
-    if (!emoji || !selectedId || !selected || busy) return;
+    if (!emoji || !selectedId || !selected || busy || blockedConversation) {
+      if (blockedConversation) toast.warning("该会话已被拉黑，无法发送消息");
+      return;
+    }
     const conversationId = selectedId;
     setBusy(true);
     try {
@@ -1216,7 +1225,10 @@ function Messenger({
     kind: ChatMediaKind,
     duration?: number
   ) {
-    if (!selectedId || !selected || busy) return;
+    if (!selectedId || !selected || busy || blockedConversation) {
+      if (blockedConversation) toast.warning("该会话已被拉黑，无法发送消息");
+      return;
+    }
     setBusy(true);
     try {
       const created = await sendChatMedia(selectedId, file, kind, {
@@ -1291,18 +1303,26 @@ function Messenger({
 
   async function updateFriendRelation(
     peerId: string,
-    action: "delete" | "block"
+    action: "delete" | "block" | "unblock"
   ) {
     if (action === "block")
       await api<void>(`/api/contacts/${peerId}/block`, { method: "POST" });
+    else if (action === "unblock")
+      await api<void>(`/api/contacts/${peerId}/block`, { method: "DELETE" });
     else await api<void>(`/api/contacts/${peerId}`, { method: "DELETE" });
     setProfileUser(null);
-    if (selected?.peerId === peerId) {
+    if (action === "delete" && selected?.peerId === peerId) {
       setSelectedId(null);
       setMobileDetail(false);
     }
     await loadData();
-    toast.success(action === "block" ? "已将该好友拉黑" : "好友已删除");
+    toast.success(
+      action === "block"
+        ? "已将该好友拉黑，当前对话暂时禁止消息和通话"
+        : action === "unblock"
+          ? "已解除拉黑，好友关系已恢复"
+          : "好友已删除"
+    );
   }
 
   async function showAdmin() {
@@ -1669,6 +1689,7 @@ function Messenger({
                   <HeaderAction
                     icon={Phone}
                     label="语音通话"
+                    disabled={blockedConversation}
                     onClick={() =>
                       callManagerRef.current?.start(selected, "audio")
                     }
@@ -1676,6 +1697,7 @@ function Messenger({
                   <HeaderAction
                     icon={Video}
                     label="视频通话"
+                    disabled={blockedConversation}
                     onClick={() =>
                       callManagerRef.current?.start(selected, "video")
                     }
@@ -1767,9 +1789,13 @@ function Messenger({
               <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
                 <div className="mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
                   <div className="flex items-center gap-1 px-1 pb-1">
-                    <EmojiPicker disabled={busy} onSelect={sendEmoji} />
+                    <EmojiPicker
+                      disabled={busy || blockedConversation}
+                      onSelect={sendEmoji}
+                    />
                     <button
                       type="button"
+                      disabled={busy || blockedConversation}
                       onClick={() => fileInputRef.current?.click()}
                       title="发送文件或视频"
                       className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
@@ -1778,6 +1804,7 @@ function Messenger({
                     </button>
                     <button
                       type="button"
+                      disabled={busy || blockedConversation}
                       onClick={() => imageInputRef.current?.click()}
                       title="发送图片"
                       className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
@@ -1785,7 +1812,7 @@ function Messenger({
                       <Image size={17} />
                     </button>
                     <VoiceRecorderButton
-                      disabled={busy}
+                      disabled={busy || blockedConversation}
                       onRecorded={(blob, duration) =>
                         sendMedia(blob, "Voice", duration)
                       }
@@ -1819,6 +1846,7 @@ function Messenger({
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
+                      disabled={blockedConversation}
                       onChange={e => setDraft(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -1827,12 +1855,14 @@ function Messenger({
                         }
                       }}
                       rows={1}
-                      placeholder="输入消息"
+                      placeholder={
+                        blockedConversation ? "该会话已被拉黑" : "输入消息"
+                      }
                       className="max-h-32 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-slate-400"
                     />
                     <button
                       aria-label="发送消息"
-                      disabled={!draft.trim() || busy}
+                      disabled={!draft.trim() || busy || blockedConversation}
                       onClick={sendMessage}
                       className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"
                     >
@@ -1856,9 +1886,11 @@ function Messenger({
       {profileUser && (
         <UserProfileDialog
           user={profileUser}
+          blocked={selectedContact?.status === "Blocked"}
           onClose={() => setProfileUser(null)}
           onDelete={() => updateFriendRelation(profileUser.id, "delete")}
           onBlock={() => updateFriendRelation(profileUser.id, "block")}
+          onUnblock={() => updateFriendRelation(profileUser.id, "unblock")}
         />
       )}
       {showScanner && (
@@ -1987,17 +2019,20 @@ function HeaderAction({
   icon: Icon,
   label,
   onClick,
+  disabled = false,
 }: {
   icon: typeof Phone;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       title={label}
       aria-label={label}
-      className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95"
+      className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
     >
       <Icon size={18} />
     </button>
@@ -2121,18 +2156,22 @@ function EmptyState({
 }
 function UserProfileDialog({
   user,
+  blocked = false,
   onClose,
   onDelete,
   onBlock,
+  onUnblock,
 }: {
   user: User;
+  blocked?: boolean;
   onClose: () => void;
   onDelete: () => Promise<void>;
   onBlock: () => Promise<void>;
+  onUnblock: () => Promise<void>;
 }) {
-  const [confirmAction, setConfirmAction] = useState<"delete" | "block" | null>(
-    null
-  );
+  const [confirmAction, setConfirmAction] = useState<
+    "delete" | "block" | "unblock" | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [avatarExpanded, setAvatarExpanded] = useState(false);
   const avatarUrl = useAuthenticatedImage(user.avatarUrl);
@@ -2141,7 +2180,11 @@ function UserProfileDialog({
     if (!confirmAction || busy) return;
     setBusy(true);
     try {
-      await (confirmAction === "delete" ? onDelete() : onBlock());
+      await (confirmAction === "delete"
+        ? onDelete()
+        : confirmAction === "block"
+          ? onBlock()
+          : onUnblock());
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "操作失败");
       setBusy(false);
@@ -2213,12 +2256,16 @@ function UserProfileDialog({
                 <p className="text-sm font-semibold text-rose-700">
                   {confirmAction === "delete"
                     ? "确认删除好友？"
-                    : "确认拉黑该好友？"}
+                    : confirmAction === "block"
+                      ? "确认拉黑该好友？"
+                      : "确认解除拉黑？"}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-rose-600/80">
                   {confirmAction === "delete"
                     ? "删除后双方将解除好友关系，原单聊不再显示。"
-                    : "拉黑后对方无法向你发送好友申请或单聊消息。"}
+                    : confirmAction === "block"
+                      ? "拉黑后双方保留好友关系，但该对话不能发送消息、语音通话或视频通话。"
+                      : "解除后双方恢复好友关系，可继续发送消息和通话。"}
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
@@ -2250,10 +2297,12 @@ function UserProfileDialog({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setConfirmAction("block")}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-rose-50 py-2.5 text-xs font-medium text-rose-600 transition hover:bg-rose-100 active:scale-[.98]"
+                  onClick={() =>
+                    setConfirmAction(blocked ? "unblock" : "block")
+                  }
+                  className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium transition active:scale-[.98] ${blocked ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-rose-50 text-rose-600 hover:bg-rose-100"}`}
                 >
-                  <Ban size={14} /> 拉黑
+                  <Ban size={14} /> {blocked ? "解除拉黑" : "拉黑"}
                 </button>
               </div>
             )}
