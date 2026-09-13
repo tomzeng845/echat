@@ -101,6 +101,7 @@ export type TypingUpdated = {
 };
 export type ConversationMember = {
   userId: string;
+  account: string;
   displayName: string;
   avatarUrl: string;
   role: "Owner" | "Admin" | "Member";

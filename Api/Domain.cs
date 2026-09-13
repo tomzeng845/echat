@@ -337,7 +337,7 @@ public sealed record MomentLikeView(string UserId, string DisplayName, string Av
 public sealed record MomentCommentView(string Id, string UserId, string DisplayName, string AvatarUrl, string Text, DateTime CreatedAtUtc);
 public sealed record MomentView(string Id, UserView Author, string Text, IReadOnlyList<MediaAssetView> Media, IReadOnlyList<MomentLikeView> Likes, IReadOnlyList<MomentCommentView> Comments, bool LikedByMe, DateTime CreatedAtUtc, MomentVisibility Visibility);
 public sealed record EncryptionDeviceView(string DeviceId, string PublicKeyJwk);
-public sealed record ConversationMemberView(string UserId, string DisplayName, string AvatarUrl, MemberRole Role, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
+public sealed record ConversationMemberView(string UserId, string Account, string DisplayName, string AvatarUrl, MemberRole Role, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
 public sealed record QrLoginStartRequest(string DeviceName = "Web", string? DeviceId = null);
 public sealed record QrLoginStartResponse(string ChallengeId, string PollToken, string QrPayload, DateTime ExpiresAtUtc);
 public sealed record QrLoginTokenRequest(string ChallengeId, string Token);

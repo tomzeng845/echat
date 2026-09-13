@@ -3,14 +3,18 @@ import {
   Check,
   ChevronLeft,
   Crown,
+  MessageCircle,
+  Phone,
   Plus,
   QrCode,
   Search,
   Shield,
   UserMinus,
+  UserPlus,
   X,
 } from "lucide-react";
 import { api, type ConversationMember } from "@/lib/echat-api";
+import { resolveBuiltinAvatar } from "@/lib/builtin-avatars";
 import QrCodeCard from "@/components/qr/QrCodeCard";
 import QrCodeScanner from "@/components/qr/QrCodeScanner";
 
@@ -31,6 +35,10 @@ type Props = {
   onChanged: () => void;
   onClear: () => void;
   onLeave: () => void;
+  friendUserIds: string[];
+  onMessageMember: (member: ConversationMember) => void;
+  onVoiceCallMember: (member: ConversationMember) => void;
+  onAddFriendMember: (member: ConversationMember) => void;
 };
 
 export default function GroupInfoPanel({
@@ -40,6 +48,10 @@ export default function GroupInfoPanel({
   onChanged,
   onClear,
   onLeave,
+  friendUserIds,
+  onMessageMember,
+  onVoiceCallMember,
+  onAddFriendMember,
 }: Props) {
   const [info, setInfo] = useState<GroupInfo | null>(null);
   const [page, setPage] = useState<"info" | "manage" | "search">("info");
@@ -59,6 +71,9 @@ export default function GroupInfoPanel({
   >([]);
   const [scan, setScan] = useState(false);
   const [error, setError] = useState("");
+  const [profileMember, setProfileMember] = useState<ConversationMember | null>(
+    null
+  );
 
   async function load() {
     try {
@@ -239,11 +254,14 @@ export default function GroupInfoPanel({
                 {info.members.slice(0, 9).map(member => (
                   <div
                     key={member.userId}
-                    className="text-center text-xs text-slate-600"
+                    className="cursor-pointer text-center text-xs text-slate-600"
+                    onClick={() => setProfileMember(member)}
                   >
-                    <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-teal-100 font-semibold text-teal-700">
-                      {member.displayName.slice(-2)}
-                    </div>
+                    <img
+                      src={resolveBuiltinAvatar(member.avatarUrl)}
+                      alt={member.displayName}
+                      className="mx-auto h-12 w-12 rounded-xl object-cover"
+                    />
                     <p className="mt-1 truncate">{member.displayName}</p>
                   </div>
                 ))}
@@ -379,9 +397,16 @@ export default function GroupInfoPanel({
               <div className="mt-3 space-y-2">
                 {info.members.map(member => (
                   <div key={member.userId} className="flex items-center gap-3">
-                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-teal-100 text-xs text-teal-700">
-                      {member.displayName.slice(-2)}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProfileMember(member)}
+                    >
+                      <img
+                        src={resolveBuiltinAvatar(member.avatarUrl)}
+                        alt={member.displayName}
+                        className="h-9 w-9 rounded-xl object-cover"
+                      />
+                    </button>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{member.displayName}</p>
                       <p className="text-xs text-slate-400">
@@ -531,6 +556,76 @@ export default function GroupInfoPanel({
               expiresAt={qr.expiresAtUtc}
             />
           </div>
+        </div>
+      )}
+      {profileMember && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-slate-950/45 p-5">
+          <section className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <img
+                  src={resolveBuiltinAvatar(profileMember.avatarUrl)}
+                  alt={profileMember.displayName}
+                  className="h-16 w-16 rounded-2xl object-cover"
+                />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {profileMember.displayName}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    ID：{profileMember.account || profileMember.userId}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    用户编号：{profileMember.userId}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileMember(null)}
+                className="rounded-xl p-2 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {friendUserIds.includes(profileMember.userId) ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMember(null);
+                      onMessageMember(profileMember);
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-teal-500 py-3 text-sm font-medium text-white"
+                  >
+                    <MessageCircle size={16} /> 发消息
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMember(null);
+                      onVoiceCallMember(profileMember);
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium text-white"
+                  >
+                    <Phone size={16} /> 语音通话
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileMember(null);
+                    onAddFriendMember(profileMember);
+                  }}
+                  className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-teal-500 py-3 text-sm font-medium text-white"
+                >
+                  <UserPlus size={16} /> 添加好友
+                </button>
+              )}
+            </div>
+          </section>
         </div>
       )}
     </div>

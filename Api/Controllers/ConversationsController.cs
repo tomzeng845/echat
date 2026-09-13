@@ -116,7 +116,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 .ToList();
             if (!string.IsNullOrWhiteSpace(account.PublicKeyJwk) && devices.All(item => item.PublicKeyJwk != account.PublicKeyJwk))
                 devices.Add(new EncryptionDeviceView("legacy-primary", account.PublicKeyJwk));
-            result.Add(new ConversationMemberView(account.Id, account.DisplayName, account.AvatarUrl, member.Role, devices));
+            result.Add(new ConversationMemberView(account.Id, account.Account, account.DisplayName, account.AvatarUrl, member.Role, devices));
         }
         return Ok(result);
     }

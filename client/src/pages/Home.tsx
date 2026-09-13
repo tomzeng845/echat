@@ -1135,6 +1135,54 @@ function Messenger({
     }
   }
 
+  function findContactForMember(member: ConversationMember) {
+    return contacts.find(contact => contact.user.id === member.userId);
+  }
+
+  async function addFriendMember(member: ConversationMember) {
+    try {
+      await api("/api/contacts/requests", {
+        method: "POST",
+        body: JSON.stringify({
+          requestId: createUuid(),
+          peerAccount: member.account,
+          note: "你好，我想添加你为好友",
+          source: "group-member",
+        }),
+      });
+      toast.success("好友申请已发送");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "发送好友申请失败");
+    }
+  }
+
+  async function startVoiceCallWithMember(member: ConversationMember) {
+    const contact = findContactForMember(member);
+    if (!contact) return toast.error("该成员当前不是好友");
+    setBusy(true);
+    try {
+      const existing = conversations.find(
+        item => item.type === "Direct" && item.peerId === member.userId
+      );
+      const conversation =
+        existing ??
+        (await api<Conversation>("/api/conversations/direct", {
+          method: "POST",
+          body: JSON.stringify({ peerAccount: contact.user.account }),
+        }));
+      setShowGroupInfo(false);
+      setSelectedId(conversation.id);
+      setNav("chats");
+      setMobileDetail(true);
+      await loadData();
+      await callManagerRef.current?.start(conversation, "audio");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "无法发起语音通话");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createGroup() {
     if (!groupName.trim() || groupMembers.length < 2)
       return toast.warning("请输入群名称并选择至少两位好友");
@@ -2072,6 +2120,18 @@ function Messenger({
               .catch(() => undefined);
           }}
           onClear={clearChatHistory}
+          friendUserIds={contacts
+            .filter(contact => contact.status === "Friend")
+            .map(contact => contact.user.id)}
+          onMessageMember={member => {
+            const contact = findContactForMember(member);
+            if (contact) {
+              setShowGroupInfo(false);
+              void startChat(contact);
+            }
+          }}
+          onVoiceCallMember={member => void startVoiceCallWithMember(member)}
+          onAddFriendMember={member => void addFriendMember(member)}
           onLeave={async () => {
             if (!window.confirm("确定退出该群聊吗？")) return;
             try {
