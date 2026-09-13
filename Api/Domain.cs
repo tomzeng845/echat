@@ -126,6 +126,7 @@ public sealed class ContactQrToken
     public DateTime? RevokedAtUtc { get; set; }
     public int UseCount { get; set; }
     public int MaxUses { get; set; } = 100;
+    public string? ConversationId { get; set; }
 }
 
 public sealed class FriendRequest
@@ -177,6 +178,10 @@ public sealed class Conversation
     public DateTime? LastMessageAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public bool IsDissolved { get; set; }
+    public string Announcement { get; set; } = "";
+    public string Remark { get; set; } = "";
+    public bool RequireJoinApproval { get; set; }
+    public Dictionary<string, DateTime> JoinRequests { get; set; } = [];
 }
 
 public sealed class ConversationKeyEnvelopeRecord
@@ -309,6 +314,13 @@ public sealed record RefreshRequest(string RefreshToken, string DeviceName = "We
 public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web", string? DeviceId = null);
 public sealed record PublicKeyRequest(string PublicKeyJwk, string? DeviceId = null);
 public sealed record UpdateProfileRequest(string DisplayName, string Signature = "", string? AvatarAssetId = null, string? BuiltinAvatarId = null);
+public sealed record GroupNameRequest(string Name);
+public sealed record GroupAnnouncementRequest(string Announcement);
+public sealed record GroupRemarkRequest(string Remark);
+public sealed record GroupJoinApprovalRequest(bool RequireApproval);
+public sealed record GroupMemberRequest(string UserId, MemberRole? Role = null);
+public sealed record GroupRoleRequest(string UserId, MemberRole Role);
+public sealed record GroupJoinDecisionRequest(string UserId, bool Approve);
 public sealed record AuthResponse(bool Success, string? AccessToken, string? RefreshToken, DateTime? ExpiresAtUtc, UserView? User, bool RequiresTotp = false, string? PendingToken = null, string? Error = null, string? SessionId = null, string? DeviceId = null);
 public sealed record UserView(string Id, string Account, string DisplayName, string AvatarUrl, string Signature, string Region, UserRole Role, UserStatus Status);
 public sealed record FriendRequestInput(string RequestId, string PeerAccount, string Note = "", string Source = "account");

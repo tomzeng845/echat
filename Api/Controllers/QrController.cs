@@ -130,6 +130,52 @@ public sealed class QrController(IChatRepository repository, SessionService sess
         return Ok(item);
     }
 
+    [Authorize]
+    [HttpPost("group/{conversationId}/create")]
+    public async Task<ActionResult> CreateGroupQr(string conversationId, CancellationToken ct)
+    {
+        var group = await repository.GetConversationAsync(conversationId, ct);
+        if (group is null || group.Type != ConversationType.Group || !group.Members.Any(x => x.UserId == User.UserId() && x.LeftAtSequence is null)) return Forbid();
+        var raw = RandomToken();
+        var token = new ContactQrToken { TokenHash = TokenService.Hash(raw), OwnerId = User.UserId(), ConversationId = conversationId, ExpiresAtUtc = DateTime.UtcNow.AddDays(7), MaxUses = 1000 };
+        await repository.AddContactQrAsync(token, ct);
+        return Ok(new { qrPayload = $"echat://group/{raw}", expiresAtUtc = token.ExpiresAtUtc, conversationId, groupName = group.Name });
+    }
+
+    [Authorize]
+    [HttpPost("group/preview")]
+    public async Task<ActionResult> PreviewGroupQr(ContactQrRequest request, CancellationToken ct)
+    {
+        var token = await repository.GetContactQrByHashAsync(TokenService.Hash(request.Token), ct);
+        if (token is null || string.IsNullOrWhiteSpace(token.ConversationId)) return BadRequest(new { error = "群二维码无效或已过期" });
+        var group = await repository.GetConversationAsync(token.ConversationId, ct);
+        if (group is null || group.IsDissolved) return NotFound();
+        return Ok(new { token = request.Token, conversationId = group.Id, groupName = group.Name, memberCount = group.Members.Count(x => x.LeftAtSequence is null), announcement = group.Announcement, requireApproval = group.RequireJoinApproval });
+    }
+
+    [Authorize]
+    [HttpPost("group/join")]
+    public async Task<ActionResult> JoinGroupQr(ContactQrRequest request, CancellationToken ct)
+    {
+        var token = await repository.GetContactQrByHashAsync(TokenService.Hash(request.Token), ct);
+        if (token is null || string.IsNullOrWhiteSpace(token.ConversationId) || !await repository.TryUseContactQrAsync(token.Id, ct)) return BadRequest(new { error = "群二维码无效或已过期" });
+        var group = await repository.GetConversationAsync(token.ConversationId, ct);
+        if (group is null || group.IsDissolved) return NotFound();
+        var userId = User.UserId();
+        if (group.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null)) return Conflict(new { error = "你已经在群内" });
+        if (group.RequireJoinApproval)
+        {
+            group.JoinRequests[userId] = DateTime.UtcNow;
+            await repository.UpdateConversationAsync(group, ct);
+            await hub.Clients.Users(group.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId)).SendAsync("group.join-requested", new { conversationId = group.Id, userId }, ct);
+            return Ok(new { status = "pending" });
+        }
+        group.Members.Add(new ConversationMember { UserId = userId });
+        await repository.UpdateConversationAsync(group, ct);
+        await hub.Clients.Users(group.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = group.Id, action = "member-added" }, ct);
+        return Ok(new { status = "joined", conversationId = group.Id });
+    }
+
     private async Task<QrLoginChallenge?> ValidLoginAsync(QrLoginTokenRequest request, CancellationToken ct)
     {
         var challenge = await repository.GetQrLoginAsync(request.ChallengeId, ct);

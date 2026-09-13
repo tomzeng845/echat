@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CallManager, {
   type CallManagerHandle,
 } from "@/components/chat/CallManager";
+import GroupInfoPanel from "@/components/chat/GroupInfoPanel";
 import EmojiPicker from "@/components/chat/EmojiPicker";
 import RichMessageContent from "@/components/chat/RichMessageContent";
 import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
@@ -466,6 +467,7 @@ function Messenger({
   const [showGroup, setShowGroup] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
@@ -1735,6 +1737,19 @@ function Messenger({
                             好友资料
                           </button>
                         )}
+                        {selected.type === "Group" && (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              setShowConversationMenu(false);
+                              setShowGroupInfo(true);
+                            }}
+                          >
+                            <Users size={16} className="text-slate-400" />
+                            群聊信息与群管理
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-rose-50"
@@ -1915,6 +1930,29 @@ function Messenger({
       )}
       {showMyQr && (
         <MyContactQrDialog user={user} onClose={() => setShowMyQr(false)} />
+      )}
+      {showGroupInfo && selected?.type === "Group" && (
+        <GroupInfoPanel
+          conversationId={selected.id}
+          messages={messages}
+          onClose={() => setShowGroupInfo(false)}
+          onChanged={() => loadData()}
+          onClear={clearChatHistory}
+          onLeave={async () => {
+            if (!window.confirm("确定退出该群聊吗？")) return;
+            try {
+              await api(`/api/groups/${selected.id}/leave`, { method: "POST" });
+              setShowGroupInfo(false);
+              setSelectedId(null);
+              await loadData();
+              toast.success("已退出群聊");
+            } catch (cause) {
+              toast.error(
+                cause instanceof Error ? cause.message : "退出群聊失败"
+              );
+            }
+          }}
+        />
       )}
 
       {showGroup && (
