@@ -82,10 +82,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const LOGO =
-  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/cBQkYfNchSuunZhX.png";
-const ICON =
-  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663809348774/ZvaASvnoRtznilUT.png";
+const LOGO = "/favicon.png";
+const ICON = "/favicon.png";
 
 type NavKey = "chats" | "contacts" | "discover" | "profile" | "admin";
 type DecryptedMessage = Message & { plaintext: string; decryptError?: boolean };
@@ -1451,7 +1449,7 @@ function Messenger({
 
   return (
     <main className="h-full overflow-hidden bg-[#eef2f5] text-slate-900">
-      <div className="mx-auto flex h-full max-w-[1680px] bg-white shadow-2xl shadow-slate-300/30">
+      <div className="echat-app-shell mx-auto flex h-full max-w-[1680px] bg-white shadow-2xl shadow-slate-300/30">
         <aside className="hidden w-[76px] shrink-0 flex-col items-center bg-[#091827] py-5 text-slate-400 md:flex">
           <img src={LOGO} alt="E聊" className="mb-8 h-10 w-10 object-contain" />
           <div className="flex flex-1 flex-col gap-2">
@@ -1496,7 +1494,7 @@ function Messenger({
         </aside>
 
         <section
-          className={`${nav === "discover" ? "hidden" : mobileDetail && nav === "chats" ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-slate-200/80 bg-[#f7f9fa] md:w-[340px]`}
+          className={`echat-sidebar ${nav === "discover" ? "hidden" : mobileDetail && nav === "chats" ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-slate-200/80 bg-[#f7f9fa] md:w-[340px]`}
         >
           <header className="px-5 pb-4 pt-5">
             <div className="flex items-center justify-between">
@@ -1756,13 +1754,13 @@ function Messenger({
         </section>
 
         <section
-          className={`${nav === "discover" ? "flex" : mobileDetail && nav === "chats" ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col bg-[#f3f6f7]`}
+          className={`echat-chat-pane ${nav === "discover" ? "flex" : mobileDetail && nav === "chats" ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col bg-[#f3f6f7]`}
         >
           {nav === "discover" ? (
             <MomentsPanel user={user} />
           ) : selected ? (
             <>
-              <header className="relative z-40 flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6">
+              <header className="echat-chat-header relative z-40 flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6">
                 <button
                   onClick={() => setMobileDetail(false)}
                   className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100 md:hidden"
@@ -1873,7 +1871,7 @@ function Messenger({
                 </div>
               </header>
               {selected.type === "Group" && groupAnnouncement && (
-                <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm md:px-8">
+                <div className="echat-announcement sticky top-0 z-10 flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm md:px-8">
                   <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                     群公告
                   </span>
@@ -1946,7 +1944,7 @@ function Messenger({
                   )}
                 </div>
               </div>
-              <footer className="shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
+              <footer className="echat-composer shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
                 <div className="relative mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
                   <div className="flex items-center gap-1 px-1 pb-1">
                     <EmojiPicker disabled={busy} onSelect={sendEmoji} />
