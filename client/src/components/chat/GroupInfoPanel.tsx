@@ -226,12 +226,14 @@ export default function GroupInfoPanel({
     );
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/50 p-0 md:p-6">
-      <div className="echat-drawer-enter h-full w-full max-w-xl overflow-y-auto bg-[#f3f6f7] shadow-2xl md:rounded-3xl">
+    <div className="echat-drawer-shell fixed inset-0 z-50 flex h-dvh justify-end bg-slate-950/50 p-0 backdrop-blur-sm md:h-auto md:p-6">
+      <div className="echat-drawer-enter h-full min-h-0 w-full max-w-xl overflow-y-auto bg-[#f3f6f7] shadow-2xl md:max-h-[calc(100dvh-3rem)] md:rounded-3xl">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white/95 px-4 py-4 backdrop-blur">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-xl p-2 hover:bg-slate-100"
+            aria-label="返回聊天"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-teal-700"
           >
             <ChevronLeft size={20} />
           </button>
@@ -241,12 +243,6 @@ export default function GroupInfoPanel({
             </h2>
             <p className="text-xs text-slate-400">{info.name}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl p-2 hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
         </header>
         <section className="grid grid-cols-2 gap-3 bg-white p-4">
           <button

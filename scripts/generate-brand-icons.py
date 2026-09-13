@@ -2,13 +2,16 @@ from pathlib import Path
 from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
-source = Image.open(root / "design/echat-icon-a.png").convert("RGBA")
+source = Image.open(root / "design/generated-icons/echat-icon-256.png").convert("RGBA")
 
 def resized(size: int) -> Image.Image:
     return source.resize((size, size), Image.Resampling.LANCZOS)
 
 (root / "design/generated-icons").mkdir(parents=True, exist_ok=True)
 resized(256).save(root / "design/generated-icons/echat-icon-256.png")
+resized(1024).convert("RGB").save(
+    root / "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+)
 resized(192).save(root / "client/public/favicon.png")
 
 sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}

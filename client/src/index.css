@@ -154,6 +154,40 @@ button:active {
   box-shadow: 0 0 0 3px rgb(45 212 191 / 0.12);
 }
 
+.echat-drawer-shell {
+  padding-top: var(--echat-safe-top);
+  padding-bottom: var(--echat-safe-bottom);
+  padding-left: var(--echat-safe-left);
+  padding-right: var(--echat-safe-right);
+}
+
+.echat-drawer-shell > * {
+  min-height: 0;
+}
+
+.echat-auth-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.echat-auth-card::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(
+    circle at 100% 0%,
+    rgb(45 212 191 / 0.14),
+    transparent 38%
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.echat-chat-header {
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.04);
+}
+
 .admin-input {
   width: 100%;
   border: 1px solid rgb(226 232 240);

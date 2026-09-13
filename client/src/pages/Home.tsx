@@ -278,7 +278,7 @@ function AuthScreen({
             <img src={LOGO} alt="E聊" className="h-10 w-10 object-contain" />
             <span className="text-2xl font-semibold">E聊</span>
           </div>
-          <div className="rounded-[30px] border border-white/10 bg-white/[.07] p-6 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-8">
+          <div className="auth-card echat-auth-card rounded-[30px] border border-white/10 bg-white/[.07] p-6 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-8">
             <div className="mb-8">
               <div className="text-xs font-medium tracking-[.18em] text-teal-300">
                 WELCOME TO E聊
@@ -2452,27 +2452,27 @@ function UserProfileDialog({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 flex justify-end bg-slate-950/45 p-0 backdrop-blur-sm md:p-6"
+        className="echat-drawer-shell fixed inset-0 z-50 flex h-dvh justify-end bg-slate-950/45 p-0 backdrop-blur-sm md:h-auto md:p-6"
         role="dialog"
         aria-modal="true"
         aria-label="好友个人资料"
         onClick={() => !busy && onClose()}
       >
         <div
-          className="echat-drawer-enter h-full w-full max-w-sm overflow-y-auto rounded-l-3xl bg-white shadow-2xl md:rounded-3xl"
+          className="echat-drawer-enter h-full min-h-0 w-full max-w-sm overflow-y-auto rounded-none bg-white shadow-2xl md:max-h-[calc(100dvh-3rem)] md:rounded-3xl"
           onClick={event => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-800">个人资料</h2>
+          <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
             <button
               type="button"
-              aria-label="关闭个人资料"
+              aria-label="返回聊天"
               disabled={busy}
               onClick={onClose}
-              className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-teal-700 disabled:opacity-40"
             >
-              <X size={17} />
+              <ChevronLeft size={20} />
             </button>
+            <h2 className="text-base font-semibold text-slate-800">个人资料</h2>
           </div>
           <div className="px-6 py-7 text-center">
             <button
