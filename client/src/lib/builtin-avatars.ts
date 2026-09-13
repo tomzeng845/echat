@@ -1,36 +1,25 @@
-const palettes = [
-  ["#0f766e", "#5eead4", "#ccfbf1"],
-  ["#1d4ed8", "#93c5fd", "#dbeafe"],
-  ["#7e22ce", "#d8b4fe", "#f3e8ff"],
-  ["#be123c", "#fda4af", "#ffe4e6"],
-  ["#c2410c", "#fdba74", "#ffedd5"],
-  ["#047857", "#86efac", "#dcfce7"],
-  ["#4338ca", "#a5b4fc", "#e0e7ff"],
-  ["#a16207", "#fde047", "#fef9c3"],
-  ["#0369a1", "#7dd3fc", "#e0f2fe"],
-  ["#9f1239", "#f9a8d4", "#fce7f3"],
-  ["#166534", "#bef264", "#ecfccb"],
-  ["#6d28d9", "#c4b5fd", "#ede9fe"],
-  ["#155e75", "#67e8f9", "#cffafe"],
-  ["#9a3412", "#fb923c", "#ffedd5"],
-  ["#1e40af", "#60a5fa", "#dbeafe"],
-  ["#86198f", "#f0abfc", "#fae8ff"],
-  ["#365314", "#a3e635", "#ecfccb"],
-  ["#713f12", "#facc15", "#fef3c7"],
-  ["#115e59", "#2dd4bf", "#ccfbf1"],
-  ["#7f1d1d", "#f87171", "#fee2e2"],
-] as const;
-
-function makeAvatar(index: number, colors: readonly [string, string, string]) {
-  const angle = (index * 37) % 360;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(${angle} .5 .5)"><stop stop-color="${colors[0]}"/><stop offset="1" stop-color="${colors[1]}"/></linearGradient></defs><rect width="256" height="256" rx="72" fill="${colors[2]}"/><circle cx="128" cy="128" r="96" fill="url(#g)"/><circle cx="82" cy="94" r="22" fill="${colors[2]}" opacity=".9"/><circle cx="174" cy="94" r="22" fill="${colors[2]}" opacity=".9"/><path d="M70 164c18 38 98 38 116 0" fill="none" stroke="${colors[2]}" stroke-width="18" stroke-linecap="round"/><path d="M39 54c20-30 58-43 89-43M217 54c-20-30-58-43-89-43" fill="none" stroke="${colors[1]}" stroke-width="12" stroke-linecap="round" opacity=".75"/></svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-export const BUILTIN_AVATARS = palettes.map((colors, index) => ({
-  id: `builtin-${String(index + 1).padStart(2, "0")}`,
-  url: makeAvatar(index, colors),
-}));
+export const BUILTIN_AVATARS = [
+  ["builtin-01", "/manus-storage/pasted_file_C5eszb_20_3211b61e.jpg"],
+  ["builtin-02", "/manus-storage/pasted_file_a1V8KH_0_5a96aacb.jpg"],
+  ["builtin-03", "/manus-storage/pasted_file_clqjop_6_ea4b8958.jpg"],
+  ["builtin-04", "/manus-storage/pasted_file_mIv2iA_7_a31471f2.jpg"],
+  ["builtin-05", "/manus-storage/pasted_file_at9inA_8_5ca9474e.jpg"],
+  ["builtin-06", "/manus-storage/pasted_file_nz3n8A_9_1362cc07.jpg"],
+  ["builtin-07", "/manus-storage/pasted_file_OJVXjU_1_f52fd63b.jpg"],
+  ["builtin-08", "/manus-storage/pasted_file_RN2rju_10_d2c5ebd1.jpg"],
+  ["builtin-09", "/manus-storage/pasted_file_3LCXLJ_2_7a54115f.jpg"],
+  ["builtin-10", "/manus-storage/pasted_file_i0sJkg_3_674693af.jpg"],
+  ["builtin-11", "/manus-storage/pasted_file_htjVhn_11_bb528f2f.jpg"],
+  ["builtin-12", "/manus-storage/pasted_file_HlPMPM_4_74993878.jpg"],
+  ["builtin-13", "/manus-storage/pasted_file_wd5zfk_12_655a7c53.jpg"],
+  ["builtin-14", "/manus-storage/pasted_file_lBqR4z_13_31d5d5cc.jpg"],
+  ["builtin-15", "/manus-storage/pasted_file_tlrDQm_5_d86c9c0a.jpg"],
+  ["builtin-16", "/manus-storage/pasted_file_IP3QiH_14_526f12da.jpg"],
+  ["builtin-17", "/manus-storage/pasted_file_jVjFgN_15_13c8b493.jpg"],
+  ["builtin-18", "/manus-storage/pasted_file_qxM2OL_16_ae854521.jpg"],
+  ["builtin-19", "/manus-storage/pasted_file_NVqApD_17_20621341.jpg"],
+  ["builtin-20", "/manus-storage/pasted_file_X1n1MF_18_19725bff.jpg"],
+].map(([id, url]) => ({ id, url }));
 
 export const DEFAULT_BUILTIN_AVATAR = BUILTIN_AVATARS[0];
 

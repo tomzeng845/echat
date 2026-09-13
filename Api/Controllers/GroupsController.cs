@@ -39,7 +39,7 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
         if (group.Members.Any(x => x.UserId == request.UserId && x.LeftAtSequence is null)) return Conflict(new { error = "用户已经在群内" });
         if (await repository.GetUserByIdAsync(request.UserId, ct) is null) return NotFound(new { error = "用户不存在" });
-        group.Members.Add(new ConversationMember { UserId = request.UserId, Role = request.Role == MemberRole.Admin ? MemberRole.Admin : MemberRole.Member });
+        group.Members.Add(new ConversationMember { UserId = request.UserId, Role = MemberRole.Member });
         await repository.UpdateConversationAsync(group, ct); await Notify(group, "member-added", ct); return NoContent();
     }
 
@@ -81,7 +81,7 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
         if (!group.JoinRequests.Remove(userId)) return NotFound(new { error = "入群申请不存在" });
-        if (request.Approve && !group.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null)) group.Members.Add(new ConversationMember { UserId = userId });
+        if (request.Approve && !group.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null)) group.Members.Add(new ConversationMember { UserId = userId, Role = MemberRole.Member });
         await repository.UpdateConversationAsync(group, ct); await Notify(group, request.Approve ? "join-approved" : "join-rejected", ct); return NoContent();
     }
 

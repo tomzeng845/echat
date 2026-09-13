@@ -33,11 +33,15 @@ describe("group management", () => {
     expect(controller).toContain("transfer-owner");
     expect(controller).toContain("join-requests");
     expect(controller).toContain("RequireJoinApproval");
+    expect(controller).toContain("Role = MemberRole.Owner");
+    expect(controller).toContain("Role = MemberRole.Member");
     expect(qr).toContain("echat://group/");
     expect(qr).toContain("PreviewGroupQr");
     expect(qr).toContain("JoinGroupQr");
     expect(panel).toContain("生成群二维码");
     expect(panel).toContain("转让群主");
+    expect(panel).toContain("关闭当前群公告");
+    expect(panel).toContain('announcement: ""');
     expect(panel).toContain("查找聊天内容");
     expect(home).toContain("群聊信息与群管理");
     expect(home).toContain("showMentionList");

@@ -71,7 +71,7 @@ export default function GroupInfoPanel({
     void load();
   }, [conversationId]);
   async function save(kind: string) {
-    if (!value.trim()) return;
+    if (kind !== "announcement" && !value.trim()) return;
     await api(`/api/groups/${conversationId}/${kind}`, {
       method: "PUT",
       body: JSON.stringify(
@@ -83,6 +83,14 @@ export default function GroupInfoPanel({
       ),
     });
     setEditing(null);
+    await load();
+    onChanged();
+  }
+  async function clearAnnouncement() {
+    await api(`/api/groups/${conversationId}/announcement`, {
+      method: "PUT",
+      body: JSON.stringify({ announcement: "" }),
+    });
     await load();
     onChanged();
   }
@@ -269,6 +277,15 @@ export default function GroupInfoPanel({
                 setValue(info.announcement);
               }}
             />
+            {info.announcement && (
+              <button
+                type="button"
+                onClick={() => void clearAnnouncement()}
+                className="w-full rounded-xl bg-amber-50 px-4 py-2.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-100"
+              >
+                关闭当前群公告
+              </button>
+            )}
             <GroupRow
               label="群管理"
               value="成员、管理员、进群审核"

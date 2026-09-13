@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("built-in avatars", () => {
-  it("provides twenty local avatars and uses the first one as fallback", () => {
+  it("provides twenty uploaded avatars and uses the first one as fallback", () => {
     const catalog = readFileSync(
       new URL("../client/src/lib/builtin-avatars.ts", import.meta.url),
       "utf8"
@@ -20,9 +20,10 @@ describe("built-in avatars", () => {
       "utf8"
     );
 
-    expect((catalog.match(/id: `builtin-/g) || []).length).toBe(1);
+    expect((catalog.match(/\["builtin-\d+",/g) || []).length).toBe(20);
     expect(catalog).toContain("BUILTIN_AVATARS");
     expect(catalog).toContain("DEFAULT_BUILTIN_AVATAR");
+    expect(catalog).toContain("/manus-storage/");
     expect(home).toContain("resolveBuiltinAvatar(src)");
     expect(home).toContain("avatarName");
     expect(profile).toContain("选择内置头像");
