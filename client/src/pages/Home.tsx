@@ -54,6 +54,7 @@ import {
   Bell,
   Check,
   ChevronLeft,
+  ChevronRight,
   CircleUserRound,
   Compass,
   FileText,
@@ -1713,7 +1714,7 @@ function Messenger({
             <MomentsPanel user={user} />
           ) : selected ? (
             <>
-              <header className="flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6">
+              <header className="relative z-40 flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:px-6">
                 <button
                   onClick={() => setMobileDetail(false)}
                   className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100 md:hidden"
@@ -1766,7 +1767,16 @@ function Messenger({
                     <HeaderAction
                       icon={MoreHorizontal}
                       label="更多"
-                      onClick={() => setShowConversationMenu(value => !value)}
+                      onClick={() => {
+                        setShowConversationMenu(false);
+                        if (selected.type === "Group") {
+                          setShowGroupInfo(true);
+                        } else if (selectedContact) {
+                          setProfileUser(selectedContact.user);
+                        } else {
+                          toast.info("好友资料正在同步，请稍后重试");
+                        }
+                      }}
                     />
                     {showConversationMenu && (
                       <div className="absolute right-0 top-12 z-30 w-44 overflow-hidden rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-slate-200">
@@ -2029,6 +2039,8 @@ function Messenger({
       {profileUser && (
         <UserProfileDialog
           user={profileUser}
+          messages={messages}
+          onClear={clearChatHistory}
           blocked={selectedContact?.status === "Blocked"}
           onClose={() => setProfileUser(null)}
           onDelete={() => updateFriendRelation(profileUser.id, "delete")}
@@ -2333,6 +2345,8 @@ function EmptyState({
 }
 function UserProfileDialog({
   user,
+  messages,
+  onClear,
   blocked = false,
   onClose,
   onDelete,
@@ -2340,6 +2354,8 @@ function UserProfileDialog({
   onUnblock,
 }: {
   user: User;
+  messages: Array<{ id: string; plaintext: string; sentAtUtc: string }>;
+  onClear: () => Promise<void>;
   blocked?: boolean;
   onClose: () => void;
   onDelete: () => Promise<void>;
@@ -2351,7 +2367,14 @@ function UserProfileDialog({
   >(null);
   const [busy, setBusy] = useState(false);
   const [avatarExpanded, setAvatarExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const avatarUrl = useAuthenticatedImage(user.avatarUrl);
+  const searchResults = searchQuery.trim()
+    ? messages.filter(item =>
+        item.plaintext.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      )
+    : [];
 
   async function confirm() {
     if (!confirmAction || busy) return;
@@ -2427,6 +2450,55 @@ function UserProfileDialog({
                   {user.status === "Active" ? "正常" : user.status}
                 </p>
               </div>
+            </div>
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white text-left">
+              <button
+                type="button"
+                onClick={() => setSearchOpen(value => !value)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Search size={16} className="text-slate-400" />
+                <span className="flex-1">查找聊天内容</span>
+                <ChevronRight size={16} className="text-slate-300" />
+              </button>
+              {searchOpen && (
+                <div className="border-t border-slate-100 p-3">
+                  <input
+                    autoFocus
+                    value={searchQuery}
+                    onChange={event => setSearchQuery(event.target.value)}
+                    placeholder="输入关键词"
+                    className="w-full rounded-xl bg-slate-100 px-3 py-2 text-sm outline-none ring-teal-300 focus:ring-2"
+                  />
+                  {searchQuery.trim() && (
+                    <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                      {searchResults.length ? (
+                        searchResults.map(item => (
+                          <p
+                            key={item.id}
+                            className="truncate rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600"
+                          >
+                            {item.plaintext}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="px-2 py-2 text-xs text-slate-400">
+                          没有找到相关聊天内容
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => void onClear()}
+                className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-sm text-rose-600 hover:bg-rose-50"
+              >
+                <Trash2 size={16} />
+                <span className="flex-1 text-left">清空聊天记录</span>
+                <ChevronRight size={16} className="text-rose-200" />
+              </button>
             </div>
             {confirmAction ? (
               <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-left ring-1 ring-rose-100">

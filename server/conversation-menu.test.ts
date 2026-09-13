@@ -11,5 +11,10 @@ describe("conversation menu", () => {
     expect(home).not.toContain("会话设置即将开放");
     expect(home).toContain("清空聊天记录");
     expect(home).toContain("好友资料");
+    expect(home).toContain("setShowGroupInfo(true)");
+    expect(home).toContain("messages={messages}");
+    expect(home).toContain("查找聊天内容");
+    expect(home).toContain("onClear={clearChatHistory}");
+    expect(home).toContain("relative z-40");
   });
 });
