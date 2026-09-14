@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import {
   api,
+  ApiError,
   uploadMedia,
   type CallRecord,
   type DeviceSession,
@@ -36,6 +37,7 @@ import {
   openNativeBackgroundCallSettings,
   registerNativePush,
   requestNativeBackgroundCallExemption,
+  uploadNativeRuntimeLog,
   type NativeBackgroundCallSupport,
   unregisterNativePush,
   type NativePushState,
@@ -48,7 +50,6 @@ import {
   resolveBuiltinAvatar,
 } from "@/lib/builtin-avatars";
 import {
-  exportDiagnosticLog,
   info as logInfo,
   snapshot as snapshotDiagnosticLog,
   type DiagnosticEntry,
@@ -271,14 +272,26 @@ export default function P1ProfilePanel({
   }
 
   async function exportRuntimeLogs() {
+    const toastId = toast.loading("正在上传运行日志，请稍候…");
     try {
       logInfo("settings", "User requested runtime log export");
-      const nativeEntries = await getNativeRuntimeLogs();
-      await exportDiagnosticLog(nativeEntries);
-      toast.success("运行日志已导出，请将文件发送给技术支持");
+      const result = await uploadNativeRuntimeLog();
+      toast.success(`${result.message}，编号：${result.uploadId}`, {
+        id: toastId,
+        duration: 8000,
+      });
     } catch (cause) {
       logInfo("settings", "Runtime log export failed", cause);
-      toast.error("运行日志导出失败，请稍后重试");
+      const detail =
+        cause instanceof ApiError
+          ? `HTTP ${cause.status}：${cause.message}`
+          : cause instanceof Error
+            ? cause.message
+            : "未知错误";
+      toast.error(`日志上传失败：${detail}`, {
+        id: toastId,
+        duration: 10000,
+      });
     }
   }
 
