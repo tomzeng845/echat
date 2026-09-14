@@ -54,7 +54,7 @@ public class CallListenerService extends Service {
 
     private static final String PREFS = "echat_call_listener";
     private static final String LISTENER_CHANNEL = "call-listener-v1";
-    private static final String CALL_CHANNEL = "calls-v3";
+    private static final String CALL_CHANNEL = "calls-v4";
     private static final int LISTENER_NOTIFICATION_ID = 7300;
     private static final int CALL_NOTIFICATION_BASE = 7400;
     private static final int RESTART_REQUEST_ID = 7301;
@@ -71,6 +71,7 @@ public class CallListenerService extends Service {
     private boolean stopping;
     private boolean explicitStopRequested;
     private IncomingCallPayload activeCall;
+    private String notificationPostedCallId;
     private PowerManager.WakeLock wakeLock;
 
     public static void start(Context context, String hubUrl, String token, String userId) {
@@ -190,8 +191,7 @@ public class CallListenerService extends Service {
                 "active", appActive,
                 "hasActiveCall", activeCall != null,
                 "connectionState", hubConnection == null ? "none" : hubConnection.getConnectionState().name());
-            if (appActive) stopBackgroundAlert();
-            else if (activeCall != null) showIncomingCall(activeCall);
+            if (!appActive && activeCall != null) showIncomingCall(activeCall);
             return START_STICKY;
         }
         if (ACTION_CLEAR.equals(action)) {
@@ -322,6 +322,13 @@ public class CallListenerService extends Service {
     }
 
     private void showIncomingCall(IncomingCallPayload invite) {
+        if (invite == null || invite.callId == null || invite.callId.isBlank()) return;
+        if (invite.callId.equals(notificationPostedCallId)) {
+            EChatNativeLog.info(this, "android-call-notification", "Duplicate notification suppressed",
+                "callIdSuffix", suffix(invite.callId),
+                "appActive", appActive);
+            return;
+        }
         createChannels();
         Intent open = new Intent(this, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -367,6 +374,7 @@ public class CallListenerService extends Service {
             .build();
         try {
             getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
+            notificationPostedCallId = invite.callId;
             EChatNativeLog.info(this, "android-call-notification", "Incoming call notification posted",
                 "mode", invite.mode,
                 "callIdSuffix", suffix(invite.callId),
@@ -391,6 +399,7 @@ public class CallListenerService extends Service {
         getSystemService(NotificationManager.class).cancel(stableNotificationId(callId));
         if (activeCall != null && callId.equals(activeCall.callId)) {
             activeCall = null;
+            notificationPostedCallId = null;
             clearPendingCall();
             stopRingtone();
         } else if (callId.equals(preferences().getString(EXTRA_CALL_ID, null))) {
@@ -430,7 +439,10 @@ public class CallListenerService extends Service {
 
     private void stopBackgroundAlert() {
         stopRingtone();
-        if (activeCall != null) getSystemService(NotificationManager.class).cancel(stableNotificationId(activeCall.callId));
+        if (activeCall != null) {
+            getSystemService(NotificationManager.class).cancel(stableNotificationId(activeCall.callId));
+            notificationPostedCallId = null;
+        }
     }
 
     private void startRingtone() {
