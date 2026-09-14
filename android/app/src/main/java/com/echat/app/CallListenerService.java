@@ -186,11 +186,19 @@ public class CallListenerService extends Service {
         if (ACTION_APP_STATE.equals(action)) {
             appActive = intent.getBooleanExtra(EXTRA_ACTIVE, true);
             preferences().edit().putBoolean(EXTRA_ACTIVE, appActive).apply();
+            EChatNativeLog.info(this, "android-call-listener-state", "App state changed",
+                "active", appActive,
+                "hasActiveCall", activeCall != null,
+                "connectionState", hubConnection == null ? "none" : hubConnection.getConnectionState().name());
             if (appActive) stopBackgroundAlert();
             else if (activeCall != null) showIncomingCall(activeCall);
             return START_STICKY;
         }
         if (ACTION_CLEAR.equals(action)) {
+            EChatNativeLog.info(this, "android-call-listener-state", "Clear call action received",
+                "hasCallId", intent.hasExtra(EXTRA_CALL_ID),
+                "hasActiveCall", activeCall != null,
+                "reason", "answering");
             clearCall(intent.getStringExtra(EXTRA_CALL_ID), "answering");
             return START_STICKY;
         }
@@ -357,13 +365,19 @@ public class CallListenerService extends Service {
             .setVibrate(new long[] { 0, 500, 300, 500 })
             .setSound(soundUri)
             .build();
-        getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
-        EChatNativeLog.info(this, "android-call-notification", "Incoming call notification posted",
-            "mode", invite.mode,
-            "callIdSuffix", suffix(invite.callId),
-            "notificationId", stableNotificationId(invite.callId),
-            "appActive", appActive,
-            "notificationsEnabled", notificationsEnabled());
+        try {
+            getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
+            EChatNativeLog.info(this, "android-call-notification", "Incoming call notification posted",
+                "mode", invite.mode,
+                "callIdSuffix", suffix(invite.callId),
+                "notificationId", stableNotificationId(invite.callId),
+                "appActive", appActive,
+                "notificationsEnabled", notificationsEnabled());
+        } catch (Throwable error) {
+            EChatNativeLog.error(this, "android-call-notification", "Incoming call notification post failed", error,
+                "callIdSuffix", suffix(invite.callId),
+                "notificationsEnabled", notificationsEnabled());
+        }
         startRingtone();
     }
 

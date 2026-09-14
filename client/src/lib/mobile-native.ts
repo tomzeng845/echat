@@ -145,6 +145,7 @@ type MediaPermissionsPlugin = {
   }>;
   cancelVoiceRecording(): Promise<void>;
 };
+type MediaPermissionState = { camera: boolean; microphone: boolean };
 
 const MediaPermissions =
   registerPlugin<MediaPermissionsPlugin>("MediaPermissions");
@@ -841,6 +842,12 @@ export async function ensureNativeMediaPermissions(options: {
   microphone?: boolean;
 }) {
   if (!isNativeMobile()) return;
+  diagnosticInfo("android-media-permission", "Permission request started", {
+    cameraRequested: Boolean(options.camera),
+    microphoneRequested: Boolean(options.microphone),
+    platform: Capacitor.getPlatform(),
+    visibility: document.visibilityState,
+  });
   if (isNativeAndroid()) {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       if (document.visibilityState === "visible") break;
@@ -851,10 +858,23 @@ export async function ensureNativeMediaPermissions(options: {
     // drop requestPermissions() during the transition from the lock screen.
     await new Promise(resolve => setTimeout(resolve, 700));
   }
-  let result = await MediaPermissions.requestPermissions({
-    camera: Boolean(options.camera),
-    microphone: Boolean(options.microphone),
-  });
+  let result: MediaPermissionState;
+  try {
+    result = await MediaPermissions.requestPermissions({
+      camera: Boolean(options.camera),
+      microphone: Boolean(options.microphone),
+    });
+    diagnosticInfo(
+      "android-media-permission",
+      "Permission result received",
+      result
+    );
+  } catch (cause) {
+    diagnosticError("android-media-permission", "Permission request failed", {
+      error: cause,
+    });
+    throw cause;
+  }
   if (
     isNativeAndroid() &&
     ((options.camera && !result.camera) ||
@@ -865,11 +885,29 @@ export async function ensureNativeMediaPermissions(options: {
       camera: Boolean(options.camera),
       microphone: Boolean(options.microphone),
     });
+    diagnosticInfo(
+      "android-media-permission",
+      "Permission retry result",
+      result
+    );
   }
-  if (options.camera && !result.camera)
+  if (options.camera && !result.camera) {
+    diagnosticError(
+      "android-media-permission",
+      "Camera permission denied",
+      result
+    );
     throw new DOMException("Camera permission denied", "NotAllowedError");
-  if (options.microphone && !result.microphone)
+  }
+  if (options.microphone && !result.microphone) {
+    diagnosticError(
+      "android-media-permission",
+      "Microphone permission denied",
+      result
+    );
     throw new DOMException("Microphone permission denied", "NotAllowedError");
+  }
+  diagnosticInfo("android-media-permission", "Media permissions ready", result);
 }
 
 function decodeBase64Blob(value: string, mimeType: string) {
