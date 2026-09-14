@@ -2783,13 +2783,6 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
     }
   }
   async function enrollTotp(accountToEnroll: string) {
-    if (
-      !window.confirm(
-        `确认轮换 @${accountToEnroll} 的动态密码密钥吗？确认后旧密钥会立即失效，取消则不会修改。`
-      )
-    ) {
-      return;
-    }
     try {
       const result = await api<{ secret: string; provisioningUri: string }>(
         `/api/admin/operators/${encodeURIComponent(accountToEnroll)}/totp/enroll`,

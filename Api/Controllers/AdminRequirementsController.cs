@@ -15,7 +15,8 @@ public sealed class AdminRequirementsController(
     TotpService totp,
     AdminSecretProtector protector,
     IHubContext<ChatHub> hub,
-    GeoIpService geoIp) : ControllerBase
+    GeoIpService geoIp,
+    IConfiguration configuration) : ControllerBase
 {
     private static readonly string[] PushProviders = ["xiaomi", "huawei", "honor", "oppo", "vivo"];
 
@@ -113,7 +114,12 @@ public sealed class AdminRequirementsController(
     public async Task<ActionResult> SearchOfflineLogs([FromQuery] AdminLoginLogQuery query, CancellationToken ct)
     {
         var records = await repository.GetAdminRecordsAsync("account.offline-logs", 10000, ct);
-        IEnumerable<AdminModuleRecord> filtered = records;
+        var admins = await repository.GetUsersAsync(null, null, 10000, ct);
+        var adminIds = admins.Where(x => x.Role != UserRole.User).Select(x => x.Id).ToHashSet();
+        var adminAccounts = admins.Where(x => x.Role != UserRole.User).Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        IEnumerable<AdminModuleRecord> filtered = records.Where(x =>
+            !adminIds.Contains(x.Data.GetValueOrDefault("userId", ""))
+            && !adminAccounts.Contains(x.Data.GetValueOrDefault("account", "")));
         if (!string.IsNullOrWhiteSpace(query.Account)) filtered = filtered.Where(x => x.Data.GetValueOrDefault("account", "").Contains(query.Account, StringComparison.OrdinalIgnoreCase));
         if (query.FromUtc.HasValue) filtered = filtered.Where(x => x.CreatedAtUtc >= query.FromUtc.Value);
         if (query.ToUtc.HasValue) filtered = filtered.Where(x => x.CreatedAtUtc <= query.ToUtc.Value);
@@ -123,7 +129,13 @@ public sealed class AdminRequirementsController(
     [HttpGet("login-failure-ips")]
     public async Task<ActionResult> LoginFailureIps([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {
-        var failures = (await repository.GetAdminRecordsAsync("account.login-logs", 10000, ct)).Where(x => x.Data.GetValueOrDefault("result") != "success");
+        var admins = await repository.GetUsersAsync(null, null, 10000, ct);
+        var adminIds = admins.Where(x => x.Role != UserRole.User).Select(x => x.Id).ToHashSet();
+        var adminAccounts = admins.Where(x => x.Role != UserRole.User).Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var failures = (await repository.GetAdminRecordsAsync("account.login-logs", 10000, ct)).Where(x =>
+            x.Data.GetValueOrDefault("result") != "success"
+            && !adminIds.Contains(x.Data.GetValueOrDefault("userId", ""))
+            && !adminAccounts.Contains(x.Data.GetValueOrDefault("account", "")));
         var decisions = (await repository.GetAdminRecordsAsync("account.login-ip-decisions", 1000, ct)).ToDictionary(x => x.Data.GetValueOrDefault("ip", ""), StringComparer.OrdinalIgnoreCase);
         var items = failures.GroupBy(x => x.Data.GetValueOrDefault("ip", "unknown"))
             .Select(g => new { ip = g.Key, count = g.Count(), accounts = string.Join(", ", g.Select(x => x.Data.GetValueOrDefault("account", "未知")).Distinct().Take(20)), lastAtUtc = g.Max(x => x.CreatedAtUtc), lastReason = g.OrderByDescending(x => x.CreatedAtUtc).First().Data.GetValueOrDefault("reason", "失败"), status = decisions.GetValueOrDefault(g.Key)?.Status ?? "Observed", note = decisions.GetValueOrDefault(g.Key)?.Data.GetValueOrDefault("note", "") ?? "" })
@@ -316,17 +328,58 @@ public sealed class AdminRequirementsController(
     public async Task<ActionResult> EnrollTotp(string account, CancellationToken ct)
     {
         var user = await UserAsync(account, ct); if (user is null || user.Role == UserRole.User) return NotFound(new { error = "管理账号不存在" });
-        var secret = TotpService.GenerateSecret(); var record = new AdminModuleRecord { Id = $"totp:{user.Id}", Module = "system.admin-totp", Name = user.Account, Status = "Pending", Data = new() { ["userId"] = user.Id, ["secretCiphertext"] = protector.Protect(secret) } };
-        await repository.UpsertAdminRecordAsync(record, ct); await AuditAsync("operator.totp.enroll", "user", user.Id, "生成待确认密钥", ct);
-        return Ok(new { secret, provisioningUri = totp.ProvisioningUri(user.Account, secret), status = record.Status });
+        var secret = TotpService.GenerateSecret();
+        var requireConfirmation = configuration.GetValue("Security:RequireAdminTotpRotationConfirmation", true)
+            && !string.Equals(Environment.GetEnvironmentVariable("ADMIN_SKIP_TOTP_ROTATION_CONFIRMATION"), "true", StringComparison.OrdinalIgnoreCase);
+        var record = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct)
+            ?? new AdminModuleRecord { Id = $"totp:{user.Id}", Module = "system.admin-totp", Name = user.Account, Data = new() { ["userId"] = user.Id } };
+        var hasActiveSecret = record.Status == "Active" && record.Data.ContainsKey("secretCiphertext");
+        if (requireConfirmation && hasActiveSecret)
+        {
+            record.Data["pendingSecretCiphertext"] = protector.Protect(secret);
+            record.Data["pendingProvisionedAtUtc"] = DateTime.UtcNow.ToString("O");
+        }
+        else
+        {
+            record.Status = requireConfirmation ? "Pending" : "Active";
+            record.Data["secretCiphertext"] = protector.Protect(secret);
+            record.Data.Remove("pendingSecretCiphertext");
+            record.Data.Remove("pendingProvisionedAtUtc");
+            if (!requireConfirmation) record.Data["confirmedAtUtc"] = DateTime.UtcNow.ToString("O");
+        }
+        await repository.UpsertAdminRecordAsync(record, ct); await AuditAsync("operator.totp.enroll", "user", user.Id, requireConfirmation ? "生成待确认密钥" : "轮换密钥并直接启用", ct);
+        return Ok(new { secret, provisioningUri = totp.ProvisioningUri(user.Account, secret), status = record.Status, requiresConfirmation = requireConfirmation });
     }
 
     [HttpPost("operators/{account}/totp/confirm")]
     public async Task<ActionResult> ConfirmTotp(string account, AdminTotpConfirmRequest request, CancellationToken ct)
     {
         var user = await UserAsync(account, ct); if (user is null) return NotFound(new { error = "管理账号不存在" }); var record = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct);
-        if (record is null || !record.Data.TryGetValue("secretCiphertext", out var cipher)) return NotFound(new { error = "请先生成密钥" });
+        if (record is null) return NotFound(new { error = "请先生成密钥" });
+        var requireConfirmation = configuration.GetValue("Security:RequireAdminTotpRotationConfirmation", true)
+            && !string.Equals(Environment.GetEnvironmentVariable("ADMIN_SKIP_TOTP_ROTATION_CONFIRMATION"), "true", StringComparison.OrdinalIgnoreCase);
+        if (!requireConfirmation)
+        {
+            var directCipher = record.Data.GetValueOrDefault("pendingSecretCiphertext") ?? record.Data.GetValueOrDefault("secretCiphertext");
+            if (string.IsNullOrWhiteSpace(directCipher)) return NotFound(new { error = "请先生成密钥" });
+            record.Data["secretCiphertext"] = directCipher;
+            record.Data.Remove("pendingSecretCiphertext");
+            record.Data.Remove("pendingProvisionedAtUtc");
+            record.Status = "Active";
+            record.Data["confirmedAtUtc"] = DateTime.UtcNow.ToString("O");
+            await repository.UpsertAdminRecordAsync(record, ct);
+            return Ok(new { configured = true, confirmationRequired = false });
+        }
+        var hasPending = record.Data.TryGetValue("pendingSecretCiphertext", out var pendingCipher);
+        var cipher = hasPending ? pendingCipher : record.Data.GetValueOrDefault("secretCiphertext");
+        if (string.IsNullOrWhiteSpace(cipher)) return NotFound(new { error = "请先生成密钥" });
         if (!totp.VerifySecret(protector.Unprotect(cipher), request.Code)) return Unauthorized(new { error = "动态验证码不正确" });
+        if (hasPending)
+        {
+            record.Data["secretCiphertext"] = cipher;
+            record.Data.Remove("pendingSecretCiphertext");
+            record.Data.Remove("pendingProvisionedAtUtc");
+        }
         record.Status = "Active"; record.Data["confirmedAtUtc"] = DateTime.UtcNow.ToString("O"); await repository.UpsertAdminRecordAsync(record, ct); await AuditAsync("operator.totp.confirm", "user", user.Id, "启用 Google Authenticator", ct); return Ok(new { configured = true });
     }
 
@@ -334,7 +387,7 @@ public sealed class AdminRequirementsController(
     public async Task<ActionResult> DisableTotp(string account, CancellationToken ct)
     {
         var user = await UserAsync(account, ct); if (user is null) return NotFound(new { error = "管理账号不存在" }); var record = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct); if (record is null) return NoContent();
-        record.Status = "Disabled"; record.Data.Remove("secretCiphertext"); await repository.UpsertAdminRecordAsync(record, ct); await AuditAsync("operator.totp.disable", "user", user.Id, "停用 Google Authenticator", ct); return NoContent();
+        record.Status = "Disabled"; record.Data.Remove("secretCiphertext"); record.Data.Remove("pendingSecretCiphertext"); record.Data.Remove("pendingProvisionedAtUtc"); await repository.UpsertAdminRecordAsync(record, ct); await AuditAsync("operator.totp.disable", "user", user.Id, "停用 Google Authenticator", ct); return NoContent();
     }
 
     [HttpGet("push-providers")]

@@ -1738,6 +1738,7 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
     account: string;
     secret: string;
     provisioningUri: string;
+    requiresConfirmation: boolean;
   }>();
   const [code, setCode] = useState("");
   async function create() {
@@ -1768,20 +1769,31 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
     reload();
   }
   async function startTotp(account: string) {
-    const result = await api<{ secret: string; provisioningUri: string }>(
-      `/api/admin/operators/${account}/totp/enroll`,
-      { method: "POST" }
-    );
+    const result = await api<{
+      secret: string;
+      provisioningUri: string;
+      requiresConfirmation: boolean;
+    }>(`/api/admin/operators/${account}/totp/enroll`, { method: "POST" });
+    setCode("");
     setEnroll({ account, ...result });
   }
   async function confirm() {
     if (!enroll) return;
-    await api(`/api/admin/operators/${enroll.account}/totp/confirm`, {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    });
-    toast.success("Google Authenticator 已启用");
-    setEnroll(undefined);
+    try {
+      await api(`/api/admin/operators/${enroll.account}/totp/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ code: code.replace(/\D/g, "").slice(0, 6) }),
+      });
+      toast.success("Google Authenticator 已启用");
+      setCode("");
+      setEnroll(undefined);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "动态密码错误或已过期，请检查验证器时间后重试"
+      );
+    }
   }
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
@@ -1890,21 +1902,32 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
           <p className="mt-3 break-all rounded-xl bg-slate-50 p-3 font-mono text-xs">
             {enroll.secret}
           </p>
-          <input
-            value={code}
-            onChange={e =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-            }
-            placeholder="输入应用中的 6 位验证码确认"
-            className="admin-input mt-3"
-          />
-          <button
-            onClick={confirm}
-            disabled={code.length !== 6}
-            className="admin-primary mt-3"
-          >
-            确认启用
-          </button>
+          {enroll.requiresConfirmation ? (
+            <>
+              <input
+                value={code}
+                onChange={e =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                placeholder="输入应用中的 6 位验证码确认"
+                className="admin-input mt-3"
+              />
+              <button
+                onClick={confirm}
+                disabled={code.length !== 6}
+                className="admin-primary mt-3"
+              >
+                确认启用
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEnroll(undefined)}
+              className="admin-primary mt-3"
+            >
+              已直接启用，关闭
+            </button>
+          )}
         </Modal>
       )}
     </div>
