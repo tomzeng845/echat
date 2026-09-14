@@ -74,7 +74,9 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
 
         if (user.Role == UserRole.Admin)
         {
-            if (!RuntimeMode.IsEphemeralPreview(configuration, environment))
+            var adminTotpDisabled = configuration.GetValue<bool>("Security:DisableAdminTotp")
+                || string.Equals(Environment.GetEnvironmentVariable("ADMIN_DISABLE_TOTP"), "true", StringComparison.OrdinalIgnoreCase);
+            if (!adminTotpDisabled && !RuntimeMode.IsEphemeralPreview(configuration, environment))
             {
                 var credential = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct);
                 if (credential?.Status != "Active" && !totp.IsConfigured) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("管理员动态验证码服务尚未配置"));

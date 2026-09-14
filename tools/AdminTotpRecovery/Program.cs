@@ -23,7 +23,12 @@ Console.WriteLine($"目标账号：{string.Join(", ", args)}");
 Console.Write("确认生成新动态密码并覆盖这几个账号的 TOTP 密钥？输入 YES 继续：");
 if (!string.Equals(Console.ReadLine(), "YES", StringComparison.Ordinal)) { Console.WriteLine("已取消，没有修改任何数据。"); return; }
 
-var client = new MongoClient(uri);
+var directConnection = Environment.GetEnvironmentVariable("MONGODB_DIRECT_CONNECTION");
+if (string.IsNullOrWhiteSpace(directConnection)) directConnection = "true";
+var settings = MongoClientSettings.FromConnectionString(uri);
+if (bool.TryParse(directConnection, out var useDirectConnection))
+    settings.DirectConnection = useDirectConnection;
+var client = new MongoClient(settings);
 var db = client.GetDatabase(databaseName);
 var users = db.GetCollection<BsonDocument>("users");
 var records = db.GetCollection<BsonDocument>("adminModuleRecords");
@@ -46,7 +51,6 @@ foreach (var rawAccount in args)
     var record = new BsonDocument
     {
         ["_id"] = $"totp:{id}",
-        ["Id"] = $"totp:{id}",
         ["Module"] = "system.admin-totp",
         ["Name"] = account,
         ["Status"] = "Active",
