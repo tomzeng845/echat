@@ -327,12 +327,22 @@ public class CallListenerService extends Service {
         );
         String callerName = invite.callerName == null || invite.callerName.isBlank() ? "E聊来电" : invite.callerName;
         String body = "video".equals(invite.mode) ? "邀请你进行视频通话" : "邀请你进行语音通话";
+        int soundId = getResources().getIdentifier("echat_call", "raw", getPackageName());
+        Uri soundUri = soundId == 0 ? null : Uri.parse("android.resource://" + getPackageName() + "/" + soundId);
         Notification notification = new NotificationCompat.Builder(this, CALL_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_echat)
             .setColor(0xFF12D6B0)
             .setContentTitle(callerName)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setPublicVersion(new NotificationCompat.Builder(this, CALL_CHANNEL)
+                .setSmallIcon(R.drawable.ic_stat_echat)
+                .setContentTitle(callerName)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build())
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis())
             .setContentIntent(contentIntent)
@@ -345,6 +355,7 @@ public class CallListenerService extends Service {
             .setDefaults(Notification.DEFAULT_ALL)
             .setTimeoutAfter(60_000L)
             .setVibrate(new long[] { 0, 500, 300, 500 })
+            .setSound(soundUri)
             .build();
         getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
         EChatNativeLog.info(this, "android-call-notification", "Incoming call notification posted",

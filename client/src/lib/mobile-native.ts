@@ -416,7 +416,7 @@ async function registerLocalNotificationFallback() {
       sound: "echat_message.wav",
     }),
     LocalNotifications.createChannel({
-      id: "calls-v2",
+      id: "calls-v3",
       name: "音视频通话",
       description: "E聊语音与视频来电",
       importance: 5,
@@ -758,11 +758,14 @@ export async function ensureNativeMediaPermissions(options: {
 }) {
   if (!isNativeMobile()) return;
   if (isNativeAndroid()) {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       if (document.visibilityState === "visible") break;
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
-    await new Promise(resolve => setTimeout(resolve, 180));
+    // A notification tap can make the WebView visible before the Activity has
+    // reached RESUMED. Delay the first request so Android does not silently
+    // drop requestPermissions() during the transition from the lock screen.
+    await new Promise(resolve => setTimeout(resolve, 700));
   }
   let result = await MediaPermissions.requestPermissions({
     camera: Boolean(options.camera),
@@ -773,7 +776,7 @@ export async function ensureNativeMediaPermissions(options: {
     ((options.camera && !result.camera) ||
       (options.microphone && !result.microphone))
   ) {
-    await new Promise(resolve => setTimeout(resolve, 650));
+    await new Promise(resolve => setTimeout(resolve, 900));
     result = await MediaPermissions.requestPermissions({
       camera: Boolean(options.camera),
       microphone: Boolean(options.microphone),

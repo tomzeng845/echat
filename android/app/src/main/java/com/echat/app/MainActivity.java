@@ -3,6 +3,7 @@ package com.echat.app;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.content.Intent;
 
 import com.getcapacitor.BridgeActivity;
 import cn.jpush.android.api.JPushInterface;
@@ -36,6 +37,22 @@ public class MainActivity extends BridgeActivity {
         super.onStart();
         CallListenerService.setAppActive(getApplicationContext(), true);
         EChatNativeLog.info(this, "android-lifecycle", "MainActivity onStart");
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        CallListenerService.setAppActive(getApplicationContext(), true);
+        EChatNativeLog.info(this, "android-lifecycle", "MainActivity onResume",
+            "notificationLaunch", getIntent() != null && "call".equals(getIntent().getStringExtra("echat_notification_type")));
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        EChatNativeLog.info(this, "android-lifecycle", "MainActivity onNewIntent",
+            "notificationLaunch", intent != null && "call".equals(intent.getStringExtra("echat_notification_type")));
     }
 
     @Override
