@@ -483,13 +483,40 @@ public class MediaPermissionsPlugin extends Plugin {
     @PluginMethod
     public void exportNativeRuntimeLog(PluginCall call) {
         try {
-            pendingRuntimeLog = EChatNativeLog.snapshotJson(getContext()).getBytes(StandardCharsets.UTF_8);
-            Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/json")
-                .putExtra(Intent.EXTRA_TITLE, "echat-native-runtime.jsonl");
-            EChatNativeLog.info(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog picker opened", "bytes", pendingRuntimeLog.length);
-            startActivityForResult(call, save, "saveNativeRuntimeLogResult");
+            byte[] payload = EChatNativeLog.snapshotJson(getContext()).getBytes(StandardCharsets.UTF_8);
+            String filename = "echat-native-runtime-" + System.currentTimeMillis() + ".jsonl";
+            Uri uri;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                values.put(MediaStore.Downloads.RELATIVE_PATH, "Download/EChat");
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
+                uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IllegalStateException("系统无法创建 Download 文件");
+                try (java.io.OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("系统无法打开 Download 文件");
+                    output.write(payload);
+                }
+                values.clear();
+                values.put(MediaStore.Downloads.IS_PENDING, 0);
+                getContext().getContentResolver().update(uri, values, null, null);
+            } else {
+                File directory = new File(getContext().getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "EChat");
+                if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("无法创建日志目录");
+                File file = new File(directory, filename);
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(payload);
+                }
+                uri = Uri.fromFile(file);
+            }
+            EChatNativeLog.info(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog saved directly", "bytes", payload.length, "location", "Download/EChat/" + filename);
+            JSObject response = new JSObject();
+            response.put("saved", true);
+            response.put("bytes", payload.length);
+            response.put("filename", filename);
+            response.put("location", "Download/EChat/" + filename);
+            call.resolve(response);
         } catch (Exception error) {
             EChatNativeLog.error(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog failed", error);
             call.reject("无法导出运行日志", error);

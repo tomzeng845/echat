@@ -1873,8 +1873,12 @@ function Messenger({
                             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
                             onClick={() => {
                               exportNativeRuntimeLog()
-                                .then(() =>
-                                  toast.success("正在打开日志导出菜单")
+                                .then(result =>
+                                  toast.success(
+                                    result && typeof result === "object"
+                                      ? `日志已保存到 ${result.location}`
+                                      : "日志已导出"
+                                  )
                                 )
                                 .catch(error =>
                                   toast.error(

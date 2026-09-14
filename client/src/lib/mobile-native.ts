@@ -64,7 +64,12 @@ export type NativeVoiceRecording = {
 };
 
 type MediaPermissionsPlugin = {
-  exportNativeRuntimeLog(): Promise<void>;
+  exportNativeRuntimeLog(): Promise<{
+    saved: boolean;
+    bytes: number;
+    filename: string;
+    location: string;
+  }>;
   getCapabilities(): Promise<{
     firebaseConfigured: boolean;
     apnsAvailable?: boolean;
@@ -142,7 +147,7 @@ const MediaPermissions =
 
 export function exportNativeRuntimeLog() {
   if (!isNativeAndroid()) return Promise.resolve(false);
-  return MediaPermissions.exportNativeRuntimeLog().then(() => true);
+  return MediaPermissions.exportNativeRuntimeLog();
 }
 let pushState: NativePushState = Capacitor.isNativePlatform()
   ? "prompt"
