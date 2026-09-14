@@ -2513,7 +2513,7 @@ function UserProfileDialog({
               <button
                 type="button"
                 onClick={() => setSearchOpen(value => !value)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
               >
                 <Search size={16} className="text-slate-400" />
                 <span className="flex-1">查找聊天内容</span>
@@ -2551,7 +2551,7 @@ function UserProfileDialog({
               <button
                 type="button"
                 onClick={() => void onClear()}
-                className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-sm text-rose-600 hover:bg-rose-50"
+                className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-left text-sm text-rose-600 hover:bg-rose-50"
               >
                 <Trash2 size={16} />
                 <span className="flex-1 text-left">清空聊天记录</span>

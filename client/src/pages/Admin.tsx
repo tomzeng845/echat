@@ -403,7 +403,7 @@ function AdminLogin({
 }: {
   onAuthenticated: (session: AuthResponse) => void;
 }) {
-  const [account, setAccount] = useState("E_Admin"),
+  const [account, setAccount] = useState(""),
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
