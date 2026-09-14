@@ -1872,24 +1872,32 @@ function Messenger({
                             type="button"
                             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
                             onClick={() => {
+                              const toastId =
+                                toast.loading("正在上传运行日志，请稍候…");
                               uploadNativeRuntimeLog()
-                                .then(result =>
+                                .then(result => {
                                   toast.success(
-                                    `${result.message}：${result.uploadId}`
-                                  )
-                                )
-                                .catch(error =>
-                                  toast.error(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "日志导出失败"
-                                  )
-                                );
+                                    `${result.message}，编号：${result.uploadId}`,
+                                    { id: toastId, duration: 8000 }
+                                  );
+                                })
+                                .catch(error => {
+                                  const detail =
+                                    error instanceof ApiError
+                                      ? `HTTP ${error.status}：${error.message}`
+                                      : error instanceof Error
+                                        ? error.message
+                                        : "未知错误";
+                                  toast.error(`日志上传失败：${detail}`, {
+                                    id: toastId,
+                                    duration: 10000,
+                                  });
+                                });
                               setShowConversationMenu(false);
                             }}
                           >
                             <Settings size={16} className="text-slate-400" />
-                            导出运行日志
+                            上传运行日志到服务器
                           </button>
                         )}
                       </div>
