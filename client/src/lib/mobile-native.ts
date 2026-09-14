@@ -205,6 +205,27 @@ export async function getNativeRuntimeLogs(): Promise<DiagnosticEntry[]> {
   }
 }
 
+export async function uploadNativeRuntimeLog() {
+  if (!isNativeAndroid()) throw new Error("仅 Android 支持上传原生日志");
+  const native = await MediaPermissions.getRuntimeLogs();
+  return api<{
+    uploaded: boolean;
+    uploadId: string;
+    bytes: number;
+    receivedAtUtc: string;
+    message: string;
+  }>("/api/diagnostics/mobile-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entriesJson: native.entriesJson || "[]",
+      deviceId: getDeviceId(),
+      appVersion: "0.9.0",
+      platform: "android",
+    }),
+  });
+}
+
 function updateCallListenerState(running: boolean) {
   callListenerStarted = running;
   if (typeof window !== "undefined")

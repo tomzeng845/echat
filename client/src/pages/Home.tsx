@@ -43,10 +43,10 @@ import {
 } from "@/lib/echat-crypto";
 import {
   consumePendingNotification,
-  exportNativeRuntimeLog,
   isNativeAndroid,
   notifyIncomingEvent,
   registerNativePush,
+  uploadNativeRuntimeLog,
   unregisterNativePush,
   type NativeNotificationTarget,
 } from "@/lib/mobile-native";
@@ -1872,12 +1872,10 @@ function Messenger({
                             type="button"
                             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
                             onClick={() => {
-                              exportNativeRuntimeLog()
+                              uploadNativeRuntimeLog()
                                 .then(result =>
                                   toast.success(
-                                    result && typeof result === "object"
-                                      ? `日志已保存到 ${result.location}`
-                                      : "日志已导出"
+                                    `${result.message}：${result.uploadId}`
                                   )
                                 )
                                 .catch(error =>
