@@ -98,8 +98,9 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         var user = await repository.GetUserByIdAsync(userId, ct);
         if (user is null || user.Role != UserRole.Admin) return Unauthorized(Fail("管理员身份无效"));
         var credential = await repository.GetAdminRecordAsync($"totp:{user.Id}", ct);
-        var valid = credential?.Status == "Active" && credential.Data.TryGetValue("secretCiphertext", out var ciphertext)
-            ? totp.VerifySecret(protector.Unprotect(ciphertext), request.Code)
+        var valid = credential is not null
+            ? credential.Status == "Active" && credential.Data.TryGetValue("secretCiphertext", out var ciphertext)
+                && totp.VerifySecret(protector.Unprotect(ciphertext), request.Code)
             : totp.Verify(request.Code);
         if (!valid) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "动态验证码错误", user.Id, ct); return Unauthorized(Fail("动态验证码无效或已过期")); }
         var response = await sessions.IssueAsync(user, request.DeviceName, request.DeviceId ?? principal.DeviceId(), ct);

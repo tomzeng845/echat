@@ -2745,12 +2745,26 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
     [displayName, setDisplayName] = useState(""),
     [password, setPassword] = useState(""),
     [role, setRole] = useState("Operator");
+  const [totpProvisioning, setTotpProvisioning] = useState<{
+    account: string;
+    secret: string;
+    provisioningUri: string;
+  } | null>(null);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await api("/api/admin/operators", {
+      const result = await api<{
+        user: { account: string };
+        totpSecret: string;
+        provisioningUri: string;
+      }>("/api/admin/operators", {
         method: "POST",
         body: JSON.stringify({ account, displayName, password, role }),
+      });
+      setTotpProvisioning({
+        account: result.user.account,
+        secret: result.totpSecret,
+        provisioningUri: result.provisioningUri,
       });
       setAccount("");
       setDisplayName("");
@@ -2759,6 +2773,22 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
       toast.success("管理账号已创建");
     } catch (x) {
       toast.error(x instanceof Error ? x.message : "创建失败");
+    }
+  }
+  async function enrollTotp(accountToEnroll: string) {
+    try {
+      const result = await api<{ secret: string; provisioningUri: string }>(
+        `/api/admin/operators/${encodeURIComponent(accountToEnroll)}/totp/enroll`,
+        { method: "POST" }
+      );
+      setTotpProvisioning({
+        account: accountToEnroll,
+        secret: result.secret,
+        provisioningUri: result.provisioningUri,
+      });
+      toast.success(`@${accountToEnroll} 的独立动态密码已重新生成`);
+    } catch (x) {
+      toast.error(x instanceof Error ? x.message : "动态密码生成失败");
     }
   }
   return (
@@ -2804,6 +2834,30 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
             创建账号
           </button>
         </form>
+        {totpProvisioning && (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-semibold">
+              @{totpProvisioning.account} 的独立动态密码已生成
+            </p>
+            <p className="mt-1 text-xs leading-5 text-amber-800">
+              请立即将密钥绑定到该账号的验证器。密钥只在本次创建成功后显示。
+            </p>
+            <code className="mt-3 block select-all break-all rounded-lg bg-white px-3 py-2 font-mono text-xs ring-1 ring-amber-200">
+              {totpProvisioning.secret}
+            </code>
+            <button
+              type="button"
+              className="mt-3 text-xs font-medium text-teal-700 underline"
+              onClick={() =>
+                void navigator.clipboard?.writeText(
+                  totpProvisioning.provisioningUri
+                )
+              }
+            >
+              复制验证器配置 URI
+            </button>
+          </div>
+        )}
       </Card>
       <div>
         {loading ? (
@@ -2817,9 +2871,16 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
                     <b>{x.displayName}</b>
                     <p className="text-sm text-slate-500">@{x.account}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Status value={x.role} />
                     <Status value={x.status} />
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-teal-700 underline"
+                      onClick={() => void enrollTotp(x.account)}
+                    >
+                      重置动态密码
+                    </button>
                   </div>
                 </div>
               </Card>

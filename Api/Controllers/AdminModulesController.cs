@@ -11,6 +11,8 @@ namespace EChat.Api.Controllers;
 public sealed class AdminModulesController(
     IChatRepository repository,
     PasswordHasher<UserAccount> passwordHasher,
+    TotpService totp,
+    AdminSecretProtector protector,
     IMediaStorage mediaStorage,
     IHubContext<ChatHub> hub,
     GeoIpService geoIp) : ControllerBase
@@ -259,8 +261,24 @@ public sealed class AdminModulesController(
         var user = new UserAccount { Account = account, DisplayName = Trim(request.DisplayName, 50), Role = UserRole.Admin };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.AddUserAsync(user, ct);
+        var secret = TotpService.GenerateSecret();
+        await repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Id = $"totp:{user.Id}", Module = "system.admin-totp", Name = user.Account, Status = "Active",
+            Data = new Dictionary<string, string>
+            {
+                ["userId"] = user.Id,
+                ["secretCiphertext"] = protector.Protect(secret),
+                ["provisionedAtUtc"] = DateTime.UtcNow.ToString("O")
+            }
+        }, ct);
         await AuditAsync("operator.create", "user", user.Id, $"{user.Account}; {user.Role}", ct);
-        return Ok(SessionService.View(user));
+        return Ok(new
+        {
+            user = SessionService.View(user),
+            totpSecret = secret,
+            provisioningUri = totp.ProvisioningUri(user.Account, secret)
+        });
     }
 
     [HttpGet("conversations")]
