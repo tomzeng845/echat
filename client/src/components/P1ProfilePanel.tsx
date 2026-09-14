@@ -272,6 +272,13 @@ export default function P1ProfilePanel({
   }
 
   async function exportRuntimeLogs() {
+    const confirmed = window.confirm(
+      "运行日志可能包含设备型号、网络地址和通话诊断信息。确认上传给技术支持吗？"
+    );
+    if (!confirmed) {
+      logInfo("settings", "Runtime log export cancelled by user");
+      return;
+    }
     const toastId = toast.loading("正在上传运行日志，请稍候…");
     try {
       logInfo("settings", "User requested runtime log export");
