@@ -501,12 +501,17 @@ public class MediaPermissionsPlugin extends Plugin {
             Intent share = new Intent(Intent.ACTION_SEND)
                 .setType("application/json")
                 .putExtra(Intent.EXTRA_SUBJECT, "E聊 Android 运行日志")
+                .putExtra(Intent.EXTRA_TEXT, new String(content, StandardCharsets.UTF_8))
                 .putExtra(Intent.EXTRA_STREAM, uri)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             if (getActivity() != null) getActivity().startActivity(Intent.createChooser(share, "导出 E聊运行日志"));
             else getContext().startActivity(Intent.createChooser(share, "导出 E聊运行日志").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             EChatNativeLog.info(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog", "success", true, "location", "Downloads/EChat");
-            call.resolve();
+            JSObject result = new JSObject();
+            result.put("saved", true);
+            result.put("location", "Download/EChat/echat-native-runtime.jsonl");
+            result.put("bytes", content.length);
+            call.resolve(result);
         } catch (Exception error) {
             EChatNativeLog.error(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog failed", error);
             call.reject("无法导出运行日志", error);

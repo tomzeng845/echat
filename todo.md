@@ -112,6 +112,11 @@
 - [x] GitHub workflow `34707957173` 基于提交 `0e274067` 构建 Android/鸿蒙测试 APK；包名 `com.echat.app`、版本 `0.9.0(19)`、SHA-256 `f8568d5b3eaf15f2a8bc5d019d65a2e480e4f54af6b99fceef2f9d53ec2a1392`
 - [x] GitHub workflow `34787425959` 基于提交 `ca266d2` 构建 Android debug APK；artifact `EChat-Android-debug-40`，SHA-256 `7e983c9df1e1e0ae542e13f1bc1c46b2b6af8d10fbe3c47315d8a9691d7f5c3a`
 - [ ] 在鸿蒙真机依次验证锁屏、切后台、划掉任务、系统回收 `:calls` 进程后 90 秒内来电，并导出日志确认 watchdog/SignalR/通知/API 全链路
+- [x] Android/JPush/FCM 来电通知切换到全新的 `calls-v3` 高优先级通道，避免旧通道静音设置残留
+- [x] 锁屏来电通知改为公开可见、持续显示、带 BigText 正文、声音和震动，并记录通道重要性/锁屏可见性
+- [x] 锁屏通知接听后的摄像头/麦克风权限申请增加前台恢复等待、一次有限重试和申请前后状态日志
+- [x] Android 原生日志支持导出到 `Download/EChat/echat-native-runtime.jsonl` 并通过系统分享菜单发送
+- [x] Android APK 构建验证通过，服务端通道配置编译验证通过；待真机确认 `calls-v3` 声音和锁屏正文
 
 - [x] 生成独立 PKCS12、RSA 4096 位、有效期 10000 天的发布密钥
 - [x] 发布密钥和凭据打包为 AES-256 加密备份，密码单独保存
