@@ -58,6 +58,14 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_stat_echat"
         />
+        <meta-data
+            android:name="JPUSH_APPKEY"
+            android:value="b386ba240194e6cf267651a8"
+            tools:replace="android:value" />
+        <meta-data
+            android:name="JPUSH_CHANNEL"
+            android:value="default"
+            tools:replace="android:value" />
     </application>
 
     <!-- Permissions -->

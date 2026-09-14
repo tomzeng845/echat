@@ -360,15 +360,26 @@ export async function api<T>(
 ): Promise<T> {
   const response = await authorizedFetch(path, init, retry);
   if (!response.ok) {
-    const problem = await response
-      .json()
-      .catch(() => ({ error: `请求失败 (${response.status})` }));
+    const contentType = response.headers.get("content-type") || "";
+    const problem = contentType.includes("json")
+      ? await response
+          .json()
+          .catch(() => ({ error: `请求失败 (${response.status})` }))
+      : {
+          error: `API 地址配置错误或服务未启动（${response.status}，返回了 HTML 页面）`,
+        };
     throw new ApiError(
       problem.error || problem.title || `请求失败 (${response.status})`,
       response.status
     );
   }
   if (response.status === 204) return undefined as T;
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("json"))
+    throw new ApiError(
+      "API 地址配置错误：服务器返回了网页而不是 JSON",
+      response.status
+    );
   return response.json() as Promise<T>;
 }
 

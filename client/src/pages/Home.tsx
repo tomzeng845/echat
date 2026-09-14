@@ -43,6 +43,8 @@ import {
 } from "@/lib/echat-crypto";
 import {
   consumePendingNotification,
+  exportNativeRuntimeLog,
+  isNativeAndroid,
   notifyIncomingEvent,
   registerNativePush,
   unregisterNativePush,
@@ -1865,6 +1867,29 @@ function Messenger({
                           <Trash2 size={16} />
                           清空聊天记录
                         </button>
+                        {isNativeAndroid() && (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              exportNativeRuntimeLog()
+                                .then(() =>
+                                  toast.success("正在打开日志导出菜单")
+                                )
+                                .catch(error =>
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : "日志导出失败"
+                                  )
+                                );
+                              setShowConversationMenu(false);
+                            }}
+                          >
+                            <Settings size={16} className="text-slate-400" />
+                            导出运行日志
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

@@ -18,11 +18,14 @@ public sealed class PushNotificationService(
 
     private string ProjectId => configuration["Push:Fcm:ProjectId"] ?? Environment.GetEnvironmentVariable("FCM_PROJECT_ID") ?? "";
     private string ServiceAccountJson => configuration["Push:Fcm:ServiceAccountJson"] ?? Environment.GetEnvironmentVariable("FCM_SERVICE_ACCOUNT_JSON") ?? "";
+    private string JPushAppKey => configuration["Push:JPush:AppKey"] ?? Environment.GetEnvironmentVariable("JPUSH_APP_KEY") ?? "";
+    private string JPushMasterSecret => configuration["Push:JPush:MasterSecret"] ?? Environment.GetEnvironmentVariable("JPUSH_MASTER_SECRET") ?? "";
     private bool PushEnabled => configuration.GetValue("Push:Enabled", true);
-    public bool AndroidEnabled => PushEnabled && !string.IsNullOrWhiteSpace(ProjectId) && (!string.IsNullOrWhiteSpace(ServiceAccountJson) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS")));
+    private bool JPushEnabled => PushEnabled && !string.IsNullOrWhiteSpace(JPushAppKey) && !string.IsNullOrWhiteSpace(JPushMasterSecret);
+    public bool AndroidEnabled => JPushEnabled || PushEnabled && !string.IsNullOrWhiteSpace(ProjectId) && (!string.IsNullOrWhiteSpace(ServiceAccountJson) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS")));
     public bool IosEnabled => PushEnabled && apns.Enabled;
     public bool Enabled => AndroidEnabled || IosEnabled;
-    public string Provider => AndroidEnabled && IosEnabled ? "FCM + APNs" : IosEnabled ? "Apple Push Notification service" : "Firebase Cloud Messaging";
+    public string Provider => JPushEnabled && IosEnabled ? "JPush + APNs" : JPushEnabled ? "JPush" : IosEnabled ? "Apple Push Notification service" : "Firebase Cloud Messaging";
 
     public async Task SendMessageAsync(Conversation conversation, ChatMessage message, CancellationToken ct = default)
     {
@@ -75,7 +78,8 @@ public sealed class PushNotificationService(
     private Task SendToDeviceSafelyAsync(PushDevice device, string title, string body, IReadOnlyDictionary<string, string> data, bool highPriority, CancellationToken ct) =>
         device.Platform switch
         {
-            "android" => AndroidEnabled ? SendFcmAsync(device, title, body, data, highPriority, ct) : Task.CompletedTask,
+            "android-jpush" => JPushEnabled ? SendJPushAsync(device, title, body, data, highPriority, ct) : Task.CompletedTask,
+            "android" => JPushEnabled ? SendJPushAsync(device, title, body, data, highPriority, ct) : AndroidEnabled ? SendFcmAsync(device, title, body, data, highPriority, ct) : Task.CompletedTask,
             "ios" => IosEnabled ? apns.SendAsync(device, title, body, data, ct) : Task.CompletedTask,
             "ios-voip" => IosEnabled && data.TryGetValue("type", out var voipType) && voipType == "call" ? apns.SendAsync(device, title, body, data, ct) : Task.CompletedTask,
             _ => Task.CompletedTask
@@ -92,7 +96,7 @@ public sealed class PushNotificationService(
             var isCall = data.TryGetValue("type", out var notificationType) && notificationType == "call";
             using var request = new HttpRequestMessage(HttpMethod.Post, $"https://fcm.googleapis.com/v1/projects/{Uri.EscapeDataString(ProjectId)}/messages:send");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            var payload = new { message = new { token = device.Token, notification = new { title, body }, data, android = new { priority = highPriority ? "high" : "normal", notification = new { channel_id = isCall ? "calls-v2" : "messages-v2", sound = isCall ? "echat_call" : "echat_message", tag = isCall && data.TryGetValue("callId", out var callId) ? $"call-{callId}" : data.TryGetValue("conversationId", out var conversationId) ? $"conversation-{conversationId}" : "echat" } } } };
+            var payload = new { message = new { token = device.Token, notification = new { title, body }, data, android = new { priority = highPriority ? "high" : "normal", notification = new { channel_id = isCall ? "calls-v3" : "messages-v2", sound = isCall ? "echat_call" : "echat_message", tag = isCall && data.TryGetValue("callId", out var callId) ? $"call-{callId}" : data.TryGetValue("conversationId", out var conversationId) ? $"conversation-{conversationId}" : "echat" } } } };
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
             var response = await httpClientFactory.CreateClient("fcm").SendAsync(request, timeout.Token);
             if (response.IsSuccessStatusCode) return;
@@ -102,6 +106,33 @@ public sealed class PushNotificationService(
         }
         catch (OperationCanceledException) { logger.LogWarning("FCM delivery timed out for device {DeviceId}", device.DeviceId); }
         catch (Exception exception) { logger.LogWarning(exception, "FCM delivery failed for device {DeviceId}", device.DeviceId); }
+    }
+
+    private async Task SendJPushAsync(PushDevice device, string title, string body, IReadOnlyDictionary<string, string> data, bool highPriority, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(8));
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.jpush.cn/v3/push");
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{JPushAppKey}:{JPushMasterSecret}"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
+            var isCall = data.TryGetValue("type", out var notificationType) && notificationType == "call";
+            var payload = new
+            {
+                platform = new[] { "android" },
+                audience = new { registration_id = new[] { device.Token } },
+                notification = new { alert = body, android = new { alert = body, title, extras = data, priority = highPriority ? 2 : 0, channel_id = isCall ? "calls-v3" : "messages-v2" } },
+                options = new { time_to_live = isCall ? 60 : 86400 }
+            };
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await httpClientFactory.CreateClient("jpush").SendAsync(request, timeout.Token);
+            if (response.IsSuccessStatusCode) return;
+            var error = await response.Content.ReadAsStringAsync(timeout.Token);
+            logger.LogWarning("JPush delivery failed with {StatusCode}: {Error}", (int)response.StatusCode, error.Length > 500 ? error[..500] : error);
+        }
+        catch (OperationCanceledException) { logger.LogWarning("JPush delivery timed out for device {DeviceId}", device.DeviceId); }
+        catch (Exception exception) { logger.LogWarning(exception, "JPush delivery failed for device {DeviceId}", device.DeviceId); }
     }
 
     private async Task<GoogleCredential> GetCredentialAsync(CancellationToken ct)

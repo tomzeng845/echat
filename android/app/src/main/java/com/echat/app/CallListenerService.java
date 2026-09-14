@@ -54,7 +54,7 @@ public class CallListenerService extends Service {
 
     private static final String PREFS = "echat_call_listener";
     private static final String LISTENER_CHANNEL = "call-listener-v1";
-    private static final String CALL_CHANNEL = "calls-v2";
+    private static final String CALL_CHANNEL = "calls-v3";
     private static final int LISTENER_NOTIFICATION_ID = 7300;
     private static final int CALL_NOTIFICATION_BASE = 7400;
     private static final int RESTART_REQUEST_ID = 7301;
@@ -332,13 +332,18 @@ public class CallListenerService extends Service {
             .setColor(0xFF12D6B0)
             .setContentTitle(callerName)
             .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis())
             .setContentIntent(contentIntent)
             .setFullScreenIntent(contentIntent, true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setAutoCancel(true)
-            .setOngoing(false)
+            .setAutoCancel(false)
+            .setOngoing(true)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setTimeoutAfter(60_000L)
             .setVibrate(new long[] { 0, 500, 300, 500 })
             .build();
         getSystemService(NotificationManager.class).notify(stableNotificationId(invite.callId), notification);
@@ -471,6 +476,8 @@ public class CallListenerService extends Service {
 
         NotificationChannel calls = new NotificationChannel(CALL_CHANNEL, "音视频通话", NotificationManager.IMPORTANCE_HIGH);
         calls.setDescription("E聊语音与视频来电");
+        calls.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        calls.setShowBadge(true);
         calls.enableVibration(true);
         calls.setVibrationPattern(new long[] { 0, 500, 300, 500 });
         int soundId = getResources().getIdentifier("echat_call", "raw", getPackageName());
@@ -482,6 +489,14 @@ public class CallListenerService extends Service {
                 .build());
         }
         manager.createNotificationChannel(calls);
+        NotificationChannel current = manager.getNotificationChannel(CALL_CHANNEL);
+        EChatNativeLog.info(this, "android-jpush-notification", "Call notification channel status",
+            "channelId", CALL_CHANNEL,
+            "notificationsEnabled", notificationsEnabled(),
+            "importance", current == null ? -1 : current.getImportance(),
+            "lockscreenVisibility", current == null ? -1 : current.getLockscreenVisibility(),
+            "canBypassDnd", current != null && current.canBypassDnd(),
+            "sdk", Build.VERSION.SDK_INT);
     }
 
     private void savePendingCall(IncomingCallPayload invite) {

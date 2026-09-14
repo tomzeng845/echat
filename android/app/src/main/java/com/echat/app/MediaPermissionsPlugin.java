@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ContentValues;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
@@ -15,6 +16,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.provider.MediaStore;
+import androidx.core.content.FileProvider;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -25,6 +28,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.util.ArrayList;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
@@ -472,10 +478,51 @@ public class MediaPermissionsPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void exportNativeRuntimeLog(PluginCall call) {
+        try {
+            byte[] content = EChatNativeLog.snapshotJson(getContext()).getBytes(StandardCharsets.UTF_8);
+            Uri uri;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, "echat-native-runtime.jsonl");
+                values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                values.put(MediaStore.Downloads.RELATIVE_PATH, "Download/EChat");
+                uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IllegalStateException("无法创建 Downloads 文件");
+                try (java.io.OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("无法写入 Downloads 文件");
+                    output.write(content);
+                }
+            } else {
+                File file = new File(getContext().getCacheDir(), "echat-native-runtime.jsonl");
+                try (FileOutputStream output = new FileOutputStream(file, false)) { output.write(content); }
+                uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            }
+            Intent share = new Intent(Intent.ACTION_SEND)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_SUBJECT, "E聊 Android 运行日志")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (getActivity() != null) getActivity().startActivity(Intent.createChooser(share, "导出 E聊运行日志"));
+            else getContext().startActivity(Intent.createChooser(share, "导出 E聊运行日志").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            EChatNativeLog.info(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog", "success", true, "location", "Downloads/EChat");
+            call.resolve();
+        } catch (Exception error) {
+            EChatNativeLog.error(getContext(), "android-native-bridge-api", "exportNativeRuntimeLog failed", error);
+            call.reject("无法导出运行日志", error);
+        }
+    }
+
+    @PluginMethod
     public void requestPermissions(PluginCall call) {
+        boolean cameraGranted = hasSystemPermission(Manifest.permission.CAMERA);
+        boolean microphoneGranted = hasSystemPermission(Manifest.permission.RECORD_AUDIO);
         EChatNativeLog.info(getContext(), "android-native-bridge-api", "requestPermissions",
             "cameraRequested", Boolean.TRUE.equals(call.getBoolean("camera", false)),
-            "microphoneRequested", Boolean.TRUE.equals(call.getBoolean("microphone", false)));
+            "microphoneRequested", Boolean.TRUE.equals(call.getBoolean("microphone", false)),
+            "cameraGrantedBefore", cameraGranted,
+            "microphoneGrantedBefore", microphoneGranted,
+            "activityResumed", getActivity() != null && !getActivity().isFinishing() && !getActivity().isDestroyed());
         List<String> aliases = new ArrayList<>();
         if (Boolean.TRUE.equals(call.getBoolean("camera", false)) && !hasSystemPermission(Manifest.permission.CAMERA)) {
             aliases.add("camera");
@@ -492,6 +539,9 @@ public class MediaPermissionsPlugin extends Plugin {
 
     @PermissionCallback
     private void permissionCallback(PluginCall call) {
+        EChatNativeLog.info(getContext(), "android-native-bridge-api", "permissionCallback",
+            "cameraGrantedAfter", hasSystemPermission(Manifest.permission.CAMERA),
+            "microphoneGrantedAfter", hasSystemPermission(Manifest.permission.RECORD_AUDIO));
         resolveState(call);
     }
 

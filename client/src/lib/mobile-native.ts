@@ -10,6 +10,7 @@ import {
   type PushNotificationSchema,
   type Token,
 } from "@capacitor/push-notifications";
+import { JPush } from "capacitor-plugin-jpush";
 import {
   LocalNotifications,
   type ActionPerformed as LocalNotificationAction,
@@ -63,6 +64,7 @@ export type NativeVoiceRecording = {
 };
 
 type MediaPermissionsPlugin = {
+  exportNativeRuntimeLog(): Promise<void>;
   getCapabilities(): Promise<{
     firebaseConfigured: boolean;
     apnsAvailable?: boolean;
@@ -137,10 +139,16 @@ type MediaPermissionsPlugin = {
 
 const MediaPermissions =
   registerPlugin<MediaPermissionsPlugin>("MediaPermissions");
+
+export function exportNativeRuntimeLog() {
+  if (!isNativeAndroid()) return Promise.resolve(false);
+  return MediaPermissions.exportNativeRuntimeLog().then(() => true);
+}
 let pushState: NativePushState = Capacitor.isNativePlatform()
   ? "prompt"
   : "web";
 let listeners: PluginListenerHandle[] = [];
+let jpushListeners: PluginListenerHandle[] = [];
 let localListeners: PluginListenerHandle[] = [];
 let appListener: PluginListenerHandle | null = null;
 let callListenerHandles: PluginListenerHandle[] = [];
@@ -561,7 +569,7 @@ export function consumePendingNotification(): NativeNotificationTarget | null {
 
 async function savePushTokenValue(
   token: string,
-  platform: "android" | "ios" | "ios-voip"
+  platform: "android" | "android-jpush" | "ios" | "ios-voip"
 ) {
   await api("/api/push/devices", {
     method: "POST",
@@ -578,6 +586,39 @@ async function savePushTokenValue(
 
 async function savePushToken(token: Token) {
   await savePushTokenValue(token.value, isNativeIos() ? "ios" : "android");
+}
+
+async function registerAndroidJPush() {
+  const permission = await JPush.checkPermissions();
+  const granted =
+    permission.permission === "granted"
+      ? permission
+      : await JPush.requestPermissions();
+  if (granted.permission !== "granted") {
+    updatePushState("denied");
+    return "denied" as const;
+  }
+  jpushListeners = await Promise.all([
+    JPush.addListener("notificationReceived", data => {
+      const raw =
+        (data as { rawData?: Record<string, unknown> }).rawData ?? data;
+      alertFromPush({ data: raw } as PushNotificationSchema).catch(
+        () => undefined
+      );
+    }),
+    JPush.addListener("notificationOpened", data => {
+      const raw =
+        (data as { rawData?: Record<string, unknown> }).rawData ?? data;
+      openNotificationTarget({
+        notification: { data: raw },
+      } as ActionPerformed);
+    }),
+  ]);
+  await JPush.startJPush();
+  const { registrationId } = await JPush.getRegistrationID();
+  if (!registrationId) throw new Error("JPush registration ID is empty");
+  await savePushTokenValue(registrationId, "android-jpush");
+  return "registered" as const;
 }
 
 export async function registerNativePush() {
@@ -654,6 +695,7 @@ export async function registerNativePush() {
     return "denied" as const;
   }
   try {
+    if (isNativeAndroid()) return await registerAndroidJPush();
     if (isNativeAndroid())
       await Promise.all([
         PushNotifications.createChannel({
@@ -666,7 +708,7 @@ export async function registerNativePush() {
           sound: "echat_message.wav",
         }),
         PushNotifications.createChannel({
-          id: "calls-v2",
+          id: "calls-v3",
           name: "音视频通话",
           description: "E聊语音与视频来电",
           importance: 5,
@@ -690,6 +732,9 @@ export async function unregisterNativePush() {
     method: "DELETE",
   }).catch(() => undefined);
   if (pushStarted) await PushNotifications.unregister().catch(() => undefined);
+  await JPush.removeListeners().catch(() => undefined);
+  for (const listener of jpushListeners) await listener.remove();
+  jpushListeners = [];
   for (const listener of listeners) await listener.remove();
   listeners = [];
   for (const listener of localListeners) await listener.remove();
@@ -712,10 +757,28 @@ export async function ensureNativeMediaPermissions(options: {
   microphone?: boolean;
 }) {
   if (!isNativeMobile()) return;
-  const result = await MediaPermissions.requestPermissions({
+  if (isNativeAndroid()) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (document.visibilityState === "visible") break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    await new Promise(resolve => setTimeout(resolve, 180));
+  }
+  let result = await MediaPermissions.requestPermissions({
     camera: Boolean(options.camera),
     microphone: Boolean(options.microphone),
   });
+  if (
+    isNativeAndroid() &&
+    ((options.camera && !result.camera) ||
+      (options.microphone && !result.microphone))
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 650));
+    result = await MediaPermissions.requestPermissions({
+      camera: Boolean(options.camera),
+      microphone: Boolean(options.microphone),
+    });
+  }
   if (options.camera && !result.camera)
     throw new DOMException("Camera permission denied", "NotAllowedError");
   if (options.microphone && !result.microphone)

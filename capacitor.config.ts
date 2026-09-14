@@ -20,6 +20,10 @@ const config: CapacitorConfig = {
     PushNotifications: {
       presentationOptions: ["alert"],
     },
+    JPush: {
+      appKey: "b386ba240194e6cf267651a8",
+      channel: "default",
+    },
     LocalNotifications: {
       smallIcon: "ic_stat_echat",
       iconColor: "#12D6B0",

@@ -10,3 +10,6 @@ project(':capacitor-local-notifications').projectDir = new File('../node_modules
 
 include ':capacitor-push-notifications'
 project(':capacitor-push-notifications').projectDir = new File('../node_modules/.pnpm/@capacitor+push-notifications@8.1.2_@capacitor+core@8.5.1/node_modules/@capacitor/push-notifications/android')
+
+include ':capacitor-plugin-jpush'
+project(':capacitor-plugin-jpush').projectDir = new File('../node_modules/.pnpm/capacitor-plugin-jpush@4.0.1_@capacitor+core@8.5.1/node_modules/capacitor-plugin-jpush/android')
