@@ -18,7 +18,11 @@ import {
 import { api, getDeviceId } from "./echat-api";
 import { canInitializeNativePush } from "./push-status";
 import { apiUrl } from "./runtime-config";
-import type { DiagnosticEntry } from "./runtime-diagnostics";
+import {
+  error as diagnosticError,
+  info as diagnosticInfo,
+  type DiagnosticEntry,
+} from "./runtime-diagnostics";
 
 const PENDING_NOTIFICATION_KEY = "echat.pending-notification.v1";
 const PENDING_NATIVE_CALL_KEY = "echat.pending-native-call.v1";
@@ -615,14 +619,30 @@ async function savePushToken(token: Token) {
 }
 
 async function registerAndroidJPush() {
-  const permission = await JPush.checkPermissions();
-  const granted =
-    permission.permission === "granted"
-      ? permission
-      : await JPush.requestPermissions();
-  if (granted.permission !== "granted") {
-    updatePushState("denied");
-    return "denied" as const;
+  diagnosticInfo("android-jpush", "SDK registration started");
+  let permission;
+  try {
+    permission = await JPush.checkPermissions();
+    diagnosticInfo("android-jpush", "SDK permission checked", {
+      permission: permission.permission,
+    });
+    const granted =
+      permission.permission === "granted"
+        ? permission
+        : await JPush.requestPermissions();
+    diagnosticInfo("android-jpush", "SDK permission result", {
+      permission: granted.permission,
+    });
+    if (granted.permission !== "granted") {
+      updatePushState("denied");
+      return "denied" as const;
+    }
+  } catch (cause) {
+    diagnosticError("android-jpush", "SDK permission call failed", {
+      error: cause,
+    });
+    updatePushState("unavailable");
+    return "unavailable" as const;
   }
   jpushListeners = await Promise.all([
     JPush.addListener("notificationReceived", data => {
@@ -640,11 +660,49 @@ async function registerAndroidJPush() {
       } as ActionPerformed);
     }),
   ]);
-  await JPush.startJPush();
-  const { registrationId } = await JPush.getRegistrationID();
-  if (!registrationId) throw new Error("JPush registration ID is empty");
-  await savePushTokenValue(registrationId, "android-jpush");
-  return "registered" as const;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      diagnosticInfo("android-jpush", "Calling SDK startJPush", { attempt });
+      await JPush.startJPush();
+      const result = await JPush.getRegistrationID();
+      const registrationId = result?.registrationId || "";
+      diagnosticInfo("android-jpush", "SDK registration ID result", {
+        attempt,
+        present: Boolean(registrationId),
+        length: registrationId.length,
+      });
+      if (registrationId) {
+        try {
+          await savePushTokenValue(registrationId, "android-jpush");
+          diagnosticInfo("android-jpush", "Registration ID saved to API", {
+            attempt,
+          });
+          return "registered" as const;
+        } catch (cause) {
+          diagnosticError("android-jpush", "Registration ID API save failed", {
+            error: cause,
+            attempt,
+          });
+        }
+      }
+    } catch (cause) {
+      diagnosticError("android-jpush", "SDK registration call failed", {
+        error: cause,
+        attempt,
+      });
+    }
+    if (attempt < 3)
+      await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+  }
+  diagnosticError(
+    "android-jpush",
+    "Registration ID unavailable after retries",
+    {
+      error: new Error("JPush SDK returned an empty Registration ID"),
+    }
+  );
+  updatePushState("unavailable");
+  return "unavailable" as const;
 }
 
 export async function registerNativePush() {

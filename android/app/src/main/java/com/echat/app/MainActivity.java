@@ -24,8 +24,11 @@ public class MainActivity extends BridgeActivity {
             String registrationId = JPushInterface.getRegistrationID(getApplicationContext());
             EChatNativeLog.info(this, "android-jpush", "JPush runtime status",
                 "sdkAvailable", true,
+                "packageName", getPackageName(),
+                "sdkInt", android.os.Build.VERSION.SDK_INT,
                 "pushStopped", JPushInterface.isPushStopped(getApplicationContext()),
                 "registrationIdPresent", registrationId != null && !registrationId.isBlank(),
+                "registrationIdLength", registrationId == null ? 0 : registrationId.length(),
                 "notificationsEnabled", getSystemService(android.app.NotificationManager.class).areNotificationsEnabled());
         } catch (Throwable error) {
             EChatNativeLog.error(this, "android-jpush", "JPush runtime status check failed", error);
