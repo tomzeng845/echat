@@ -23,9 +23,15 @@ export default function RichMessageContent({
   const [playbackError, setPlaybackError] = useState("");
   const [audioKey, setAudioKey] = useState(0);
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
+  const [videoRequested, setVideoRequested] = useState(false);
 
   useEffect(() => {
-    if (!payload || message.kind === "File" || message.state === "Recalled")
+    if (
+      !payload ||
+      message.kind === "File" ||
+      message.state === "Recalled" ||
+      (message.kind === "Video" && !videoRequested)
+    )
       return;
     let active = true;
     let objectUrl = "";
@@ -55,6 +61,7 @@ export default function RichMessageContent({
     message.kind,
     message.state,
     payload?.assetId,
+    videoRequested,
   ]);
 
   if (message.state === "Recalled") return <span>{message.plaintext}</span>;
@@ -79,6 +86,25 @@ export default function RichMessageContent({
           )
         )}
       </span>
+    );
+  if (message.kind === "Video" && !videoRequested && !url)
+    return (
+      <button
+        type="button"
+        onClick={() => setVideoRequested(true)}
+        className="flex min-h-24 min-w-56 items-center gap-3 rounded-xl bg-black/70 px-4 py-3 text-left text-white"
+      >
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal-400 text-xl text-slate-950">
+          ▶
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">点击加载视频</span>
+          <span className="mt-1 block text-[10px] opacity-70">
+            {formatFileSize(payload.size)}
+            {payload.duration ? ` · ${Math.round(payload.duration)} 秒` : ""}
+          </span>
+        </span>
+      </button>
     );
   if (loading)
     return (
@@ -163,13 +189,47 @@ export default function RichMessageContent({
     );
   if (message.kind === "Video" && url)
     return (
-      <video
-        controls
-        playsInline
-        preload="metadata"
-        src={url}
-        className="max-h-[360px] max-w-full rounded-xl bg-black"
-      />
+      <div>
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          src={url}
+          onLoadedData={() =>
+            logInfo("video-message", "Video message first frame loaded", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              blobSize: loadedMedia.size,
+              mimeType: effectiveMediaMimeType(payload, "Video"),
+            })
+          }
+          onError={event => {
+            const video = event.currentTarget;
+            logError("video-message", "Video message playback failed", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              mediaErrorCode: video.error?.code || 0,
+              mediaErrorMessage: video.error?.message || "",
+              readyState: video.readyState,
+              blobSize: loadedMedia.size,
+              mimeType: effectiveMediaMimeType(payload, "Video"),
+            });
+            setPlaybackError("视频播放失败，请点击重试");
+          }}
+          className="max-h-[360px] max-w-full rounded-xl bg-black"
+        />
+        {playbackError && (
+          <button
+            type="button"
+            onClick={() => {
+              setPlaybackError("");
+              setUrl(undefined);
+              setVideoRequested(false);
+            }}
+            className="mt-1 text-[10px] font-medium text-rose-100 underline underline-offset-2"
+          >
+            {playbackError}
+          </button>
+        )}
+      </div>
     );
 
   async function download() {

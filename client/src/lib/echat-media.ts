@@ -62,12 +62,17 @@ export function parseMediaPayload(content: string): ChatMediaPayload | null {
   }
 }
 
-export function effectiveMediaMimeType(payload: ChatMediaPayload) {
+export function effectiveMediaMimeType(
+  payload: ChatMediaPayload,
+  kind?: "Voice" | "Video"
+) {
   const declared = payload.mimeType?.trim().toLowerCase();
   if (declared && declared !== "application/octet-stream") return declared;
   const fileName = payload.fileName.toLowerCase();
-  if (fileName.endsWith(".m4a") || fileName.endsWith(".mp4"))
-    return "audio/mp4";
+  if (kind === "Video" && fileName.endsWith(".mp4")) return "video/mp4";
+  if (kind === "Video" && fileName.endsWith(".webm")) return "video/webm";
+  if (fileName.endsWith(".mov")) return "video/quicktime";
+  if (fileName.endsWith(".m4a")) return "audio/mp4";
   if (fileName.endsWith(".webm")) return "audio/webm;codecs=opus";
   if (fileName.endsWith(".ogg") || fileName.endsWith(".opus"))
     return "audio/ogg;codecs=opus";
