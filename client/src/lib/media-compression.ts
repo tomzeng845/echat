@@ -111,21 +111,11 @@ export async function compressChatVideo(file: File): Promise<File> {
     if (!video.videoWidth || !video.videoHeight || !video.captureStream)
       return file;
 
-    const scale = Math.min(
-      1,
-      1280 / Math.max(video.videoWidth, video.videoHeight)
-    );
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(2, Math.round(video.videoWidth * scale));
-    canvas.height = Math.max(2, Math.round(video.videoHeight * scale));
-    const context = canvas.getContext("2d");
-    if (!context) return file;
-
-    const videoStream = video.captureStream();
-    const outputStream = canvas.captureStream(30);
-    for (const track of videoStream.getAudioTracks())
-      outputStream.addTrack(track);
-    const recorder = new MediaRecorder(outputStream, {
+    // Record the decoded stream directly. canvas.captureStream() can produce
+    // empty output in Chromium for some MP4 files.
+    const stream = video.captureStream();
+    if (!stream.getVideoTracks().length) return file;
+    const recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: 1_800_000,
       audioBitsPerSecond: 96_000,
@@ -134,28 +124,34 @@ export async function compressChatVideo(file: File): Promise<File> {
     recorder.ondataavailable = event => {
       if (event.data.size) chunks.push(event.data);
     };
+    let resolveRecording: ((value: Blob) => void) | null = null;
+    let rejectRecording: ((reason?: unknown) => void) | null = null;
     const recording = new Promise<Blob>((resolve, reject) => {
-      recorder.onerror = () => reject(new Error("video compression failed"));
-      recorder.onstop = () => {
-        // The final dataavailable event may arrive after stop. Defer Blob
-        // construction to include the last encoded chunk.
-        window.setTimeout(
-          () => resolve(new Blob(chunks, { type: mimeType })),
-          0
-        );
-      };
+      resolveRecording = resolve;
+      rejectRecording = reject;
     });
-
-    const draw = () => {
-      if (!video.ended && recorder.state === "recording") {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        requestAnimationFrame(draw);
-      }
+    recorder.onerror = () => rejectRecording?.(new Error("video compression failed"));
+    recorder.onstop = () => {
+      // Include the final dataavailable event emitted after stop.
+      window.setTimeout(
+        () => resolveRecording?.(new Blob(chunks, { type: mimeType })),
+        250
+      );
     };
+
     recorder.start(1000);
-    video.onended = () => recorder.stop();
+    video.onended = () => {
+      if (recorder.state !== "recording") return;
+      try {
+        recorder.requestData();
+      } catch {
+        // requestData is not available in a few older Chromium builds.
+      }
+      window.setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, 250);
+    };
     await video.play();
-    draw();
     const blob = await Promise.race([
       recording,
       new Promise<Blob>((_, reject) =>
@@ -168,6 +164,16 @@ export async function compressChatVideo(file: File): Promise<File> {
         )
       ),
     ]);
+    if (blob.size === 0) {
+      logError("media-compression", "MediaRecorder produced empty output; using original", {
+        originalBytes: file.size,
+        mimeType,
+        duration: video.duration,
+        streamVideoTracks: stream.getVideoTracks().length,
+        streamAudioTracks: stream.getAudioTracks().length,
+      });
+      return file;
+    }
     if (blob.size >= file.size) return file;
 
     const compressed = new File([blob], replaceExtension(file.name, "webm"), {
@@ -177,8 +183,8 @@ export async function compressChatVideo(file: File): Promise<File> {
     logInfo("media-compression", "Video compressed before upload", {
       originalBytes: file.size,
       compressedBytes: compressed.size,
-      width: canvas.width,
-      height: canvas.height,
+      width: video.videoWidth,
+      height: video.videoHeight,
       duration: video.duration,
       mimeType,
     });
@@ -189,6 +195,7 @@ export async function compressChatVideo(file: File): Promise<File> {
     });
     return file;
   } finally {
+    video.captureStream?.().getTracks().forEach(track => track.stop());
     video.pause();
     video.removeAttribute("src");
     video.load();
