@@ -1483,6 +1483,49 @@ function Messenger({
     }
   }
 
+  async function createServiceGroup(customer: User): Promise<void> {
+    try {
+      const templates = await api<
+        Array<{ id: string; name: string; namePattern: string }>
+      >("/api/service-groups/templates");
+      if (!templates.length) {
+        toast.info("管理员尚未配置一键拉群模板");
+        return;
+      }
+      const choice = window.prompt(
+        templates
+          .map((item, index) => `${index + 1}. ${item.name}`)
+          .join("\n") + "\n\n请输入模板编号",
+        "1"
+      );
+      if (!choice) return;
+      const template = templates[Number(choice) - 1];
+      if (!template) {
+        toast.warning("模板编号无效");
+        return;
+      }
+      setBusy(true);
+      const created = await api<{ conversationId: string; name: string }>(
+        "/api/service-groups/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            templateId: template.id,
+            customerAccount: customer.account,
+          }),
+        }
+      );
+      await loadData();
+      setSelectedId(created.conversationId);
+      setProfileUser(null);
+      toast.success(`已创建「${created.name}」`);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "一键拉群失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function clearChatHistory() {
     if (!selected) return;
     if (
@@ -2386,6 +2429,7 @@ function Messenger({
           onDelete={() => updateFriendRelation(profileUser.id, "delete")}
           onBlock={() => updateFriendRelation(profileUser.id, "block")}
           onUnblock={() => updateFriendRelation(profileUser.id, "unblock")}
+          onQuickServiceGroup={() => createServiceGroup(profileUser)}
         />
       )}
       {showScanner && (
@@ -2747,6 +2791,7 @@ function UserProfileDialog({
   onDelete,
   onBlock,
   onUnblock,
+  onQuickServiceGroup,
 }: {
   user: User;
   messages: Array<{ id: string; plaintext: string; sentAtUtc: string }>;
@@ -2756,6 +2801,7 @@ function UserProfileDialog({
   onDelete: () => Promise<void>;
   onBlock: () => Promise<void>;
   onUnblock: () => Promise<void>;
+  onQuickServiceGroup: () => Promise<void>;
 }) {
   const [confirmAction, setConfirmAction] = useState<
     "delete" | "block" | "unblock" | null
@@ -2847,6 +2893,16 @@ function UserProfileDialog({
               </div>
             </div>
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100 bg-white text-left">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onQuickServiceGroup()}
+                className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+              >
+                <Users size={16} />
+                <span className="flex-1">一键拉群</span>
+                <ChevronRight size={16} className="text-teal-300" />
+              </button>
               <button
                 type="button"
                 onClick={() => setSearchOpen(value => !value)}

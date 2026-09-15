@@ -107,6 +107,7 @@ type PageId =
   | "chat-conversations"
   | "chat-customer"
   | "chat-groups"
+  | "chat-service-groups"
   | "chat-bulk"
   | "chat-robots"
   | "chat-redpacket"
@@ -256,6 +257,7 @@ const groups: MenuGroup[] = [
       { id: "chat-conversations", label: "会话管理" },
       { id: "chat-customer", label: "客服管理" },
       { id: "chat-groups", label: "群管理" },
+      { id: "chat-service-groups", label: "一键拉群模板" },
       { id: "chat-bulk", label: "群发言" },
       { id: "chat-robots", label: "机器人发信息" },
       { id: "chat-redpacket", label: "抢红包机器人" },
@@ -846,6 +848,23 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocConversationSearchPanel refresh={refresh} />;
   if (page === "chat-groups")
     return <DocConversationSearchPanel refresh={refresh} groupsOnly />;
+  if (page === "chat-service-groups")
+    return (
+      <DocGenericManagedPanel
+        refresh={refresh}
+        title="一键拉群模板"
+        description="配置固定服务成员和群名称规则；{customer} 替换为客户昵称，{account} 替换为客户账号。"
+        module="chat.service-group-templates"
+        fields={[
+          { key: "namePattern", label: "群名称规则" },
+          {
+            key: "memberAccounts",
+            label: "固定入群成员账号（逗号分隔）",
+            multiline: true,
+          },
+        ]}
+      />
+    );
   if (page === "chat-customer")
     return (
       <DocGenericManagedPanel

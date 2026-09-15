@@ -450,3 +450,8 @@ public sealed record AdminConversationQuery(string? Search = null, string? Accou
 public sealed record AdminGroupRequest(string Name, string OwnerAccount, IReadOnlyList<string> MemberAccounts);
 public sealed record AdminGroupUpdateRequest(string Name);
 public sealed record GroupInviteRedeemRequest(string Code);
+
+// Service-group quick-create configuration. Stored as AdminModuleRecord data so it remains
+// compatible with existing Mongo deployments without a schema migration.
+public sealed record ServiceGroupTemplateRequest(string Name, string NamePattern, IReadOnlyList<string> MemberAccounts, bool Enabled = true);
+public sealed record ServiceGroupCreateRequest(string TemplateId, string CustomerAccount);
