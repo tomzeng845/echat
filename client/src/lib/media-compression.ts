@@ -136,7 +136,14 @@ export async function compressChatVideo(file: File): Promise<File> {
     };
     const recording = new Promise<Blob>((resolve, reject) => {
       recorder.onerror = () => reject(new Error("video compression failed"));
-      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+      recorder.onstop = () => {
+        // The final dataavailable event may arrive after stop. Defer Blob
+        // construction to include the last encoded chunk.
+        window.setTimeout(
+          () => resolve(new Blob(chunks, { type: mimeType })),
+          0
+        );
+      };
     });
 
     const draw = () => {

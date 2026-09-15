@@ -193,7 +193,7 @@ export function snapshot() {
   return entries.slice();
 }
 
-export function exportDiagnosticLog(extraEntries: DiagnosticEntry[] = []) {
+export async function exportDiagnosticLog(extraEntries: DiagnosticEntry[] = []) {
   persistEntries();
   const mergedEntries = [...snapshot(), ...extraEntries]
     .sort((left, right) => left.at.localeCompare(right.at))
@@ -219,8 +219,19 @@ export function exportDiagnosticLog(extraEntries: DiagnosticEntry[] = []) {
     typeof navigator !== "undefined" &&
     navigator.share &&
     navigator.canShare?.({ files: [file] })
-  )
-    return navigator.share({ title: "E聊运行日志", files: [file] });
+  ) {
+    try {
+      await navigator.share({ title: "E聊运行日志", files: [file] });
+      return;
+    } catch (cause) {
+      // Some browsers report that file sharing is supported but reject it
+      // because of permission policy or an unavailable share target. Fall
+      // back to a normal download instead of showing a false export error.
+      warn("diagnostics", "Native file share failed; falling back to browser download", {
+        reason: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

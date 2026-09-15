@@ -64,6 +64,20 @@ export async function sendChatMedia(
       fileName,
     });
   }
+  if (upload.size <= 0) {
+    logInfo("media-upload", "Empty media output detected; restoring original file", {
+      kind,
+      originalBytes: file.size,
+      emptyOutputBytes: upload.size,
+      fileName,
+    });
+    upload = file instanceof File
+      ? file
+      : new File([file], fileName, {
+          type: options.mimeType || file.type || "application/octet-stream",
+          lastModified: Date.now(),
+        });
+  }
   const mimeType = options.mimeType || upload.type || "application/octet-stream";
   logInfo("media-upload", "Media API upload started", {
     kind,
