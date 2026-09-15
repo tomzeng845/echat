@@ -58,7 +58,7 @@ public sealed class MediaController(
             {
                 OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
                 FileName = Path.GetFileNameWithoutExtension(safeFileName) + ".mp4", ContentType = "video/mp4", Size = new FileInfo(processed.Mp4Path).Length,
-                ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey, DurationSeconds = processed.DurationSeconds, IsTranscoded = true
+                ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey, HlsSegmentCount = processed.HlsSegmentPaths.Count, DurationSeconds = processed.DurationSeconds, IsTranscoded = true
             }, ct);
             try { System.IO.File.Delete(input); Directory.Delete(processed.DirectoryPath, true); } catch { }
         }
@@ -127,8 +127,18 @@ public sealed class MediaController(
     {
         var asset = await repository.GetMediaAssetAsync(id, ct);
         if (asset is null || asset.HlsPlaylistStorageKey is null || !await CanAccessAsync(asset, ct)) return NotFound();
-        var signedUrl = await storage.GetSignedReadUrlAsync(asset.HlsPlaylistStorageKey, ct);
-        return signedUrl is null ? NotFound() : Redirect(signedUrl);
+        var prefix = asset.HlsPlaylistStorageKey[..^"index.m3u8".Length];
+        var lines = new List<string> { "#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:6", "#EXT-X-MEDIA-SEQUENCE:0" };
+        for (var index = 0; index < asset.HlsSegmentCount; index++)
+        {
+            var segmentKey = $"{prefix}segment_{index:00000}.ts";
+            var segmentUrl = await storage.GetSignedReadUrlAsync(segmentKey, ct);
+            if (segmentUrl is null) return NotFound();
+            lines.Add("#EXTINF:6.000,");
+            lines.Add(segmentUrl);
+        }
+        lines.Add("#EXT-X-ENDLIST");
+        return Content(string.Join("\n", lines) + "\n", "application/vnd.apple.mpegurl");
     }
 
     private async Task<bool> CanAccessAsync(MediaAsset asset, CancellationToken ct)

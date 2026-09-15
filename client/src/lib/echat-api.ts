@@ -122,6 +122,10 @@ export type MediaAsset = {
   size: number;
   purpose: "Chat" | "Moment" | "Feedback";
   contentUrl: string;
+  thumbnailUrl?: string | null;
+  hlsUrl?: string | null;
+  durationSeconds?: number | null;
+  isTranscoded?: boolean;
 };
 export type MomentLike = {
   userId: string;

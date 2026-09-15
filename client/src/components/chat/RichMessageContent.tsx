@@ -3,6 +3,8 @@ import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
   downloadChatMedia,
+  directChatHlsUrl,
+  directChatThumbnailUrl,
   effectiveMediaMimeType,
   formatFileSize,
   parseMediaPayload,
@@ -38,6 +40,18 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
+    if (message.kind === "Video" && payload.hlsUrl && !videoFallbackTried) {
+      const hlsUrl = directChatHlsUrl(payload);
+      if (hlsUrl) {
+        setLoadedMedia({ type: "application/vnd.apple.mpegurl", size: 0 });
+        setUrl(hlsUrl);
+        setLoading(false);
+        return () => {
+          active = false;
+          setUrl(current => (current === hlsUrl ? undefined : current));
+        };
+      }
+    }
     setLoading(true);
     downloadChatMedia(message.conversationId, message.keyVersion || 1, payload)
       .then(blob => {
@@ -63,6 +77,7 @@ export default function RichMessageContent({
     message.state,
     payload?.assetId,
     payload?.fileNonce,
+    payload?.hlsUrl,
     videoRequested,
     videoFallbackTried,
   ]);
@@ -197,6 +212,7 @@ export default function RichMessageContent({
           controls
           playsInline
           preload="auto"
+          poster={directChatThumbnailUrl(payload) || undefined}
           src={url}
           onLoadStart={event => {
             const video = event.currentTarget;

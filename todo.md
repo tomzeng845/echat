@@ -487,3 +487,14 @@
 - [ ] 将 OpenIM signalingInvite/accept/hangup 与 CallKit/PushKit 生命周期接通
 - [ ] iOS 真机验证锁屏接听、听筒/外放/蓝牙、中断恢复和第二通电话
 - [ ] 群会话中选择一名成员建立一对一通话；不创建多人房间
+
+## 2026-09-15 视频播放优化
+
+- [x] 视频上传服务端统一转为 720p 上限、H.264 Main、yuv420p、AAC 128 kbps、faststart MP4，目标码率 2 Mbps、峰值 2.5 Mbps
+- [x] 视频上传后生成 640px 首帧 JPEG 缩略图，并在聊天播放器作为 poster 展示
+- [x] 30 秒以上视频生成 6 秒 HLS 分片；HLS 播放清单按分片生成带鉴权的签名 URL
+- [x] 媒体元数据保存转码状态、时长、缩略图和 HLS 信息；短视频/不支持 HLS 的客户端回退 MP4
+- [x] 保留 ASP.NET Core 标准单段 HTTP Range，避免此前任意块 MSE 导致反复缓冲
+- [x] 通过测试视频验证输出为 H.264/yuv420p + AAC；通过 .NET、TypeScript、Vite 和 Android Gradle 构建
+- [x] Android APK 已上传，包含 HLS 优先、首帧 poster 和 MP4 回退
+- [ ] 生产 API 主机安装 FFmpeg/FFprobe，并用真实 30 秒以上视频验收 HLS；Windows 服务需将 Media:FFmpegPath/FFprobePath 指向可执行文件

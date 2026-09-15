@@ -227,6 +227,7 @@ public sealed class MediaAsset
     public long Size { get; set; }
     public string? ThumbnailStorageKey { get; set; }
     public string? HlsPlaylistStorageKey { get; set; }
+    public int HlsSegmentCount { get; set; }
     public double? DurationSeconds { get; set; }
     public bool IsTranscoded { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

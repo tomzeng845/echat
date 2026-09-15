@@ -17,6 +17,9 @@ export type ChatMediaPayload = {
   size: number;
   fileNonce?: string;
   duration?: number;
+  thumbnailUrl?: string;
+  hlsUrl?: string;
+  isTranscoded?: boolean;
 };
 
 export async function sendChatMedia(
@@ -44,6 +47,9 @@ export async function sendChatMedia(
     mimeType,
     size: file.size,
     duration: options.duration,
+    thumbnailUrl: asset.thumbnailUrl ?? undefined,
+    hlsUrl: asset.hlsUrl ?? undefined,
+    isTranscoded: asset.isTranscoded ?? false,
   };
   return api<Message>(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
@@ -118,6 +124,20 @@ export function directChatMediaUrl(payload: ChatMediaPayload) {
   if (!token) return "";
   return apiUrl(
     `/api/media/${encodeURIComponent(payload.assetId)}/content?access_token=${encodeURIComponent(token)}`
+  );
+}
+
+export function directChatHlsUrl(payload: ChatMediaPayload) {
+  const token = getSession()?.accessToken;
+  if (!token || !payload.hlsUrl) return "";
+  return apiUrl(`${payload.hlsUrl}?access_token=${encodeURIComponent(token)}`);
+}
+
+export function directChatThumbnailUrl(payload: ChatMediaPayload) {
+  const token = getSession()?.accessToken;
+  if (!token || !payload.thumbnailUrl) return "";
+  return apiUrl(
+    `${payload.thumbnailUrl}?access_token=${encodeURIComponent(token)}`
   );
 }
 
