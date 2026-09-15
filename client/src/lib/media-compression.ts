@@ -71,8 +71,7 @@ export async function compressChatImage(file: File): Promise<File> {
 
 function chooseVideoMimeType() {
   const candidates = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp8",
     "video/webm",
   ];
   return candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
@@ -92,6 +91,7 @@ export async function compressChatVideo(file: File): Promise<File> {
   video.playsInline = true;
   video.preload = "auto";
   video.src = sourceUrl;
+  let capturedStream: MediaStream | null = null;
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -111,14 +111,18 @@ export async function compressChatVideo(file: File): Promise<File> {
     if (!video.videoWidth || !video.videoHeight || !video.captureStream)
       return file;
 
-    // Record the decoded stream directly. canvas.captureStream() can produce
-    // empty output in Chromium for some MP4 files.
-    const stream = video.captureStream();
+    // Start playback before captureStream. Some Chromium versions do not
+    // produce frames while the source video is paused.
+    await video.play();
+    const rawStream = video.captureStream();
+    capturedStream = rawStream;
+    // Do not include the source audio track: muted local playback can make
+    // Chromium's MediaRecorder produce no chunks at all.
+    const stream = new MediaStream(rawStream.getVideoTracks());
     if (!stream.getVideoTracks().length) return file;
     const recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: 1_800_000,
-      audioBitsPerSecond: 96_000,
     });
     const chunks: Blob[] = [];
     recorder.ondataavailable = event => {
@@ -151,7 +155,6 @@ export async function compressChatVideo(file: File): Promise<File> {
         if (recorder.state === "recording") recorder.stop();
       }, 250);
     };
-    await video.play();
     const blob = await Promise.race([
       recording,
       new Promise<Blob>((_, reject) =>
@@ -195,7 +198,7 @@ export async function compressChatVideo(file: File): Promise<File> {
     });
     return file;
   } finally {
-    video.captureStream?.().getTracks().forEach(track => track.stop());
+    capturedStream?.getTracks().forEach(track => track.stop());
     video.pause();
     video.removeAttribute("src");
     video.load();
