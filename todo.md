@@ -514,3 +514,10 @@
 - [x] 转码异常不再阻断视频消息；只有原文件存储失败才返回明确上传错误
 - [x] 前端区分“视频上传失败”和“媒体已上传但消息保存失败”，并写入诊断日志
 - [x] `pnpm check`、Vite 构建和 Windows 自包含 API 发布通过；Android APK 与 Windows API 已上传
+
+## 2026-09-15 FFmpeg Windows 服务路径修复
+
+- [x] 解释并修复 appsettings 使用命令名而非绝对路径造成的 Windows 服务 PATH 差异
+- [x] 自动解析 PATH、C:\\ffmpeg、Program Files、Chocolatey 和 WinGet 常见目录
+- [x] API 日志记录实际 ffmpeg/ffprobe 路径与可用状态
+- [x] 构建并上传最新 Android APK 与 Windows API 包

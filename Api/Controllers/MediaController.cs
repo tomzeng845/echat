@@ -54,7 +54,7 @@ public sealed class MediaController(
                 {
                     if (!videoProcessing.IsAvailable)
                     {
-                        logger.LogWarning("FFmpeg/FFprobe unavailable; preserving original video upload {FileName}", safeFileName);
+                        logger.LogWarning("FFmpeg/FFprobe unavailable; {Status}; preserving original video upload {FileName}", videoProcessing.Status, safeFileName);
                         var originalWithoutTranscode = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct);
                         return Ok(View(originalWithoutTranscode));
                     }
