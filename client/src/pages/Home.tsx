@@ -2650,11 +2650,6 @@ function MessageBubble({
               </p>
             </div>
           )}
-          {message.metadata?.forwardedFromMessageId && (
-            <div className="mt-2 border-t border-current/15 pt-2 text-[10px] opacity-70">
-              转发消息
-            </div>
-          )}
         </div>
         <div
           className={`mt-1.5 flex items-center gap-2 px-1 text-[10px] text-slate-400 ${mine ? "justify-end" : "justify-start"}`}
