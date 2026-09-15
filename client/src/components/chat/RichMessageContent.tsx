@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
@@ -28,6 +28,7 @@ export default function RichMessageContent({
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
   const [videoRequested, setVideoRequested] = useState(false);
   const [videoFallbackTried, setVideoFallbackTried] = useState(false);
+  const videoBufferGate = useRef(false);
   const supportsNativeHls =
     typeof navigator !== "undefined" &&
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -247,19 +248,63 @@ export default function RichMessageContent({
               duration: video.duration,
             });
           }}
+          onLoadedMetadata={event => {
+            const video = event.currentTarget;
+            logInfo("video-message", "Video metadata loaded", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              duration: video.duration,
+              videoWidth: video.videoWidth,
+              videoHeight: video.videoHeight,
+              currentSrcIsBlob: video.currentSrc.startsWith("blob:"),
+            });
+          }}
+          onPlay={event => {
+            const video = event.currentTarget;
+            const bufferedEnd =
+              video.buffered.length > 0
+                ? video.buffered.end(video.buffered.length - 1)
+                : 0;
+            const bufferedSeconds = Math.max(0, bufferedEnd - video.currentTime);
+            logInfo("video-message", "Video play requested", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              bufferedSeconds,
+              readyState: video.readyState,
+              networkState: video.networkState,
+            });
+            // Do not consume the first tiny browser buffer immediately. Pausing
+            // here lets the native player request/fill more data before playback.
+            if (bufferedSeconds < 3 && video.readyState < 4) {
+              videoBufferGate.current = true;
+              video.pause();
+              logInfo("video-message", "Video playback held for initial buffer", {
+                assetIdSuffix: payload.assetId.slice(-8),
+                bufferedSeconds,
+                targetBufferedSeconds: 3,
+              });
+            }
+          }}
           onProgress={event => {
             const video = event.currentTarget;
             const bufferedEnd =
               video.buffered.length > 0
                 ? video.buffered.end(video.buffered.length - 1)
                 : 0;
+            const bufferedSeconds = Math.max(0, bufferedEnd - video.currentTime);
             logInfo("video-message", "Video network progress", {
               assetIdSuffix: payload.assetId.slice(-8),
               currentTime: video.currentTime,
-              bufferedSeconds: Math.max(0, bufferedEnd - video.currentTime),
+              bufferedSeconds,
               readyState: video.readyState,
               networkState: video.networkState,
             });
+            if (videoBufferGate.current && bufferedSeconds >= 3) {
+              videoBufferGate.current = false;
+              logInfo("video-message", "Video initial buffer ready, resuming", {
+                assetIdSuffix: payload.assetId.slice(-8),
+                bufferedSeconds,
+              });
+              void video.play().catch(() => undefined);
+            }
           }}
           onCanPlay={event => {
             setLoading(false);
