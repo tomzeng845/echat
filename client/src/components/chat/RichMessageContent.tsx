@@ -3,6 +3,7 @@ import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
   downloadChatMedia,
+  directChatMediaUrl,
   effectiveMediaMimeType,
   formatFileSize,
   parseMediaPayload,
@@ -38,6 +39,20 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
+    if (message.kind === "Video" && !payload.fileNonce) {
+      const directUrl = directChatMediaUrl(payload);
+      if (directUrl) {
+        setLoadedMedia({
+          type: effectiveMediaMimeType(payload, "Video"),
+          size: payload.size,
+        });
+        setUrl(directUrl);
+        setLoading(false);
+        return () => {
+          active = false;
+        };
+      }
+    }
     const canStreamVideo =
       message.kind === "Video" &&
       !payload.fileNonce &&

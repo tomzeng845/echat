@@ -1,4 +1,10 @@
-import { api, authorizedFetch, uploadMedia, type Message } from "./echat-api";
+import {
+  api,
+  authorizedFetch,
+  getSession,
+  uploadMedia,
+  type Message,
+} from "./echat-api";
 import { decryptBinary, getConversationKey } from "./echat-crypto";
 import { createUuid } from "./uuid";
 
@@ -104,6 +110,12 @@ export async function downloadChatMedia(
     payload.fileNonce
   );
   return new Blob([decrypted], { type: mimeType });
+}
+
+export function directChatMediaUrl(payload: ChatMediaPayload) {
+  const token = getSession()?.accessToken;
+  if (!token) return "";
+  return `/api/media/${encodeURIComponent(payload.assetId)}/content?access_token=${encodeURIComponent(token)}`;
 }
 
 export function streamChatVideo(

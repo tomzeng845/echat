@@ -56,7 +56,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     {
         OnMessageReceived = context =>
         {
-            if (context.HttpContext.Request.Path.StartsWithSegments("/hubs/chat"))
+            if (context.HttpContext.Request.Path.StartsWithSegments("/hubs/chat")
+                || context.HttpContext.Request.Path.StartsWithSegments("/api/media"))
                 context.Token = context.Request.Query["access_token"];
             return Task.CompletedTask;
         },
