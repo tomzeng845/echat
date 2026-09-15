@@ -130,8 +130,25 @@ export function streamChatVideo(
   const mediaSource = new MediaSource();
   const objectUrl = URL.createObjectURL(mediaSource);
   let disposed = false;
+  let ready = false;
+  let bufferedBytes = 0;
+  const minimumBufferBytes = 1.5 * 1024 * 1024;
+  const minimumBufferSeconds = 2;
 
-  onReady(objectUrl);
+  const publishWhenBuffered = (sourceBuffer: SourceBuffer) => {
+    if (ready || disposed) return;
+    const bufferedSeconds =
+      sourceBuffer.buffered.length > 0
+        ? sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1)
+        : 0;
+    if (
+      bufferedBytes >= minimumBufferBytes ||
+      bufferedSeconds >= minimumBufferSeconds
+    ) {
+      ready = true;
+      onReady(objectUrl);
+    }
+  };
   const start = async () => {
     try {
       const response = await authorizedFetch(
@@ -152,6 +169,7 @@ export function streamChatVideo(
         const { done, value } = await reader.read();
         if (done) break;
         if (!value?.length) continue;
+        bufferedBytes += value.byteLength;
         await new Promise<void>((resolve, reject) => {
           const finish = () => {
             sourceBuffer.removeEventListener("updateend", finish);
@@ -167,6 +185,11 @@ export function streamChatVideo(
           sourceBuffer.addEventListener("error", fail, { once: true });
           sourceBuffer.appendBuffer(value);
         });
+        publishWhenBuffered(sourceBuffer);
+      }
+      if (!ready && !disposed) {
+        ready = true;
+        onReady(objectUrl);
       }
       if (!disposed && mediaSource.readyState === "open")
         mediaSource.endOfStream();

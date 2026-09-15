@@ -28,6 +28,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { prepareChatMedia } from "@/lib/media-compression";
 import { resolveBuiltinAvatar } from "@/lib/builtin-avatars";
 import { createUuid } from "@/lib/uuid";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
@@ -1377,7 +1378,7 @@ function Messenger({
     }
   }
 
-  function pickFile(file: File | undefined, preferred?: ChatMediaKind) {
+  async function pickFile(file: File | undefined, preferred?: ChatMediaKind) {
     if (!file) return;
     const kind: ChatMediaKind =
       preferred ??
@@ -1386,7 +1387,16 @@ function Messenger({
         : file.type.startsWith("image/")
           ? "Image"
           : "File");
-    sendMedia(file, kind);
+    if (kind === "Image" || kind === "Video") {
+      try {
+        const prepared = await prepareChatMedia(file, kind);
+        await sendMedia(prepared, kind);
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : "媒体处理失败");
+      }
+      return;
+    }
+    void sendMedia(file, kind);
   }
 
   async function recall(message: DecryptedMessage) {

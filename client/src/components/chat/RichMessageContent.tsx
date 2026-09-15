@@ -40,20 +40,6 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
-    if (message.kind === "Video" && !payload.fileNonce) {
-      const directUrl = directChatMediaUrl(payload);
-      if (directUrl && !videoFallbackTried) {
-        setLoadedMedia({
-          type: effectiveMediaMimeType(payload, "Video"),
-          size: payload.size,
-        });
-        setUrl(directUrl);
-        setLoading(false);
-        return () => {
-          active = false;
-        };
-      }
-    }
     const canStreamVideo =
       message.kind === "Video" &&
       !payload.fileNonce &&
@@ -61,11 +47,18 @@ export default function RichMessageContent({
       typeof MediaSource !== "undefined" &&
       MediaSource.isTypeSupported(effectiveMediaMimeType(payload, "Video"));
     if (canStreamVideo) {
-      setLoading(false);
+      setLoading(true);
       return streamChatVideo(
         payload,
         nextUrl => {
-          if (active) setUrl(nextUrl);
+          if (active) {
+            setUrl(nextUrl);
+            setLoadedMedia({
+              type: effectiveMediaMimeType(payload, "Video"),
+              size: payload.size,
+            });
+            setLoading(false);
+          }
         },
         async () => {
           // Some Android WebViews report MSE support but reject the actual
@@ -94,6 +87,20 @@ export default function RichMessageContent({
           }
         }
       );
+    }
+    if (message.kind === "Video" && !payload.fileNonce) {
+      const directUrl = directChatMediaUrl(payload);
+      if (directUrl && !videoFallbackTried) {
+        setLoadedMedia({
+          type: effectiveMediaMimeType(payload, "Video"),
+          size: payload.size,
+        });
+        setUrl(directUrl);
+        setLoading(false);
+        return () => {
+          active = false;
+        };
+      }
     }
     setLoading(true);
     downloadChatMedia(message.conversationId, message.keyVersion || 1, payload)
