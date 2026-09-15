@@ -5,6 +5,7 @@ import {
   uploadMedia,
   type Message,
 } from "./echat-api";
+import { apiUrl } from "./runtime-config";
 import { decryptBinary, getConversationKey } from "./echat-crypto";
 import { createUuid } from "./uuid";
 
@@ -115,7 +116,9 @@ export async function downloadChatMedia(
 export function directChatMediaUrl(payload: ChatMediaPayload) {
   const token = getSession()?.accessToken;
   if (!token) return "";
-  return `/api/media/${encodeURIComponent(payload.assetId)}/content?access_token=${encodeURIComponent(token)}`;
+  return apiUrl(
+    `/api/media/${encodeURIComponent(payload.assetId)}/content?access_token=${encodeURIComponent(token)}`
+  );
 }
 
 export function streamChatVideo(
