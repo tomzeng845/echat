@@ -231,6 +231,22 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         return NoContent();
     }
 
+    [HttpPost("{id}/messages/{messageId}/delete")]
+    public async Task<ActionResult> DeleteMessage(string id, string messageId, CancellationToken ct)
+    {
+        if (await RequireMemberAsync(id, ct) is null) return Forbid();
+        var message = await repository.GetMessageAsync(messageId, ct);
+        if (message is null || message.ConversationId != id || message.SenderId != User.UserId()) return NotFound();
+        message.State = MessageState.Recalled;
+        message.RecalledAtUtc = DateTime.UtcNow;
+        message.Content = "";
+        message.Ciphertext = "";
+        message.Nonce = "";
+        await repository.UpdateMessageAsync(message, ct);
+        await hub.Clients.Group($"conversation:{id}").SendAsync("message.updated", View(message), ct);
+        return NoContent();
+    }
+
     [HttpDelete("{id}/messages")]
     public async Task<ActionResult> ClearMessages(string id, CancellationToken ct)
     {

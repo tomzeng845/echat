@@ -59,6 +59,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Compass,
+  CheckSquare,
   FileText,
   Image,
   Maximize2,
@@ -69,11 +70,13 @@ import {
   Paperclip,
   Phone,
   Plus,
+  Quote,
   Search,
   QrCode,
   ScanLine,
   SendHorizontal,
   Settings,
+  Share2,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -454,6 +457,11 @@ function Messenger({
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [messageAction, setMessageAction] = useState<
+    { type: "menu" | "forward"; messageId?: string } | undefined
+  >();
+  const [forwardTargets, setForwardTargets] = useState<string[]>([]);
   const [callSummaries, setCallSummaries] = useState<CallSummary[]>([]);
   const [draft, setDraft] = useState("");
   const [typingPeerName, setTypingPeerName] = useState<string | null>(null);
@@ -518,6 +526,9 @@ function Messenger({
   }, []);
 
   const selected = conversations.find(item => item.id === selectedId) ?? null;
+  const actionMessage = messageAction?.messageId
+    ? messages.find(item => item.id === messageAction.messageId)
+    : undefined;
   const selectedContact =
     selected?.type === "Direct"
       ? (contacts.find(
@@ -1383,6 +1394,89 @@ function Messenger({
     }
   }
 
+  function toggleMessageSelection(messageId: string) {
+    setSelectedMessageIds(current =>
+      current.includes(messageId)
+        ? current.filter(id => id !== messageId)
+        : [...current, messageId]
+    );
+    setMessageAction(undefined);
+  }
+
+  async function deleteMessages(ids: string[]) {
+    if (!ids.length) return;
+    try {
+      await Promise.all(
+        ids.map(id =>
+          api(`/api/conversations/${selectedId}/messages/${id}/delete`, {
+            method: "POST",
+          })
+        )
+      );
+      setMessages(current =>
+        current.map(item =>
+          ids.includes(item.id)
+            ? { ...item, state: "Recalled", plaintext: "消息已删除" }
+            : item
+        )
+      );
+      setSelectedMessageIds([]);
+      setMessageAction(undefined);
+      toast.success(`已删除 ${ids.length} 条消息`);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "删除失败");
+    }
+  }
+
+  async function forwardSelectedMessages() {
+    const messagesToForward = messages.filter(item =>
+      selectedMessageIds.includes(item.id)
+    );
+    if (!forwardTargets.length || !messagesToForward.length) {
+      toast.warning("请选择至少一个转发对象");
+      return;
+    }
+    setBusy(true);
+    try {
+      for (const conversationId of forwardTargets) {
+        for (const item of messagesToForward) {
+          const content =
+            item.kind === "Text" || item.kind === "Emoji"
+              ? item.plaintext
+              : `[${item.kind === "Video" ? "视频" : item.kind === "Image" ? "图片" : item.kind === "Voice" ? "语音" : "文件"}] ${item.plaintext || "媒体消息"}`;
+          await api(`/api/conversations/${conversationId}/messages`, {
+            method: "POST",
+            body: JSON.stringify({
+              clientMessageId: createUuid(),
+              kind: "Text",
+              keyVersion: 0,
+              algorithm: "PLAINTEXT",
+              content: `转发消息：\n${content}`,
+              ciphertext: "",
+              nonce: "",
+              metadata: {
+                forwardedFromMessageId: item.id,
+                forwardedFromConversationId: item.conversationId,
+                forwardedKind: item.kind,
+              },
+            }),
+          });
+        }
+      }
+      setSelectedMessageIds([]);
+      setForwardTargets([]);
+      setMessageAction(undefined);
+      toast.success(
+        `已转发 ${messagesToForward.length} 条消息到 ${forwardTargets.length} 个会话`
+      );
+      await loadData();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "转发失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function clearChatHistory() {
     if (!selected) return;
     if (
@@ -1911,6 +2005,19 @@ function Messenger({
                                 selected.avatarUrl
                           }
                           onRecall={() => recall(message)}
+                          selected={selectedMessageIds.includes(message.id)}
+                          onToggleSelect={() =>
+                            toggleMessageSelection(message.id)
+                          }
+                          onAction={action => {
+                            if (action === "select")
+                              toggleMessageSelection(message.id);
+                            else
+                              setMessageAction({
+                                type: "menu",
+                                messageId: message.id,
+                              });
+                          }}
                         />
                       ))}
                       {callSummaries
@@ -2078,6 +2185,156 @@ function Messenger({
           )}
         </section>
       </div>
+
+      {messageAction?.type === "menu" && actionMessage && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/25 p-4 md:items-center"
+          onClick={() => setMessageAction(undefined)}
+        >
+          <div
+            className="grid w-full max-w-md grid-cols-4 gap-2 rounded-3xl bg-slate-900 p-3 text-white shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMessageIds([actionMessage.id]);
+                setForwardTargets([]);
+                setMessageAction({ type: "forward" });
+              }}
+              className="flex flex-col items-center gap-2 rounded-2xl p-3 text-xs hover:bg-white/10"
+            >
+              <Share2 size={20} /> 转发
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(`引用：${actionMessage.plaintext}\n`);
+                setMessageAction(undefined);
+              }}
+              className="flex flex-col items-center gap-2 rounded-2xl p-3 text-xs hover:bg-white/10"
+            >
+              <Quote size={20} /> 引用
+            </button>
+            <button
+              type="button"
+              onClick={() => deleteMessages([actionMessage.id])}
+              className="flex flex-col items-center gap-2 rounded-2xl p-3 text-xs text-rose-300 hover:bg-white/10"
+            >
+              <Trash2 size={20} /> 删除
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMessageIds([actionMessage.id]);
+                setMessageAction(undefined);
+              }}
+              className="flex flex-col items-center gap-2 rounded-2xl p-3 text-xs hover:bg-white/10"
+            >
+              <CheckSquare size={20} /> 多选
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedMessageIds.length > 0 && !messageAction && (
+        <div className="fixed inset-x-0 bottom-0 z-[65] border-t border-slate-200 bg-white/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-2xl backdrop-blur md:bottom-4 md:left-1/2 md:max-w-2xl md:-translate-x-1/2 md:rounded-2xl md:border">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-slate-700">
+              已选择 {selectedMessageIds.length} 条
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardTargets([]);
+                  setMessageAction({ type: "forward" });
+                }}
+                className="flex items-center gap-1 rounded-xl bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700"
+              >
+                <Share2 size={14} /> 转发
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMessages(selectedMessageIds)}
+                className="flex items-center gap-1 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600"
+              >
+                <Trash2 size={14} /> 删除
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMessageIds([])}
+                className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messageAction?.type === "forward" && (
+        <div className="fixed inset-0 z-[75] grid place-items-center bg-slate-950/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[.14em] text-teal-600">
+                  Forward
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">选择转发对象</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMessageAction(undefined)}
+                className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-500"
+              >
+                取消
+              </button>
+            </div>
+            <div className="mt-4 max-h-[50vh] space-y-1 overflow-y-auto">
+              {conversations.map(conversation => {
+                const checked = forwardTargets.includes(conversation.id);
+                return (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() =>
+                      setForwardTargets(current =>
+                        checked
+                          ? current.filter(id => id !== conversation.id)
+                          : [...current, conversation.id]
+                      )
+                    }
+                    className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left ${checked ? "bg-teal-50 ring-1 ring-teal-200" : "hover:bg-slate-50"}`}
+                  >
+                    <Avatar
+                      name={conversation.name}
+                      src={resolveBuiltinAvatar(conversation.avatarUrl)}
+                      size="sm"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {conversation.name}
+                    </span>
+                    <span
+                      className={`grid h-6 w-6 place-items-center rounded-full border ${checked ? "border-teal-500 bg-teal-500 text-white" : "border-slate-300"}`}
+                    >
+                      {checked && <Check size={14} />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              disabled={!forwardTargets.length || busy}
+              onClick={forwardSelectedMessages}
+              className="mt-4 w-full rounded-2xl bg-teal-500 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              转发 {selectedMessageIds.length} 条消息
+            </button>
+          </div>
+        </div>
+      )}
 
       <CallManager
         ref={callManagerRef}
@@ -2287,13 +2544,20 @@ function MessageBubble({
   avatarName,
   avatarSrc,
   onRecall,
+  selected,
+  onToggleSelect,
+  onAction,
 }: {
   message: DecryptedMessage;
   mine: boolean;
   avatarName: string;
   avatarSrc?: string;
   onRecall: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onAction: (action: "menu" | "select") => void;
 }) {
+  const holdTimer = useRef<number | undefined>(undefined);
   const rich =
     message.kind === "Image" ||
     message.kind === "Voice" ||
@@ -2311,13 +2575,27 @@ function MessageBubble({
   return (
     <div
       className={`group mb-4 flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}
+      onContextMenu={event => {
+        event.preventDefault();
+        onAction("menu");
+      }}
+      onPointerDown={() => {
+        holdTimer.current = window.setTimeout(() => onAction("menu"), 520);
+      }}
+      onPointerUp={() => {
+        if (holdTimer.current) window.clearTimeout(holdTimer.current);
+      }}
+      onPointerLeave={() => {
+        if (holdTimer.current) window.clearTimeout(holdTimer.current);
+      }}
     >
       {!mine && <Avatar name={avatarName} src={avatarSrc} size="sm" />}
       <div
         className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}
       >
         <div
-          className={`rounded-[20px] shadow-sm ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
+          className={`rounded-[20px] shadow-sm ${selected ? "ring-2 ring-amber-400 ring-offset-2" : ""} ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
+          onClick={() => selected && onToggleSelect()}
         >
           <RichMessageContent message={message} />
         </div>
@@ -2342,6 +2620,11 @@ function MessageBubble({
             </>
           )}
         </div>
+        {selected && (
+          <span className="mt-1 block text-right text-[10px] font-semibold text-amber-600">
+            已选择
+          </span>
+        )}
       </div>
       {mine && <Avatar name={avatarName} src={avatarSrc} size="sm" />}
     </div>
