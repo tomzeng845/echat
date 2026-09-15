@@ -124,7 +124,15 @@ export default function RichMessageContent({
     return (
       <button
         type="button"
-        onClick={() => setVideoRequested(true)}
+        onClick={() => {
+          logInfo("video-message", "Video lazy load requested by user", {
+            assetIdSuffix: payload.assetId.slice(-8),
+            size: payload.size,
+            duration: payload.duration,
+            platform: Capacitor.getPlatform(),
+          });
+          setVideoRequested(true);
+        }}
         className="flex min-h-24 min-w-56 items-center gap-3 rounded-xl bg-black/70 px-4 py-3 text-left text-white"
       >
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal-400 text-xl text-slate-950">
@@ -226,7 +234,7 @@ export default function RichMessageContent({
         <video
           controls={!useNativeAndroidPlayer}
           playsInline
-          preload="auto"
+          preload="none"
           poster={directChatThumbnailUrl(payload) || undefined}
           src={url}
           onClick={event => {
