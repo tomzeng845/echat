@@ -54,23 +54,6 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
-    if (
-      message.kind === "Video" &&
-      supportsNativeHls &&
-      payload.hlsUrl &&
-      !videoFallbackTried
-    ) {
-      const hlsUrl = directChatHlsUrl(payload);
-      if (hlsUrl) {
-        setLoadedMedia({ type: "application/vnd.apple.mpegurl", size: 0 });
-        setUrl(hlsUrl);
-        setLoading(false);
-        return () => {
-          active = false;
-          setUrl(current => (current === hlsUrl ? undefined : current));
-        };
-      }
-    }
     if (message.kind === "Video" && !payload.fileNonce) {
       const mediaUrl = directChatMediaUrl(payload);
       if (mediaUrl) {
@@ -371,8 +354,12 @@ export default function RichMessageContent({
             if (!videoFallbackTried) {
               setVideoFallbackTried(true);
               if (supportsNativeHls) {
-                const fallbackUrl = directChatMediaUrl(payload);
+                const fallbackUrl = directChatHlsUrl(payload);
                 if (fallbackUrl) {
+                  setLoadedMedia({
+                    type: "application/vnd.apple.mpegurl",
+                    size: 0,
+                  });
                   setUrl(fallbackUrl);
                   setPlaybackError("");
                 } else setPlaybackError("视频播放失败，请点击重试");
