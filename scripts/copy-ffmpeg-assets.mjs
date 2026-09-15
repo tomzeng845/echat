@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const core = path.join(root, "node_modules/@ffmpeg/core/dist/umd");
+const core = path.join(root, "node_modules/@ffmpeg/core/dist/esm");
 const worker = path.join(root, "node_modules/@ffmpeg/ffmpeg/dist/esm");
 const destination = path.join(root, "client/public");
 

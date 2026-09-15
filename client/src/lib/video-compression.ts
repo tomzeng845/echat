@@ -78,9 +78,10 @@ async function getFfmpeg() {
   if (ffmpegLoadPromise) return ffmpegLoadPromise;
   ffmpegLoadPromise = (async () => {
     const instance = new FFmpeg();
-    const coreURL = "/ffmpeg-core/ffmpeg-core.js";
-    const wasmURL = "/ffmpeg-core/ffmpeg-core.wasm";
-    const classWorkerURL = "/ffmpeg-worker/worker.js";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const coreURL = `${origin}/ffmpeg-core/ffmpeg-core.js`;
+    const wasmURL = `${origin}/ffmpeg-core/ffmpeg-core.wasm`;
+    const classWorkerURL = `${origin}/ffmpeg-worker/worker.js`;
     logInfo("video-compression", "FFmpeg WASM loading", {
       coreURL,
       wasmURL,

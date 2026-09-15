@@ -4,6 +4,7 @@ using EChat.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.StaticFiles;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
@@ -147,7 +148,23 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.UseDefaultFiles();
-app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public,max-age=31536000,immutable" });
+var staticContentTypes = new FileExtensionContentTypeProvider();
+staticContentTypes.Mappings[".js"] = "application/javascript";
+staticContentTypes.Mappings[".wasm"] = "application/wasm";
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = staticContentTypes,
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "index.html"
+            ? "no-cache"
+            : "public,max-age=31536000,immutable";
+        if (ctx.File.Name is "ffmpeg-core.js" or "worker.js")
+            ctx.Context.Response.Headers.ContentType = "application/javascript";
+        else if (ctx.File.Name == "ffmpeg-core.wasm")
+            ctx.Context.Response.Headers.ContentType = "application/wasm";
+    }
+});
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push, OpenImService openIm) => Results.Ok(new
