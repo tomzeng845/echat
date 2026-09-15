@@ -169,7 +169,10 @@ public sealed class MediaController(
         logger.LogInformation("Media content request {AssetId} {ContentType} {Size} range={Range} user={UserId}", id, asset.ContentType, asset.Size, Request.Headers.Range.ToString(), User.UserId());
         Response.Headers.CacheControl = "private,max-age=3600";
         if (!string.IsNullOrWhiteSpace(asset.LocalPath) && System.IO.File.Exists(asset.LocalPath))
+        {
+            logger.LogInformation("Media content served locally {AssetId} path={Path} rangeProcessing=true", id, asset.LocalPath);
             return new FileStreamResult(System.IO.File.OpenRead(asset.LocalPath), asset.ContentType) { EnableRangeProcessing = true, FileDownloadName = IsInline(asset.ContentType) ? null : asset.FileName };
+        }
         var signedUrl = await storage.GetSignedReadUrlAsync(asset.StorageKey, ct);
         logger.LogInformation("Media content redirect {AssetId} signedUrl={HasSignedUrl}", id, signedUrl is not null);
         return signedUrl is null ? NotFound() : RedirectPreserveMethod(signedUrl);
@@ -180,6 +183,7 @@ public sealed class MediaController(
     {
         var asset = await repository.GetMediaAssetAsync(id, ct);
         if (asset is null || asset.ThumbnailStorageKey is null || !await CanAccessAsync(asset, ct)) return NotFound();
+        logger.LogInformation("Media thumbnail request {AssetId} storageKey={StorageKey}", id, asset.ThumbnailStorageKey);
         var signedUrl = await storage.GetSignedReadUrlAsync(asset.ThumbnailStorageKey, ct);
         return signedUrl is null ? NotFound() : Redirect(signedUrl);
     }
@@ -189,6 +193,7 @@ public sealed class MediaController(
     {
         var asset = await repository.GetMediaAssetAsync(id, ct);
         if (asset is null || asset.HlsPlaylistStorageKey is null || !await CanAccessAsync(asset, ct)) return NotFound();
+        logger.LogInformation("Media HLS playlist request {AssetId} segmentCount={SegmentCount}", id, asset.HlsSegmentCount);
         var prefix = asset.HlsPlaylistStorageKey[..^"index.m3u8".Length];
         var lines = new List<string> { "#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:6", "#EXT-X-MEDIA-SEQUENCE:0" };
         for (var index = 0; index < asset.HlsSegmentCount; index++)
@@ -200,6 +205,7 @@ public sealed class MediaController(
             lines.Add(segmentUrl);
         }
         lines.Add("#EXT-X-ENDLIST");
+        logger.LogInformation("Media HLS playlist generated {AssetId} segmentCount={SegmentCount}", id, asset.HlsSegmentCount);
         return Content(string.Join("\n", lines) + "\n", "application/vnd.apple.mpegurl");
     }
 

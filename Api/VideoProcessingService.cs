@@ -28,9 +28,12 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
         var thumb = Path.Combine(directory, "thumbnail.jpg");
         var hlsPlaylist = Path.Combine(directory, "index.m3u8");
         var duration = await ProbeDurationAsync(inputPath, ct);
+        logger.LogInformation("Video probe completed input={Input} durationSeconds={Duration}", inputPath, duration);
 
         await RunAsync($"-y -i {Q(inputPath)} -vf \"scale='min(1280,iw)':-2:force_original_aspect_ratio=decrease,format=yuv420p\" -c:v libx264 -profile:v main -level 4.0 -preset veryfast -b:v 2M -maxrate 2.5M -bufsize 4M -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart {Q(mp4)}", directory, ct);
+        logger.LogInformation("Video MP4 transcode completed output={Output} bytes={Bytes} fastStart=true videoBitrate=2Mbps", mp4, new FileInfo(mp4).Length);
         await RunAsync($"-y -ss 00:00:00.500 -i {Q(mp4)} -frames:v 1 -vf \"scale=640:-2\" -q:v 3 {Q(thumb)}", directory, ct);
+        logger.LogInformation("Video thumbnail extraction completed output={Output} bytes={Bytes}", thumb, new FileInfo(thumb).Length);
 
         string? playlist = null;
         var segments = Array.Empty<string>();
@@ -39,7 +42,9 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
             await RunAsync($"-y -i {Q(mp4)} -c copy -f hls -hls_time 6 -hls_playlist_type vod -hls_segment_filename {Q(Path.Combine(directory, "segment_%05d.ts"))} {Q(hlsPlaylist)}", directory, ct);
             playlist = hlsPlaylist;
             segments = Directory.GetFiles(directory, "segment_*.ts").OrderBy(x => x).ToArray();
+            logger.LogInformation("Video HLS generation completed playlist={Playlist} segmentCount={SegmentCount} segmentSeconds=6", hlsPlaylist, segments.Length);
         }
+        else logger.LogInformation("Video HLS skipped durationSeconds={Duration} thresholdSeconds=30", duration);
 
         logger.LogInformation("Video processed duration={Duration} mp4={Mp4} thumbnail={Thumbnail} hls={Hls}", duration, mp4, thumb, playlist is not null);
         return new ProcessedVideo(mp4, thumb, playlist, segments, duration, directory);

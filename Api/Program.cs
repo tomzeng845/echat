@@ -26,6 +26,7 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<TotpService>();
