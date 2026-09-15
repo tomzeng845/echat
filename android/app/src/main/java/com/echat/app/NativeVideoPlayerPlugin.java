@@ -21,9 +21,16 @@ public class NativeVideoPlayerPlugin extends Plugin {
         EChatNativeLog.info(getContext(), "android-video-player", "Native play requested",
             "urlScheme", url.startsWith("https://") ? "https" : "http",
             "urlLength", url.length());
-        Intent intent = new Intent(getContext(), NativeVideoPlayerActivity.class);
-        intent.putExtra(NativeVideoPlayerActivity.EXTRA_VIDEO_URL, url);
-        getContext().startActivity(intent);
-        call.resolve();
+        try {
+            Intent intent = new Intent(getContext(), NativeVideoPlayerActivity.class);
+            intent.putExtra(NativeVideoPlayerActivity.EXTRA_VIDEO_URL, url);
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            getContext().startActivity(intent);
+            EChatNativeLog.info(getContext(), "android-video-player", "Native player Activity started");
+            call.resolve();
+        } catch (RuntimeException error) {
+            EChatNativeLog.error(getContext(), "android-video-player", "Native player Activity failed to start", error);
+            call.reject("原生播放器启动失败", "NATIVE_PLAYER_START_FAILED", error);
+        }
     }
 }

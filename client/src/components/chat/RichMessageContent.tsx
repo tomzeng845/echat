@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
@@ -21,6 +21,8 @@ type NativeVideoPlayer = {
 
 const nativeVideoPlayer = registerPlugin<NativeVideoPlayer>("NativeVideoPlayer");
 
+let activeHtmlVideo: HTMLVideoElement | null = null;
+
 export default function RichMessageContent({
   message,
 }: {
@@ -35,12 +37,26 @@ export default function RichMessageContent({
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
   const [videoRequested, setVideoRequested] = useState(false);
   const [videoFallbackTried, setVideoFallbackTried] = useState(false);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const useNativeAndroidPlayer =
     Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
   const supportsNativeHls =
     typeof navigator !== "undefined" &&
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.userAgent.includes("Macintosh") && "ontouchend" in document));
+
+  useEffect(() => {
+    return () => {
+      const video = videoElementRef.current;
+      if (video && activeHtmlVideo === video) {
+        video.pause();
+        activeHtmlVideo = null;
+        logInfo("video-message", "Video stopped because message view unmounted", {
+          assetIdSuffix: payload?.assetId?.slice(-8),
+        });
+      }
+    };
+  }, [payload?.assetId]);
 
   useEffect(() => {
     if (
@@ -232,6 +248,7 @@ export default function RichMessageContent({
     return (
       <div>
         <video
+          ref={videoElementRef}
           controls={!useNativeAndroidPlayer}
           playsInline
           preload="none"
@@ -275,6 +292,17 @@ export default function RichMessageContent({
           }}
           onPlay={event => {
             const video = event.currentTarget;
+            if (activeHtmlVideo && activeHtmlVideo !== video) {
+              const previousAssetIdSuffix =
+                activeHtmlVideo.dataset.assetIdSuffix || "unknown";
+              activeHtmlVideo.pause();
+              logInfo("video-message", "Previous HTML video stopped", {
+                previousAssetIdSuffix,
+                nextAssetIdSuffix: payload.assetId.slice(-8),
+              });
+            }
+            activeHtmlVideo = video;
+            video.dataset.assetIdSuffix = payload.assetId.slice(-8);
             const bufferedEnd =
               video.buffered.length > 0
                 ? video.buffered.end(video.buffered.length - 1)
@@ -289,6 +317,19 @@ export default function RichMessageContent({
             // Do not pause here. Android WebView may not emit a timely progress
             // event after a programmatic pause, which makes the user tap play
             // repeatedly. Let the native player manage its own buffer.
+          }}
+          onPause={event => {
+            if (activeHtmlVideo === event.currentTarget) activeHtmlVideo = null;
+            logInfo("video-message", "Video paused", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              currentTime: event.currentTarget.currentTime,
+            });
+          }}
+          onEnded={event => {
+            if (activeHtmlVideo === event.currentTarget) activeHtmlVideo = null;
+            logInfo("video-message", "Video ended", {
+              assetIdSuffix: payload.assetId.slice(-8),
+            });
           }}
           onProgress={event => {
             const video = event.currentTarget;
