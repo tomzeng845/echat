@@ -498,3 +498,11 @@
 - [x] 通过测试视频验证输出为 H.264/yuv420p + AAC；通过 .NET、TypeScript、Vite 和 Android Gradle 构建
 - [x] Android APK 已上传，包含 HLS 优先、首帧 poster 和 MP4 回退
 - [ ] 生产 API 主机安装 FFmpeg/FFprobe，并用真实 30 秒以上视频验收 HLS；Windows 服务需将 Media:FFmpegPath/FFprobePath 指向可执行文件
+
+## 2026-09-15 Android 视频选择修复
+
+- [x] 修复 Android WebView 选择视频后进入不兼容客户端 MediaRecorder/captureStream 转码导致无响应的问题
+- [x] Android 视频改为直接上传原文件，由服务端 FFmpeg 转码
+- [x] 增加无 MIME 时按扩展名识别 MP4/MOV/WebM/MKV 等视频
+- [x] 扩展文件选择器视频 accept 类型并记录选择、处理、上传失败日志
+- [x] `pnpm check` 与 Android Gradle 构建通过，APK 已上传

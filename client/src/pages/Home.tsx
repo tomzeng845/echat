@@ -29,6 +29,10 @@ import {
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
 import { prepareChatMedia } from "@/lib/media-compression";
+import {
+  info as diagnosticInfo,
+  error as diagnosticError,
+} from "@/lib/runtime-diagnostics";
 import { resolveBuiltinAvatar } from "@/lib/builtin-avatars";
 import { createUuid } from "@/lib/uuid";
 import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
@@ -1379,19 +1383,44 @@ function Messenger({
   }
 
   async function pickFile(file: File | undefined, preferred?: ChatMediaKind) {
-    if (!file) return;
+    if (!file) {
+      diagnosticInfo("media-picker", "File picker returned no file");
+      return;
+    }
+    diagnosticInfo("media-picker", "File selected", {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      nativeAndroid: isNativeAndroid(),
+    });
+    const looksLikeVideo = /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(file.name);
     const kind: ChatMediaKind =
       preferred ??
-      (file.type.startsWith("video/")
+      (file.type.startsWith("video/") || looksLikeVideo
         ? "Video"
         : file.type.startsWith("image/")
           ? "Image"
           : "File");
     if (kind === "Image" || kind === "Video") {
       try {
-        const prepared = await prepareChatMedia(file, kind);
+        // Android WebView often lacks captureStream/MediaRecorder support for
+        // local videos. The API performs the authoritative FFmpeg conversion.
+        const prepared =
+          kind === "Video" && isNativeAndroid()
+            ? file
+            : await prepareChatMedia(file, kind);
+        diagnosticInfo("media-picker", "Preparing media finished", {
+          kind,
+          originalBytes: file.size,
+          uploadBytes: prepared.size,
+          clientCompressionSkipped: kind === "Video" && isNativeAndroid(),
+        });
         await sendMedia(prepared, kind);
       } catch (cause) {
+        diagnosticError("media-picker", "Media selection/upload failed", {
+          kind,
+          reason: cause instanceof Error ? cause.message : String(cause),
+        });
         toast.error(cause instanceof Error ? cause.message : "媒体处理失败");
       }
       return;
@@ -2180,9 +2209,12 @@ function Messenger({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="*/*"
+                      accept="video/*,image/*,audio/*,application/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.3gp"
                       hidden
                       onChange={event => {
+                        diagnosticInfo("media-picker", "File input changed", {
+                          count: event.currentTarget.files?.length ?? 0,
+                        });
                         pickFile(event.target.files?.[0]);
                         event.currentTarget.value = "";
                       }}
