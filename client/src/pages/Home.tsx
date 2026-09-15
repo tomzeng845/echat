@@ -458,6 +458,9 @@ function Messenger({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [quotedMessage, setQuotedMessage] = useState<DecryptedMessage | null>(
+    null
+  );
   const [messageAction, setMessageAction] = useState<
     { type: "menu" | "forward"; messageId?: string } | undefined
   >();
@@ -529,6 +532,7 @@ function Messenger({
   const actionMessage = messageAction?.messageId
     ? messages.find(item => item.id === messageAction.messageId)
     : undefined;
+  const selectionMode = selectedMessageIds.length > 0;
   const selectedContact =
     selected?.type === "Direct"
       ? (contacts.find(
@@ -1266,6 +1270,7 @@ function Messenger({
             content: text,
             ciphertext: "",
             nonce: "",
+            replyToMessageId: quotedMessage?.id,
             metadata:
               selected.type === "Group" && Object.keys(mentionMap).length
                 ? { mentions: JSON.stringify(Object.values(mentionMap)) }
@@ -1275,6 +1280,7 @@ function Messenger({
       );
       const value = { ...created, plaintext: text };
       setMentionMap({});
+      setQuotedMessage(null);
       setMessages(current =>
         current.some(x => x.id === value.id)
           ? current.map(item => (item.id === value.id ? value : item))
@@ -2006,6 +2012,7 @@ function Messenger({
                           }
                           onRecall={() => recall(message)}
                           selected={selectedMessageIds.includes(message.id)}
+                          selectionMode={selectionMode}
                           onToggleSelect={() =>
                             toggleMessageSelection(message.id)
                           }
@@ -2055,6 +2062,27 @@ function Messenger({
               </div>
               <footer className="echat-composer shrink-0 border-t border-slate-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-5">
                 <div className="relative mx-auto max-w-3xl rounded-2xl bg-slate-100 p-2 ring-1 ring-transparent focus-within:bg-white focus-within:ring-teal-300/70">
+                  {quotedMessage && (
+                    <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-teal-400 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+                      <Quote
+                        size={14}
+                        className="mt-0.5 shrink-0 text-teal-600"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-teal-700">引用消息</p>
+                        <p className="mt-0.5 truncate">
+                          {quotedMessage.plaintext}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQuotedMessage(null)}
+                        className="shrink-0 rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 px-1 pb-1">
                     <EmojiPicker disabled={busy} onSelect={sendEmoji} />
                     <button
@@ -2209,7 +2237,7 @@ function Messenger({
             <button
               type="button"
               onClick={() => {
-                setDraft(`引用：${actionMessage.plaintext}\n`);
+                setQuotedMessage(actionMessage);
                 setMessageAction(undefined);
               }}
               className="flex flex-col items-center gap-2 rounded-2xl p-3 text-xs hover:bg-white/10"
@@ -2545,6 +2573,7 @@ function MessageBubble({
   avatarSrc,
   onRecall,
   selected,
+  selectionMode,
   onToggleSelect,
   onAction,
 }: {
@@ -2554,6 +2583,7 @@ function MessageBubble({
   avatarSrc?: string;
   onRecall: () => void;
   selected: boolean;
+  selectionMode: boolean;
   onToggleSelect: () => void;
   onAction: (action: "menu" | "select") => void;
 }) {
@@ -2577,10 +2607,14 @@ function MessageBubble({
       className={`group mb-4 flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}
       onContextMenu={event => {
         event.preventDefault();
-        onAction("menu");
+        if (!selectionMode) onAction("menu");
+      }}
+      onClick={() => {
+        if (selectionMode) onToggleSelect();
       }}
       onPointerDown={() => {
-        holdTimer.current = window.setTimeout(() => onAction("menu"), 520);
+        if (!selectionMode)
+          holdTimer.current = window.setTimeout(() => onAction("menu"), 520);
       }}
       onPointerUp={() => {
         if (holdTimer.current) window.clearTimeout(holdTimer.current);
@@ -2595,7 +2629,6 @@ function MessageBubble({
       >
         <div
           className={`rounded-[20px] shadow-sm ${selected ? "ring-2 ring-amber-400 ring-offset-2" : ""} ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
-          onClick={() => selected && onToggleSelect()}
         >
           <RichMessageContent message={message} />
         </div>
