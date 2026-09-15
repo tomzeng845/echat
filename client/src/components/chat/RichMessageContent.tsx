@@ -7,7 +7,6 @@ import {
   effectiveMediaMimeType,
   formatFileSize,
   parseMediaPayload,
-  streamChatVideo,
 } from "@/lib/echat-media";
 import { error as logError, info as logInfo } from "@/lib/runtime-diagnostics";
 
@@ -40,54 +39,6 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
-    const canStreamVideo =
-      message.kind === "Video" &&
-      !payload.fileNonce &&
-      !videoFallbackTried &&
-      typeof MediaSource !== "undefined" &&
-      MediaSource.isTypeSupported(effectiveMediaMimeType(payload, "Video"));
-    if (canStreamVideo) {
-      setLoading(true);
-      return streamChatVideo(
-        payload,
-        nextUrl => {
-          if (active) {
-            setUrl(nextUrl);
-            setLoadedMedia({
-              type: effectiveMediaMimeType(payload, "Video"),
-              size: payload.size,
-            });
-            setLoading(false);
-          }
-        },
-        async () => {
-          // Some Android WebViews report MSE support but reject the actual
-          // container/codec. Fall back to the proven Blob URL path.
-          if (!active) return;
-          setLoading(true);
-          try {
-            const blob = await downloadChatMedia(
-              message.conversationId,
-              message.keyVersion || 1,
-              payload
-            );
-            if (!active) return;
-            objectUrl = URL.createObjectURL(blob);
-            setLoadedMedia({ type: blob.type, size: blob.size });
-            setUrl(objectUrl);
-          } catch (fallbackError) {
-            if (active)
-              setError(
-                fallbackError instanceof Error
-                  ? fallbackError.message
-                  : "视频加载失败"
-              );
-          } finally {
-            if (active) setLoading(false);
-          }
-        }
-      );
-    }
     if (message.kind === "Video" && !payload.fileNonce) {
       const directUrl = directChatMediaUrl(payload);
       if (directUrl && !videoFallbackTried) {
@@ -260,8 +211,14 @@ export default function RichMessageContent({
         <video
           controls
           playsInline
-          preload="metadata"
+          preload="auto"
           src={url}
+          onCanPlay={() => setLoading(false)}
+          onWaiting={() =>
+            logInfo("video-message", "Video playback waiting for buffer", {
+              assetIdSuffix: payload.assetId.slice(-8),
+            })
+          }
           onLoadedData={() =>
             logInfo("video-message", "Video message first frame loaded", {
               assetIdSuffix: payload.assetId.slice(-8),
