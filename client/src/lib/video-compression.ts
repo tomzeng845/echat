@@ -23,10 +23,25 @@ function isNativeApp() {
 
 export async function pickAndCompressVideoForPlatform(): Promise<File | null> {
   const platform = Capacitor.getPlatform();
-  if (!isNativeApp() || (platform !== "android" && platform !== "ios")) return null;
+  const native = isNativeApp();
+  logInfo("video-compression", "Native video compression requested", {
+    platform,
+    nativePlatform: native,
+    pluginName: "NativeVideoCompressor",
+  });
+  if (!native || (platform !== "android" && platform !== "ios")) {
+    logInfo("video-compression", "Native compression not applicable; using web picker", { platform, nativePlatform: native });
+    return null;
+  }
   const startedAt = performance.now();
   try {
     const result = await nativeVideoCompressor.pickAndCompressVideo();
+    logInfo("video-compression", "Native video bridge returned", {
+      platform,
+      fileName: result.fileName,
+      nativeOutputBytes: result.size,
+      nativeDurationMs: result.durationMs,
+    });
     const response = await fetch(Capacitor.convertFileSrc(result.path));
     if (!response.ok) throw new Error(`原生压缩文件读取失败 (${response.status})`);
     const blob = await response.blob();
@@ -47,6 +62,7 @@ export async function pickAndCompressVideoForPlatform(): Promise<File | null> {
       platform,
       elapsedMs: Math.round(performance.now() - startedAt),
       reason: error instanceof Error ? error.message : String(error),
+      errorCode: error && typeof error === "object" && "code" in error ? String(error.code) : "",
     });
     return null;
   }
@@ -62,9 +78,27 @@ function pickMimeType() {
 }
 
 export async function compressVideoForWeb(file: File): Promise<File> {
-  if (isNativeApp() || typeof document === "undefined" || typeof MediaRecorder === "undefined") return file;
+  if (isNativeApp()) {
+    logInfo("video-compression", "Web compression skipped for native app", { platform: Capacitor.getPlatform(), originalBytes: file.size });
+    return file;
+  }
+  if (typeof document === "undefined" || typeof MediaRecorder === "undefined") {
+    logWarn("video-compression", "Web compression skipped: MediaRecorder unavailable", { platform: "web", originalBytes: file.size });
+    return file;
+  }
   const mimeType = pickMimeType();
-  if (!mimeType || !HTMLCanvasElement.prototype.captureStream || file.size <= 10 * 1024 * 1024) return file;
+  if (!mimeType) {
+    logWarn("video-compression", "Web compression skipped: no supported MediaRecorder MIME type", { platform: "web", originalBytes: file.size });
+    return file;
+  }
+  if (!HTMLCanvasElement.prototype.captureStream) {
+    logWarn("video-compression", "Web compression skipped: canvas.captureStream unavailable", { platform: "web", originalBytes: file.size });
+    return file;
+  }
+  if (file.size <= 10 * 1024 * 1024) {
+    logInfo("video-compression", "Web compression skipped: file below threshold", { platform: "web", originalBytes: file.size, thresholdBytes: 10 * 1024 * 1024 });
+    return file;
+  }
 
   const sourceUrl = URL.createObjectURL(file);
   const source = document.createElement("video");
@@ -141,7 +175,19 @@ export async function compressVideoForWeb(file: File): Promise<File> {
     canvasStream.getTracks().forEach(track => track.stop());
     sourceStream?.getTracks().forEach(track => track.stop());
     const compressed = new Blob(chunks, { type: mimeType });
-    if (!compressed.size || compressed.size >= file.size) return file;
+    if (!compressed.size) {
+      logWarn("video-compression", "Web compression returned empty output; using original", { platform: "web", originalBytes: file.size });
+      return file;
+    }
+    if (compressed.size >= file.size) {
+      logWarn("video-compression", "Web compression output was not smaller; using original", {
+        platform: "web",
+        originalBytes: file.size,
+        compressedBytes: compressed.size,
+        compressionRatio: Number((compressed.size / file.size).toFixed(4)),
+      });
+      return file;
+    }
     const outputName = file.name.replace(/\.[^.]+$/, "") + ".webm";
     logInfo("video-compression", "Web video compression completed", {
       platform: "web",

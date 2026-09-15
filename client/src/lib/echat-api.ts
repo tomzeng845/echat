@@ -7,7 +7,7 @@ import {
   restorePersistedSession,
 } from "./session-storage";
 import { createUuid } from "./uuid";
-import { recordSignalR } from "./runtime-diagnostics";
+import { error as logError, info as logInfo, recordSignalR } from "./runtime-diagnostics";
 
 export type User = {
   id: string;
@@ -408,14 +408,43 @@ export async function uploadMedia(
   form.append("purpose", purpose);
   if (conversationId) form.append("conversationId", conversationId);
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 150_000);
+  const startedAt = performance.now();
+  const timer = window.setTimeout(() => {
+    logError("media-upload", "Media API upload timeout; aborting request", {
+      fileName,
+      bytes: file.size,
+      timeoutMs: 150_000,
+      elapsedMs: Math.round(performance.now() - startedAt),
+    });
+    controller.abort();
+  }, 150_000);
   try {
-    return await api<MediaAsset>("/api/media", {
+    logInfo("media-upload", "uploadMedia request dispatched", {
+      fileName,
+      bytes: file.size,
+      purpose,
+      conversationIdSuffix: conversationId?.slice(-8) || "",
+    });
+    const result = await api<MediaAsset>("/api/media", {
       method: "POST",
       body: form,
       signal: controller.signal,
     });
+    logInfo("media-upload", "uploadMedia request succeeded", {
+      fileName,
+      bytes: file.size,
+      assetIdSuffix: result.id.slice(-8),
+      elapsedMs: Math.round(performance.now() - startedAt),
+    });
+    return result;
   } catch (error) {
+    logError("media-upload", "uploadMedia request failed", {
+      fileName,
+      bytes: file.size,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      aborted: controller.signal.aborted,
+      reason: error instanceof Error ? error.message : String(error),
+    });
     if (controller.signal.aborted)
       throw new Error("视频处理超过 150 秒，服务器未完成，请稍后重试");
     throw error;

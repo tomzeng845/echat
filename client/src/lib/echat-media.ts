@@ -9,6 +9,7 @@ import { apiUrl } from "./runtime-config";
 import { decryptBinary, getConversationKey } from "./echat-crypto";
 import { createUuid } from "./uuid";
 import { compressVideoForWeb } from "./video-compression";
+import { info as logInfo } from "./runtime-diagnostics";
 
 export type ChatMediaKind = "Image" | "Voice" | "Video" | "File";
 export type ChatMediaPayload = {
@@ -30,6 +31,14 @@ export async function sendChatMedia(
   options: { fileName?: string; mimeType?: string; duration?: number } = {}
 ) {
   if (file.size > 25 * 1024 * 1024) throw new Error("文件不能超过 25 MB");
+  const startedAt = performance.now();
+  logInfo("media-upload", "Media upload pipeline started", {
+    kind,
+    conversationIdSuffix: conversationId.slice(-8),
+    originalBytes: file.size,
+    originalMimeType: file.type || "",
+    originalFileName: file instanceof File ? file.name : "blob",
+  });
   let fileName =
     options.fileName ||
     (file instanceof File ? file.name : `${kind.toLowerCase()}-${Date.now()}`);
@@ -41,12 +50,36 @@ export async function sendChatMedia(
           lastModified: Date.now(),
         });
   if (kind === "Video") {
+    logInfo("media-upload", "Video compression phase started", {
+      originalBytes: upload.size,
+      fileName,
+    });
     const compressed = await compressVideoForWeb(upload);
     upload = compressed;
     if (compressed !== file) fileName = compressed.name;
+    logInfo("media-upload", "Video compression phase finished", {
+      originalBytes: file.size,
+      uploadBytes: upload.size,
+      compressionRatio: file.size > 0 ? Number((upload.size / file.size).toFixed(4)) : 0,
+      fileName,
+    });
   }
   const mimeType = options.mimeType || upload.type || "application/octet-stream";
+  logInfo("media-upload", "Media API upload started", {
+    kind,
+    uploadBytes: upload.size,
+    mimeType,
+    fileName,
+    timeoutMs: 150_000,
+  });
   const asset = await uploadMedia(upload, fileName, "Chat", conversationId);
+  logInfo("media-upload", "Media API upload finished", {
+    kind,
+    assetIdSuffix: asset.id.slice(-8),
+    uploadBytes: upload.size,
+    isTranscoded: asset.isTranscoded ?? false,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  });
   const payload: ChatMediaPayload = {
     assetId: asset.id,
     fileName,
@@ -57,7 +90,11 @@ export async function sendChatMedia(
     hlsUrl: asset.hlsUrl ?? undefined,
     isTranscoded: asset.isTranscoded ?? false,
   };
-  return api<Message>(`/api/conversations/${conversationId}/messages`, {
+  logInfo("media-upload", "Message save started", {
+    kind,
+    assetIdSuffix: asset.id.slice(-8),
+  });
+  const message = await api<Message>(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       clientMessageId: createUuid(),
@@ -70,6 +107,13 @@ export async function sendChatMedia(
       metadata: { assetId: asset.id },
     }),
   });
+  logInfo("media-upload", "Media upload pipeline finished", {
+    kind,
+    assetIdSuffix: asset.id.slice(-8),
+    messageIdSuffix: message.id.slice(-8),
+    elapsedMs: Math.round(performance.now() - startedAt),
+  });
+  return message;
 }
 
 export function parseMediaPayload(content: string): ChatMediaPayload | null {
