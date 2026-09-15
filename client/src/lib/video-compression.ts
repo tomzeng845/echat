@@ -20,7 +20,7 @@ function isNativeApp() {
 
 function isChromeOrEdgeBrowser() {
   if (typeof navigator === "undefined" || typeof window === "undefined") return false;
-  if (typeof MediaRecorder === "undefined") return false;
+  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return false;
   const userAgent = navigator.userAgent;
   const isEdge = /Edg\//i.test(userAgent);
   const isChrome = /Chrome\//i.test(userAgent) && !/OPR\//i.test(userAgent);
@@ -96,7 +96,7 @@ export async function compressVideoForWeb(file: File): Promise<File> {
   if (file.size <= 8 * 1024 * 1024) {
     logInfo("video-compression", "Web compression skipped: file below threshold", {
       platform: "web",
-      strategy: "media-recorder",
+      strategy: "webcodecs",
       originalBytes: file.size,
       thresholdBytes: 8 * 1024 * 1024,
     });
@@ -104,17 +104,17 @@ export async function compressVideoForWeb(file: File): Promise<File> {
   }
 
   const startedAt = performance.now();
-  logInfo("video-compression", "MediaRecorder compression started", {
+  logInfo("video-compression", "WebCodecs compression started", {
     platform: "web",
     browser: /Edg\//i.test(navigator.userAgent) ? "edge" : "chrome",
     originalBytes: file.size,
     targetWidth: 1280,
-    targetVideoBitsPerSecond: 1_800_000,
-    targetAudioBitsPerSecond: 96_000,
+    targetBitsPerSecond: 800_000,
+    audioTrackIncluded: false,
   });
   try {
     const compressed = await compressChatVideo(file);
-    logInfo("video-compression", "MediaRecorder compression finished", {
+    logInfo("video-compression", "WebCodecs compression finished", {
       platform: "web",
       originalBytes: file.size,
       compressedBytes: compressed.size,
@@ -124,7 +124,7 @@ export async function compressVideoForWeb(file: File): Promise<File> {
     });
     return compressed;
   } catch (error) {
-    logWarn("video-compression", "MediaRecorder compression failed; using original", {
+    logWarn("video-compression", "WebCodecs compression failed; using original", {
       platform: "web",
       originalBytes: file.size,
       elapsedMs: Math.round(performance.now() - startedAt),
@@ -136,5 +136,5 @@ export async function compressVideoForWeb(file: File): Promise<File> {
 
 export function getVideoCompressionStrategy() {
   if (isNativeApp()) return "native-compressor" as const;
-  return isChromeOrEdgeBrowser() ? "media-recorder" as const : "direct-upload" as const;
+  return isChromeOrEdgeBrowser() ? "webcodecs" as const : "direct-upload" as const;
 }

@@ -1,11 +1,10 @@
-import { error as logError, info as logInfo } from "./runtime-diagnostics";
+import { compressVideo } from "@mdslabs/wc-media-compressor-sdk";
+import { error as logError, info as logInfo, warn as logWarn } from "./runtime-diagnostics";
 
 const IMAGE_MAX_EDGE = 2560;
 const IMAGE_COMPRESS_THRESHOLD = 2 * 1024 * 1024;
 const VIDEO_COMPRESS_THRESHOLD = 8 * 1024 * 1024;
-type CapturableVideoElement = HTMLVideoElement & {
-  captureStream?: () => MediaStream;
-};
+const WEB_VIDEO_TARGET_BITRATE = 800_000;
 
 function replaceExtension(name: string, extension: string) {
   const base = name.replace(/\.[^/.]+$/, "");
@@ -69,146 +68,67 @@ export async function compressChatImage(file: File): Promise<File> {
   }
 }
 
-function chooseVideoMimeType() {
-  const candidates = [
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
-  return candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
-}
-
 export async function compressChatVideo(file: File): Promise<File> {
   if (!file.type.startsWith("video/") || file.size <= VIDEO_COMPRESS_THRESHOLD)
     return file;
-  if (typeof MediaRecorder === "undefined") return file;
 
-  const mimeType = chooseVideoMimeType();
-  if (!mimeType) return file;
-
-  const sourceUrl = URL.createObjectURL(file);
-  const video = document.createElement("video") as CapturableVideoElement;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "auto";
-  video.src = sourceUrl;
-  let capturedStream: MediaStream | null = null;
-
+  const startedAt = performance.now();
+  logInfo("media-compression", "WebCodecs SDK compression started", {
+    originalBytes: file.size,
+    targetBitrate: WEB_VIDEO_TARGET_BITRATE,
+    maxWidth: 1280,
+    maxFps: 30,
+  });
   try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = window.setTimeout(
-        () => reject(new Error("video metadata timeout")),
-        15000
-      );
-      video.onloadedmetadata = () => {
-        window.clearTimeout(timer);
-        resolve();
-      };
-      video.onerror = () => {
-        window.clearTimeout(timer);
-        reject(new Error("video metadata unavailable"));
-      };
-    });
-    if (!video.videoWidth || !video.videoHeight || !video.captureStream)
-      return file;
-
-    // Start playback before captureStream. Some Chromium versions do not
-    // produce frames while the source video is paused.
-    await video.play();
-    const rawStream = video.captureStream();
-    capturedStream = rawStream;
-    // Do not include the source audio track: muted local playback can make
-    // Chromium's MediaRecorder produce no chunks at all.
-    const stream = new MediaStream(rawStream.getVideoTracks());
-    if (!stream.getVideoTracks().length) return file;
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      videoBitsPerSecond: 1_800_000,
-    });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = event => {
-      if (event.data.size) chunks.push(event.data);
-    };
-    let resolveRecording: ((value: Blob) => void) | null = null;
-    let rejectRecording: ((reason?: unknown) => void) | null = null;
-    const recording = new Promise<Blob>((resolve, reject) => {
-      resolveRecording = resolve;
-      rejectRecording = reject;
-    });
-    recorder.onerror = () => rejectRecording?.(new Error("video compression failed"));
-    recorder.onstop = () => {
-      // Include the final dataavailable event emitted after stop.
-      window.setTimeout(
-        () => resolveRecording?.(new Blob(chunks, { type: mimeType })),
-        250
-      );
-    };
-
-    recorder.start(1000);
-    video.onended = () => {
-      if (recorder.state !== "recording") return;
-      try {
-        recorder.requestData();
-      } catch {
-        // requestData is not available in a few older Chromium builds.
+    const result = await compressVideo(
+      file,
+      {
+        targetBitrate: WEB_VIDEO_TARGET_BITRATE,
+        maxWidth: 1280,
+        maxFps: 30,
+      },
+      (phase, percent) => {
+        logInfo("media-compression", "WebCodecs SDK compression progress", {
+          phase,
+          percent: Math.round(percent),
+          originalBytes: file.size,
+        });
       }
-      window.setTimeout(() => {
-        if (recorder.state === "recording") recorder.stop();
-      }, 250);
-    };
-    const blob = await Promise.race([
-      recording,
-      new Promise<Blob>((_, reject) =>
-        window.setTimeout(
-          () => {
-            if (recorder.state === "recording") recorder.stop();
-            reject(new Error("video compression timeout"));
-          },
-          Math.max(30000, (video.duration || 60) * 1500)
-        )
-      ),
-    ]);
-    if (blob.size === 0) {
-      logError("media-compression", "MediaRecorder produced empty output; using original", {
+    );
+    const compressed = new File(
+      [result.blob],
+      replaceExtension(file.name, "mp4"),
+      { type: "video/mp4", lastModified: Date.now() }
+    );
+    const ratio = file.size ? Number((compressed.size / file.size).toFixed(4)) : 0;
+    logInfo("media-compression", "WebCodecs SDK compression finished", {
+      originalBytes: file.size,
+      compressedBytes: compressed.size,
+      compressionRatio: ratio,
+      durationMs: result.durationMs,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      outputMimeType: compressed.type,
+    });
+    if (!compressed.size || compressed.size >= file.size) {
+      logInfo("media-compression", "WebCodecs output not smaller; using original", {
         originalBytes: file.size,
-        mimeType,
-        duration: video.duration,
-        streamVideoTracks: stream.getVideoTracks().length,
-        streamAudioTracks: stream.getAudioTracks().length,
+        compressedBytes: compressed.size,
+        compressionRatio: ratio,
       });
       return file;
     }
-    if (blob.size >= file.size) return file;
-
-    const compressed = new File([blob], replaceExtension(file.name, "webm"), {
-      type: mimeType,
-      lastModified: Date.now(),
-    });
-    logInfo("media-compression", "Video compressed before upload", {
-      originalBytes: file.size,
-      compressedBytes: compressed.size,
-      width: video.videoWidth,
-      height: video.videoHeight,
-      duration: video.duration,
-      mimeType,
-    });
     return compressed;
   } catch (cause) {
-    logError("media-compression", "Video compression skipped", {
+    logWarn("media-compression", "WebCodecs SDK unavailable or failed; using original", {
+      originalBytes: file.size,
+      elapsedMs: Math.round(performance.now() - startedAt),
       reason: cause instanceof Error ? cause.message : String(cause),
     });
     return file;
-  } finally {
-    capturedStream?.getTracks().forEach(track => track.stop());
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    URL.revokeObjectURL(sourceUrl);
   }
 }
 
 export async function prepareChatMedia(file: File, kind: "Image" | "Video") {
-  // Video compression is handled once in sendChatMedia. Keeping the picker
-  // stage as a pass-through prevents two MediaRecorder pipelines from racing
-  // in browsers that expose captureStream only partially.
+  // Video compression is handled once in sendChatMedia.
   return kind === "Image" ? compressChatImage(file) : file;
 }
