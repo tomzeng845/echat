@@ -1,0 +1,4 @@
+[
+  { "account": "load_user_0001", "password": "replace-with-test-password" },
+  { "account": "load_user_0002", "password": "replace-with-test-password" }
+]
