@@ -21,6 +21,7 @@ import { apiUrl } from "./runtime-config";
 import {
   error as diagnosticError,
   info as diagnosticInfo,
+  snapshot as snapshotDiagnosticLog,
   type DiagnosticEntry,
 } from "./runtime-diagnostics";
 
@@ -213,6 +214,17 @@ export async function getNativeRuntimeLogs(): Promise<DiagnosticEntry[]> {
 export async function uploadNativeRuntimeLog() {
   if (!isNativeAndroid()) throw new Error("仅 Android 支持上传原生日志");
   const native = await MediaPermissions.getRuntimeLogs();
+  let nativeEntries: DiagnosticEntry[] = [];
+  try {
+    const parsed = JSON.parse(native.entriesJson || "[]") as unknown;
+    if (Array.isArray(parsed)) nativeEntries = parsed as DiagnosticEntry[];
+  } catch {
+    diagnosticError("diagnostics", "Native runtime log JSON parse failed");
+  }
+  const entries = [...snapshotDiagnosticLog(), ...nativeEntries]
+    .filter(entry => entry && typeof entry.at === "string")
+    .sort((left, right) => left.at.localeCompare(right.at))
+    .slice(-2400);
   return api<{
     uploaded: boolean;
     uploadId: string;
@@ -223,7 +235,7 @@ export async function uploadNativeRuntimeLog() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      entriesJson: native.entriesJson || "[]",
+      entriesJson: JSON.stringify(entries),
       deviceId: getDeviceId(),
       appVersion: "0.9.0",
       platform: "android",
