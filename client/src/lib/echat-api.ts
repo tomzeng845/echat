@@ -407,7 +407,21 @@ export async function uploadMedia(
   form.append("file", file, fileName);
   form.append("purpose", purpose);
   if (conversationId) form.append("conversationId", conversationId);
-  return api<MediaAsset>("/api/media", { method: "POST", body: form });
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 150_000);
+  try {
+    return await api<MediaAsset>("/api/media", {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new Error("视频处理超过 150 秒，服务器未完成，请稍后重试");
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export type RealtimeHandlers = {

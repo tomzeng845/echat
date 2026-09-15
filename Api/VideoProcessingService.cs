@@ -14,12 +14,14 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
 {
     private readonly string _ffmpeg = ResolveExecutable(configuration["Media:FFmpegPath"], "ffmpeg");
     private readonly string _ffprobe = ResolveExecutable(configuration["Media:FFprobePath"], "ffprobe");
+    private readonly int _timeoutSeconds = Math.Clamp(configuration.GetValue("Media:ProcessingTimeoutSeconds", 120), 30, 900);
 
     public bool IsAvailable => File.Exists(_ffmpeg) && File.Exists(_ffprobe);
     public string Status => $"ffmpeg={_ffmpeg}; ffprobe={_ffprobe}; available={IsAvailable}";
 
     public async Task<ProcessedVideo> ProcessAsync(string inputPath, string workRoot, CancellationToken ct)
     {
+        logger.LogInformation("Video processing started input={Input} status={Status} timeoutSeconds={Timeout}", inputPath, Status, _timeoutSeconds);
         var directory = Path.Combine(workRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var mp4 = Path.Combine(directory, "video.mp4");
@@ -51,6 +53,7 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
 
     private async Task<string> RunAsync(string arguments, string workingDirectory, CancellationToken ct, string? executable = null)
     {
+        logger.LogInformation("Video tool starting executable={Executable} timeoutSeconds={Timeout}", executable ?? _ffmpeg, _timeoutSeconds);
         var psi = new ProcessStartInfo(executable ?? _ffmpeg, arguments)
         {
             WorkingDirectory = workingDirectory,
@@ -60,11 +63,28 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
             CreateNoWindow = true
         };
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 FFmpeg");
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        if (process.ExitCode != 0) throw new InvalidOperationException($"视频处理失败: {stderr}");
-        return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
+        try
+        {
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            if (process.ExitCode != 0) throw new InvalidOperationException($"视频处理失败: {stderr}");
+            return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            throw new TimeoutException($"视频处理超过 {_timeoutSeconds} 秒，已终止 FFmpeg 进程");
+        }
+        catch
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            throw;
+        }
     }
 
     private static string Q(string value) => $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
