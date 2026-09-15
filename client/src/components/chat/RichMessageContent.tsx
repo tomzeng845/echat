@@ -26,6 +26,7 @@ export default function RichMessageContent({
   const [audioKey, setAudioKey] = useState(0);
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
   const [videoRequested, setVideoRequested] = useState(false);
+  const [videoFallbackTried, setVideoFallbackTried] = useState(false);
 
   useEffect(() => {
     if (
@@ -41,7 +42,7 @@ export default function RichMessageContent({
     setPlaybackError("");
     if (message.kind === "Video" && !payload.fileNonce) {
       const directUrl = directChatMediaUrl(payload);
-      if (directUrl) {
+      if (directUrl && !videoFallbackTried) {
         setLoadedMedia({
           type: effectiveMediaMimeType(payload, "Video"),
           size: payload.size,
@@ -56,6 +57,7 @@ export default function RichMessageContent({
     const canStreamVideo =
       message.kind === "Video" &&
       !payload.fileNonce &&
+      !videoFallbackTried &&
       typeof MediaSource !== "undefined" &&
       MediaSource.isTypeSupported(effectiveMediaMimeType(payload, "Video"));
     if (canStreamVideo) {
@@ -119,6 +121,7 @@ export default function RichMessageContent({
     payload?.assetId,
     payload?.fileNonce,
     videoRequested,
+    videoFallbackTried,
   ]);
 
   if (message.state === "Recalled") return <span>{message.plaintext}</span>;
@@ -269,7 +272,35 @@ export default function RichMessageContent({
               blobSize: loadedMedia.size,
               mimeType: effectiveMediaMimeType(payload, "Video"),
             });
-            setPlaybackError("视频播放失败，请点击重试");
+            if (!videoFallbackTried) {
+              setVideoFallbackTried(true);
+              setLoading(true);
+              void downloadChatMedia(
+                message.conversationId,
+                message.keyVersion || 1,
+                payload
+              )
+                .then(blob => {
+                  const fallbackUrl = URL.createObjectURL(blob);
+                  setLoadedMedia({ type: blob.type, size: blob.size });
+                  setUrl(current => {
+                    if (current?.startsWith("blob:"))
+                      URL.revokeObjectURL(current);
+                    return fallbackUrl;
+                  });
+                  setPlaybackError("");
+                })
+                .catch(cause => {
+                  setPlaybackError(
+                    cause instanceof Error
+                      ? `视频播放失败：${cause.message}`
+                      : "视频播放失败，请点击重试"
+                  );
+                })
+                .finally(() => setLoading(false));
+            } else {
+              setPlaybackError("视频播放失败，请点击重试");
+            }
           }}
           className="max-h-[360px] max-w-full rounded-xl bg-black"
         />
@@ -280,6 +311,7 @@ export default function RichMessageContent({
               setPlaybackError("");
               setUrl(undefined);
               setVideoRequested(false);
+              setVideoFallbackTried(false);
             }}
             className="mt-1 text-[10px] font-medium text-rose-100 underline underline-offset-2"
           >
