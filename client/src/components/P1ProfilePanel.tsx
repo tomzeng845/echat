@@ -51,6 +51,7 @@ import {
 } from "@/lib/builtin-avatars";
 import {
   info as logInfo,
+  exportDiagnosticLog,
   snapshot as snapshotDiagnosticLog,
   type DiagnosticEntry,
 } from "@/lib/runtime-diagnostics";
@@ -272,11 +273,30 @@ export default function P1ProfilePanel({
   }
 
   async function exportRuntimeLogs() {
-    const confirmed = window.confirm(
-      "运行日志可能包含设备型号、网络地址和通话诊断信息。确认上传给技术支持吗？"
-    );
+    const nativeAndroid = isNativeAndroid();
+    const confirmed = nativeAndroid
+      ? window.confirm(
+          "运行日志可能包含设备型号、网络地址和通话诊断信息。确认上传给技术支持吗？"
+        )
+      : true;
     if (!confirmed) {
       logInfo("settings", "Runtime log export cancelled by user");
+      return;
+    }
+    if (!nativeAndroid) {
+      try {
+        logInfo("settings", "Web runtime log export started");
+        await exportDiagnosticLog();
+        logInfo("settings", "Web runtime log export completed", {
+          entries: snapshotDiagnosticLog().length,
+        });
+        toast.success("运行日志已导出，请在浏览器下载记录中查看");
+      } catch (cause) {
+        logInfo("settings", "Web runtime log export failed", cause);
+        toast.error(
+          `日志导出失败：${cause instanceof Error ? cause.message : "浏览器拒绝了下载"}`
+        );
+      }
       return;
     }
     const toastId = toast.loading("正在上传运行日志，请稍候…");
