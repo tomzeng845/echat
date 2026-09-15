@@ -52,23 +52,28 @@ public sealed class MediaController(
 
                 try
                 {
+                    // The multipart body must follow the request cancellation while it is being
+                    // uploaded. Once the temporary file is complete, however, processing must
+                    // not be canceled merely because the mobile client timed out or navigated
+                    // away. VideoProcessingService has its own bounded process timeout.
+                    var processingCt = CancellationToken.None;
                     if (!videoProcessing.IsAvailable)
                     {
                         logger.LogWarning("FFmpeg/FFprobe unavailable; {Status}; preserving original video upload {FileName}", videoProcessing.Status, safeFileName);
-                        var originalWithoutTranscode = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct);
+                        var originalWithoutTranscode = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, processingCt);
                         return Ok(View(originalWithoutTranscode));
                     }
-                    var processed = await videoProcessing.ProcessAsync(input, root, ct);
+                    var processed = await videoProcessing.ProcessAsync(input, root, processingCt);
                     var baseKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}";
-                    var stored = await StoreFileAsync($"{baseKey}.mp4", processed.Mp4Path, "video/mp4", ct);
-                    var thumb = await StoreFileAsync($"{baseKey}.jpg", processed.ThumbnailPath, "image/jpeg", ct);
+                    var stored = await StoreFileAsync($"{baseKey}.mp4", processed.Mp4Path, "video/mp4", processingCt);
+                    var thumb = await StoreFileAsync($"{baseKey}.jpg", processed.ThumbnailPath, "image/jpeg", processingCt);
                     string? hlsKey = null;
                     if (processed.HlsPlaylistPath is not null)
                     {
                         foreach (var segment in processed.HlsSegmentPaths)
-                            await StoreFileAsync($"{baseKey}/{Path.GetFileName(segment)}", segment, "video/mp2t", ct);
+                            await StoreFileAsync($"{baseKey}/{Path.GetFileName(segment)}", segment, "video/mp2t", processingCt);
                         hlsKey = $"{baseKey}/index.m3u8";
-                        await StoreFileAsync(hlsKey, processed.HlsPlaylistPath, "application/vnd.apple.mpegurl", ct);
+                        await StoreFileAsync(hlsKey, processed.HlsPlaylistPath, "application/vnd.apple.mpegurl", processingCt);
                     }
 
                     var asset = await repository.AddMediaAssetAsync(new MediaAsset
@@ -80,7 +85,7 @@ public sealed class MediaController(
                         ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey,
                         HlsSegmentCount = processed.HlsSegmentPaths.Count,
                         DurationSeconds = processed.DurationSeconds, IsTranscoded = true
-                    }, ct);
+                    }, processingCt);
                     return Ok(View(asset));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -90,7 +95,7 @@ public sealed class MediaController(
                     logger.LogWarning(ex, "Video transcode failed; preserving original upload {FileName} {Bytes} {ConversationId}", safeFileName, file.Length, conversationId);
                 }
 
-                var original = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct);
+                var original = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, CancellationToken.None);
                 return Ok(View(original));
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
