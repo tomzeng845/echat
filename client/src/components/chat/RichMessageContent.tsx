@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
@@ -15,13 +15,15 @@ import { error as logError, info as logInfo } from "@/lib/runtime-diagnostics";
 
 export type RenderableMessage = Message & { plaintext: string };
 
-type NativeVideoPlayer = {
-  playVideo(options: { url: string }): Promise<void>;
-};
-
-const nativeVideoPlayer = registerPlugin<NativeVideoPlayer>("NativeVideoPlayer");
-
 let activeHtmlVideo: HTMLVideoElement | null = null;
+
+function stopAndReleaseHtmlVideo(video: HTMLVideoElement | null) {
+  if (!video) return;
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  if (activeHtmlVideo === video) activeHtmlVideo = null;
+}
 
 export default function RichMessageContent({
   message,
@@ -38,8 +40,6 @@ export default function RichMessageContent({
   const [videoRequested, setVideoRequested] = useState(false);
   const [videoFallbackTried, setVideoFallbackTried] = useState(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
-  const useNativeAndroidPlayer =
-    Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
   const supportsNativeHls =
     typeof navigator !== "undefined" &&
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -48,9 +48,8 @@ export default function RichMessageContent({
   useEffect(() => {
     return () => {
       const video = videoElementRef.current;
-      if (video && activeHtmlVideo === video) {
-        video.pause();
-        activeHtmlVideo = null;
+      if (video) {
+        stopAndReleaseHtmlVideo(video);
         logInfo("video-message", "Video stopped because message view unmounted", {
           assetIdSuffix: payload?.assetId?.slice(-8),
         });
@@ -79,6 +78,7 @@ export default function RichMessageContent({
         return () => {
           active = false;
           setUrl(current => (current === mediaUrl ? undefined : current));
+          stopAndReleaseHtmlVideo(videoElementRef.current);
         };
       }
     }
@@ -98,6 +98,7 @@ export default function RichMessageContent({
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
+      stopAndReleaseHtmlVideo(videoElementRef.current);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [
@@ -249,32 +250,17 @@ export default function RichMessageContent({
       <div>
         <video
           ref={videoElementRef}
-          controls={!useNativeAndroidPlayer}
+          controls
           playsInline
-          preload="none"
+          preload="auto"
           poster={directChatThumbnailUrl(payload) || undefined}
           src={url}
-          onClick={event => {
-            if (!useNativeAndroidPlayer) return;
-            event.preventDefault();
-            event.stopPropagation();
-            logInfo("video-message", "Android native player requested", {
-              assetIdSuffix: payload.assetId.slice(-8),
-              urlScheme: url.startsWith("https://") ? "https" : "other",
-            });
-            void nativeVideoPlayer.playVideo({ url }).catch(cause => {
-              logError("video-message", "Android native player failed to open", {
-                assetIdSuffix: payload.assetId.slice(-8),
-                reason: cause instanceof Error ? cause.message : String(cause),
-              });
-              setPlaybackError("原生播放器打开失败，请点击重试");
-            });
-          }}
+          data-echat-video="true"
           onLoadStart={event => {
             const video = event.currentTarget;
             logInfo("video-message", "Video load started", {
               assetIdSuffix: payload.assetId.slice(-8),
-              srcType: url.startsWith("blob:") ? "blob" : "http-range",
+              srcType: url.startsWith("blob:") ? "blob" : "http-range-webview",
               readyState: video.readyState,
               networkState: video.networkState,
               duration: video.duration,
@@ -295,7 +281,7 @@ export default function RichMessageContent({
             if (activeHtmlVideo && activeHtmlVideo !== video) {
               const previousAssetIdSuffix =
                 activeHtmlVideo.dataset.assetIdSuffix || "unknown";
-              activeHtmlVideo.pause();
+              stopAndReleaseHtmlVideo(activeHtmlVideo);
               logInfo("video-message", "Previous HTML video stopped", {
                 previousAssetIdSuffix,
                 nextAssetIdSuffix: payload.assetId.slice(-8),

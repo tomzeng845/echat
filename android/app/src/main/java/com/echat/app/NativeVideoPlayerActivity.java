@@ -3,18 +3,21 @@ package com.echat.app;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.app.Activity;
+import android.graphics.Color;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.AspectRatioFrameLayout;
 
-public class NativeVideoPlayerActivity extends AppCompatActivity {
+public class NativeVideoPlayerActivity extends Activity {
     public static final String EXTRA_VIDEO_URL = "VIDEO_URL";
     private ExoPlayer player;
     private PlayerView playerView;
@@ -22,13 +25,33 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EChatNativeLog.info(this, "android-video-player", "Native player Activity onCreate");
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setContentView(R.layout.activity_native_video_player);
-        playerView = findViewById(R.id.native_player_view);
-        openVideo(getIntent(), "onCreate");
+        try {
+            setContentView(R.layout.activity_native_video_player);
+            playerView = findViewById(R.id.native_player_view);
+            playerView.setVisibility(View.VISIBLE);
+            playerView.setAlpha(1f);
+            playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            playerView.setShutterBackgroundColor(Color.TRANSPARENT);
+            playerView.setKeepContentOnPlayerReset(true);
+            playerView.setControllerAutoShow(false);
+            playerView.setControllerHideOnTouch(true);
+            playerView.hideController();
+            EChatNativeLog.info(this, "android-video-player", "Native player layout ready");
+            playerView.post(() -> EChatNativeLog.info(this, "android-video-player",
+                "Native player view measured",
+                "width", playerView.getWidth(),
+                "height", playerView.getHeight(),
+                "isShown", playerView.isShown()));
+            openVideo(getIntent(), "onCreate");
+        } catch (RuntimeException error) {
+            EChatNativeLog.error(this, "android-video-player", "Native player Activity initialization failed", error);
+            finish();
+        }
     }
 
     @Override
@@ -77,6 +100,28 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
                 }
 
                 @Override
+                public void onRenderedFirstFrame() {
+                    playerView.setVisibility(View.VISIBLE);
+                    playerView.setAlpha(1f);
+                    playerView.setShutterBackgroundColor(Color.TRANSPARENT);
+                    playerView.hideController();
+                    EChatNativeLog.info(NativeVideoPlayerActivity.this, "android-video-player",
+                        "ExoPlayer first video frame rendered and PlayerView shown",
+                        "viewWidth", playerView.getWidth(),
+                        "viewHeight", playerView.getHeight(),
+                        "viewVisibility", playerView.getVisibility());
+                }
+
+                @Override
+                public void onVideoSizeChanged(androidx.media3.common.VideoSize videoSize) {
+                    EChatNativeLog.info(NativeVideoPlayerActivity.this, "android-video-player",
+                        "ExoPlayer video size changed",
+                        "width", videoSize.width,
+                        "height", videoSize.height,
+                        "pixelWidthHeightRatio", videoSize.pixelWidthHeightRatio);
+                }
+
+                @Override
                 public void onPlayerError(PlaybackException error) {
                     EChatNativeLog.error(NativeVideoPlayerActivity.this, "android-video-player",
                         "ExoPlayer playback failed", error);
@@ -108,8 +153,36 @@ public class NativeVideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onStop() {
-        releasePlayer("Activity stopped / conversation exited");
+        boolean finishing = isFinishing();
+        boolean changingConfigurations = isChangingConfigurations();
+        EChatNativeLog.info(this, "android-video-player", "Native player Activity onStop",
+            "isFinishing", finishing,
+            "isChangingConfigurations", changingConfigurations,
+            "hasPlayer", player != null);
+        if (finishing && !changingConfigurations) {
+            releasePlayer("user finished player Activity");
+        } else if (player != null) {
+            player.setPlayWhenReady(false);
+            EChatNativeLog.info(this, "android-video-player",
+                "Native player paused without release during lifecycle stop",
+                "currentPositionMs", player.getCurrentPosition(),
+                "bufferedPositionMs", player.getBufferedPosition());
+        }
         super.onStop();
     }
-}
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        EChatNativeLog.info(this, "android-video-player", "Native player Activity onStart",
+            "hasPlayer", player != null);
+        if (player != null) player.setPlayWhenReady(true);
+    }
+
+    @Override
+    protected void onDestroy() {
+        releasePlayer("Activity destroyed");
+        EChatNativeLog.info(this, "android-video-player", "Native player Activity onDestroy");
+        super.onDestroy();
+    }
+}
