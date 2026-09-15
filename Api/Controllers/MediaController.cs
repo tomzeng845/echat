@@ -8,6 +8,7 @@ namespace EChat.Api.Controllers;
 public sealed class MediaController(
     IChatRepository repository,
     IMediaStorage storage,
+    VideoProcessingService videoProcessing,
     ILogger<MediaController> logger) : ControllerBase
 {
     private const long MaxSize = 25 * 1024 * 1024;
@@ -33,16 +34,53 @@ public sealed class MediaController(
 
         var safeFileName = Path.GetFileName(file.FileName).Trim();
         if (string.IsNullOrWhiteSpace(safeFileName)) safeFileName = "media";
-        var extension = Path.GetExtension(safeFileName).ToLowerInvariant();
-        var storageKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
-        await using var content = file.OpenReadStream();
-        var stored = await storage.StoreAsync(storageKey, content, string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType, ct);
-        var asset = await repository.AddMediaAssetAsync(new MediaAsset
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        var root = Path.Combine(Path.GetTempPath(), "echat-media");
+        Directory.CreateDirectory(root);
+        MediaAsset asset;
+        if (purpose == MediaPurpose.Chat && contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
         {
-            OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
-            FileName = safeFileName, ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType, Size = file.Length
-        }, ct);
+            var input = Path.Combine(root, $"input-{Guid.NewGuid():N}{Path.GetExtension(safeFileName)}");
+            await using (var inputStream = System.IO.File.Create(input)) await file.CopyToAsync(inputStream, ct);
+            var processed = await videoProcessing.ProcessAsync(input, root, ct);
+            var baseKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}";
+            var stored = await StoreFileAsync($"{baseKey}.mp4", processed.Mp4Path, "video/mp4", ct);
+            var thumb = await StoreFileAsync($"{baseKey}.jpg", processed.ThumbnailPath, "image/jpeg", ct);
+            string? hlsKey = null;
+            if (processed.HlsPlaylistPath is not null)
+            {
+                foreach (var segment in processed.HlsSegmentPaths)
+                    await StoreFileAsync($"{baseKey}/{Path.GetFileName(segment)}", segment, "video/mp2t", ct);
+                hlsKey = $"{baseKey}/index.m3u8";
+                await StoreFileAsync(hlsKey, processed.HlsPlaylistPath, "application/vnd.apple.mpegurl", ct);
+            }
+            asset = await repository.AddMediaAssetAsync(new MediaAsset
+            {
+                OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
+                FileName = Path.GetFileNameWithoutExtension(safeFileName) + ".mp4", ContentType = "video/mp4", Size = new FileInfo(processed.Mp4Path).Length,
+                ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey, DurationSeconds = processed.DurationSeconds, IsTranscoded = true
+            }, ct);
+            try { System.IO.File.Delete(input); Directory.Delete(processed.DirectoryPath, true); } catch { }
+        }
+        else
+        {
+            var extension = Path.GetExtension(safeFileName).ToLowerInvariant();
+            var storageKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+            await using var content = file.OpenReadStream();
+            var stored = await storage.StoreAsync(storageKey, content, contentType, ct);
+            asset = await repository.AddMediaAssetAsync(new MediaAsset
+            {
+                OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
+                FileName = safeFileName, ContentType = contentType, Size = file.Length
+            }, ct);
+        }
         return Ok(View(asset));
+    }
+
+    private async Task<StoredMedia> StoreFileAsync(string key, string path, string contentType, CancellationToken ct)
+    {
+        await using var stream = System.IO.File.OpenRead(path);
+        return await storage.StoreAsync(key, stream, contentType, ct);
     }
 
     [HttpGet("{id}")]
@@ -75,6 +113,24 @@ public sealed class MediaController(
         return signedUrl is null ? NotFound() : RedirectPreserveMethod(signedUrl);
     }
 
+    [HttpGet("{id}/thumbnail")]
+    public async Task<ActionResult> Thumbnail(string id, CancellationToken ct)
+    {
+        var asset = await repository.GetMediaAssetAsync(id, ct);
+        if (asset is null || asset.ThumbnailStorageKey is null || !await CanAccessAsync(asset, ct)) return NotFound();
+        var signedUrl = await storage.GetSignedReadUrlAsync(asset.ThumbnailStorageKey, ct);
+        return signedUrl is null ? NotFound() : Redirect(signedUrl);
+    }
+
+    [HttpGet("{id}/hls")]
+    public async Task<ActionResult> Hls(string id, CancellationToken ct)
+    {
+        var asset = await repository.GetMediaAssetAsync(id, ct);
+        if (asset is null || asset.HlsPlaylistStorageKey is null || !await CanAccessAsync(asset, ct)) return NotFound();
+        var signedUrl = await storage.GetSignedReadUrlAsync(asset.HlsPlaylistStorageKey, ct);
+        return signedUrl is null ? NotFound() : Redirect(signedUrl);
+    }
+
     private async Task<bool> CanAccessAsync(MediaAsset asset, CancellationToken ct)
     {
         var userId = User.UserId();
@@ -96,5 +152,5 @@ public sealed class MediaController(
     }
 
     private static bool IsInline(string contentType) => contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) || contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) || contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
-    private static MediaAssetView View(MediaAsset asset) => new(asset.Id, asset.FileName, asset.ContentType, asset.Size, asset.Purpose, $"/api/media/{asset.Id}/content");
+    private static MediaAssetView View(MediaAsset asset) => new(asset.Id, asset.FileName, asset.ContentType, asset.Size, asset.Purpose, $"/api/media/{asset.Id}/content", asset.ThumbnailStorageKey is null ? null : $"/api/media/{asset.Id}/thumbnail", asset.HlsPlaylistStorageKey is null ? null : $"/api/media/{asset.Id}/hls", asset.DurationSeconds, asset.IsTranscoded);
 }

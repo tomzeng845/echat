@@ -43,6 +43,7 @@ builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
+builder.Services.AddSingleton<VideoProcessingService>();
 
 var mongoConfigured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI")) || !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]);
 if (mongoConfigured) builder.Services.AddSingleton<IChatRepository, MongoChatRepository>();

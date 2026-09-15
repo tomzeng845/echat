@@ -225,6 +225,10 @@ public sealed class MediaAsset
     public string FileName { get; set; } = "";
     public string ContentType { get; set; } = "application/octet-stream";
     public long Size { get; set; }
+    public string? ThumbnailStorageKey { get; set; }
+    public string? HlsPlaylistStorageKey { get; set; }
+    public double? DurationSeconds { get; set; }
+    public bool IsTranscoded { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -332,7 +336,7 @@ public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind
 public sealed record RotateConversationKeyRequest(int KeyVersion, Dictionary<string, string> KeyEnvelopes);
 public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, int KeyVersion, string? KeyEnvelope, string? PeerId = null);
 public sealed record MessageView(string Id, string ClientMessageId, string ConversationId, long Sequence, string SenderId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm, int KeyVersion, string? ReplyToMessageId, IReadOnlyDictionary<string, string> Metadata, MessageState State, DateTime SentAtUtc, DateTime? RecalledAtUtc, string Content);
-public sealed record MediaAssetView(string Id, string FileName, string ContentType, long Size, MediaPurpose Purpose, string ContentUrl);
+public sealed record MediaAssetView(string Id, string FileName, string ContentType, long Size, MediaPurpose Purpose, string ContentUrl, string? ThumbnailUrl = null, string? HlsUrl = null, double? DurationSeconds = null, bool IsTranscoded = false);
 public sealed record CreateMomentRequest(string Text, IReadOnlyList<string>? MediaAssetIds = null, MomentVisibility Visibility = MomentVisibility.Friends, IReadOnlyList<string>? AudienceUserIds = null);
 public sealed record AddMomentCommentRequest(string Text);
 public sealed record MomentLikeView(string UserId, string DisplayName, string AvatarUrl, DateTime CreatedAtUtc);
