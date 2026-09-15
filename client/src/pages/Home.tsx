@@ -1376,7 +1376,16 @@ function Messenger({
       );
       await loadData();
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "媒体发送失败");
+      const message = cause instanceof Error ? cause.message : "媒体发送失败";
+      diagnosticError("media-send", "Media message send failed", {
+        kind,
+        message,
+      });
+      toast.error(
+        message.includes("上传") || message.includes("文件")
+          ? message
+          : `${kind === "Video" ? "视频" : "媒体"}已选择，但消息保存失败：${message}`
+      );
     } finally {
       setBusy(false);
     }

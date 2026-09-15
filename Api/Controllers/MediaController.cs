@@ -19,7 +19,11 @@ public sealed class MediaController(
 
     [HttpPost]
     [RequestSizeLimit(MaxSize + 1024 * 1024)]
-    public async Task<ActionResult<MediaAssetView>> Upload([FromForm] IFormFile file, [FromForm] MediaPurpose purpose, [FromForm] string? conversationId, CancellationToken ct)
+    public async Task<ActionResult<MediaAssetView>> Upload(
+        [FromForm] IFormFile file,
+        [FromForm] MediaPurpose purpose,
+        [FromForm] string? conversationId,
+        CancellationToken ct)
     {
         if (file.Length is <= 0 or > MaxSize) return BadRequest(new { error = "文件为空或超过 25 MB" });
         if (BlockedTypes.Contains(file.ContentType)) return BadRequest(new { error = "不支持此文件类型" });
@@ -37,44 +41,103 @@ public sealed class MediaController(
         var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
         var root = Path.Combine(Path.GetTempPath(), "echat-media");
         Directory.CreateDirectory(root);
-        MediaAsset asset;
+
         if (purpose == MediaPurpose.Chat && contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
         {
             var input = Path.Combine(root, $"input-{Guid.NewGuid():N}{Path.GetExtension(safeFileName)}");
-            await using (var inputStream = System.IO.File.Create(input)) await file.CopyToAsync(inputStream, ct);
-            var processed = await videoProcessing.ProcessAsync(input, root, ct);
-            var baseKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}";
-            var stored = await StoreFileAsync($"{baseKey}.mp4", processed.Mp4Path, "video/mp4", ct);
-            var thumb = await StoreFileAsync($"{baseKey}.jpg", processed.ThumbnailPath, "image/jpeg", ct);
-            string? hlsKey = null;
-            if (processed.HlsPlaylistPath is not null)
+            try
             {
-                foreach (var segment in processed.HlsSegmentPaths)
-                    await StoreFileAsync($"{baseKey}/{Path.GetFileName(segment)}", segment, "video/mp2t", ct);
-                hlsKey = $"{baseKey}/index.m3u8";
-                await StoreFileAsync(hlsKey, processed.HlsPlaylistPath, "application/vnd.apple.mpegurl", ct);
+                await using (var inputStream = System.IO.File.Create(input))
+                    await file.CopyToAsync(inputStream, ct);
+
+                try
+                {
+                    if (!videoProcessing.IsAvailable)
+                    {
+                        logger.LogWarning("FFmpeg/FFprobe unavailable; preserving original video upload {FileName}", safeFileName);
+                        var originalWithoutTranscode = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct);
+                        return Ok(View(originalWithoutTranscode));
+                    }
+                    var processed = await videoProcessing.ProcessAsync(input, root, ct);
+                    var baseKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}";
+                    var stored = await StoreFileAsync($"{baseKey}.mp4", processed.Mp4Path, "video/mp4", ct);
+                    var thumb = await StoreFileAsync($"{baseKey}.jpg", processed.ThumbnailPath, "image/jpeg", ct);
+                    string? hlsKey = null;
+                    if (processed.HlsPlaylistPath is not null)
+                    {
+                        foreach (var segment in processed.HlsSegmentPaths)
+                            await StoreFileAsync($"{baseKey}/{Path.GetFileName(segment)}", segment, "video/mp2t", ct);
+                        hlsKey = $"{baseKey}/index.m3u8";
+                        await StoreFileAsync(hlsKey, processed.HlsPlaylistPath, "application/vnd.apple.mpegurl", ct);
+                    }
+
+                    var asset = await repository.AddMediaAssetAsync(new MediaAsset
+                    {
+                        OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId,
+                        StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
+                        FileName = Path.GetFileNameWithoutExtension(safeFileName) + ".mp4",
+                        ContentType = "video/mp4", Size = new FileInfo(processed.Mp4Path).Length,
+                        ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey,
+                        HlsSegmentCount = processed.HlsSegmentPaths.Count,
+                        DurationSeconds = processed.DurationSeconds, IsTranscoded = true
+                    }, ct);
+                    return Ok(View(asset));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // FFmpeg is an optimization. Do not lose the chat message if it is unavailable,
+                    // the codec is unsupported, or the transcode times out.
+                    logger.LogWarning(ex, "Video transcode failed; preserving original upload {FileName} {Bytes} {ConversationId}", safeFileName, file.Length, conversationId);
+                }
+
+                var original = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct);
+                return Ok(View(original));
             }
-            asset = await repository.AddMediaAssetAsync(new MediaAsset
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
-                FileName = Path.GetFileNameWithoutExtension(safeFileName) + ".mp4", ContentType = "video/mp4", Size = new FileInfo(processed.Mp4Path).Length,
-                ThumbnailStorageKey = thumb.StorageKey, HlsPlaylistStorageKey = hlsKey, HlsSegmentCount = processed.HlsSegmentPaths.Count, DurationSeconds = processed.DurationSeconds, IsTranscoded = true
-            }, ct);
-            try { System.IO.File.Delete(input); Directory.Delete(processed.DirectoryPath, true); } catch { }
+                return StatusCode(StatusCodes.Status504GatewayTimeout, new { error = "视频上传超时，请重试" });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Video upload failed {FileName} {Bytes} {ConversationId}", safeFileName, file.Length, conversationId);
+                return StatusCode(StatusCodes.Status500InternalServerError, new { error = "视频上传失败，请检查网络后重试" });
+            }
+            finally
+            {
+                try { if (System.IO.File.Exists(input)) System.IO.File.Delete(input); } catch { }
+            }
         }
-        else
+
+        try
         {
-            var extension = Path.GetExtension(safeFileName).ToLowerInvariant();
-            var storageKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
-            await using var content = file.OpenReadStream();
-            var stored = await storage.StoreAsync(storageKey, content, contentType, ct);
-            asset = await repository.AddMediaAssetAsync(new MediaAsset
-            {
-                OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId, StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
-                FileName = safeFileName, ContentType = contentType, Size = file.Length
-            }, ct);
+            var asset = await StoreOriginalAsync(file, safeFileName, contentType, conversationId, ct, purpose);
+            return Ok(View(asset));
         }
-        return Ok(View(asset));
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Media upload failed {FileName} {Bytes} {Purpose} {ConversationId}", safeFileName, file.Length, purpose, conversationId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "文件上传失败，请检查网络后重试" });
+        }
+    }
+
+    private async Task<MediaAsset> StoreOriginalAsync(
+        IFormFile file,
+        string fileName,
+        string contentType,
+        string? conversationId,
+        CancellationToken ct,
+        MediaPurpose purpose = MediaPurpose.Chat)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        var storageKey = $"echat/{User.UserId()}/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+        await using var content = file.OpenReadStream();
+        var stored = await storage.StoreAsync(storageKey, content, contentType, ct);
+        return await repository.AddMediaAssetAsync(new MediaAsset
+        {
+            OwnerId = User.UserId(), Purpose = purpose, ConversationId = conversationId,
+            StorageKey = stored.StorageKey, LocalPath = stored.LocalPath,
+            FileName = fileName, ContentType = contentType, Size = file.Length, IsTranscoded = false
+        }, ct);
     }
 
     private async Task<StoredMedia> StoreFileAsync(string key, string path, string contentType, CancellationToken ct)
@@ -98,13 +161,7 @@ public sealed class MediaController(
         var asset = await repository.GetMediaAssetAsync(id, ct);
         if (asset is null) return NotFound();
         if (!await CanAccessAsync(asset, ct)) return Forbid();
-        logger.LogInformation(
-            "Media content request {AssetId} {ContentType} {Size} range={Range} user={UserId}",
-            id,
-            asset.ContentType,
-            asset.Size,
-            Request.Headers.Range.ToString(),
-            User.UserId());
+        logger.LogInformation("Media content request {AssetId} {ContentType} {Size} range={Range} user={UserId}", id, asset.ContentType, asset.Size, Request.Headers.Range.ToString(), User.UserId());
         Response.Headers.CacheControl = "private,max-age=3600";
         if (!string.IsNullOrWhiteSpace(asset.LocalPath) && System.IO.File.Exists(asset.LocalPath))
             return new FileStreamResult(System.IO.File.OpenRead(asset.LocalPath), asset.ContentType) { EnableRangeProcessing = true, FileDownloadName = IsInline(asset.ContentType) ? null : asset.FileName };

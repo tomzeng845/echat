@@ -15,6 +15,8 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
     private readonly string _ffmpeg = configuration["Media:FFmpegPath"] ?? "ffmpeg";
     private readonly string _ffprobe = configuration["Media:FFprobePath"] ?? "ffprobe";
 
+    public bool IsAvailable => CanResolveExecutable(_ffmpeg) && CanResolveExecutable(_ffprobe);
+
     public async Task<ProcessedVideo> ProcessAsync(string inputPath, string workRoot, CancellationToken ct)
     {
         var directory = Path.Combine(workRoot, Guid.NewGuid().ToString("N"));
@@ -65,4 +67,17 @@ public sealed class VideoProcessingService(IConfiguration configuration, ILogger
     }
 
     private static string Q(string value) => $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+
+    private static bool CanResolveExecutable(string executable)
+    {
+        if (Path.IsPathRooted(executable)) return File.Exists(executable);
+        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        var extensions = OperatingSystem.IsWindows()
+            ? new[] { ".exe", ".cmd", ".bat", "" }
+            : new[] { "" };
+        return path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => extensions.Select(extension => Path.Combine(directory, executable + extension)))
+            .SelectMany(paths => paths)
+            .Any(File.Exists);
+    }
 }

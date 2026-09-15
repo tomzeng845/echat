@@ -506,3 +506,11 @@
 - [x] 增加无 MIME 时按扩展名识别 MP4/MOV/WebM/MKV 等视频
 - [x] 扩展文件选择器视频 accept 类型并记录选择、处理、上传失败日志
 - [x] `pnpm check` 与 Android Gradle 构建通过，APK 已上传
+
+## 2026-09-15 视频上传 500 修复
+
+- [x] 根据 Android 日志确认 `POST /api/media` 的 500 根因是 Windows API 找不到 `ffprobe`
+- [x] API 启动视频处理前检测 FFmpeg/FFprobe；未安装时跳过转码，直接保存原视频并继续创建媒体消息
+- [x] 转码异常不再阻断视频消息；只有原文件存储失败才返回明确上传错误
+- [x] 前端区分“视频上传失败”和“媒体已上传但消息保存失败”，并写入诊断日志
+- [x] `pnpm check`、Vite 构建和 Windows 自包含 API 发布通过；Android APK 与 Windows API 已上传
