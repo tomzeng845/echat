@@ -1,11 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile } from "@ffmpeg/util";
 import { info as logInfo, warn as logWarn } from "./runtime-diagnostics";
-
-const MAX_WIDTH = 1280;
-const TARGET_VIDEO_BITS = 1_500_000;
-const TARGET_AUDIO_BITS = 128_000;
+import { compressChatVideo } from "./media-compression";
 
 type NativeVideoCompressor = {
   pickAndCompressVideo(): Promise<{
@@ -21,6 +16,15 @@ const nativeVideoCompressor = registerPlugin<NativeVideoCompressor>("NativeVideo
 
 function isNativeApp() {
   return Capacitor.isNativePlatform();
+}
+
+function isChromeOrEdgeBrowser() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  if (typeof MediaRecorder === "undefined") return false;
+  const userAgent = navigator.userAgent;
+  const isEdge = /Edg\//i.test(userAgent);
+  const isChrome = /Chrome\//i.test(userAgent) && !/OPR\//i.test(userAgent);
+  return isEdge || isChrome;
 }
 
 export async function pickAndCompressVideoForPlatform(): Promise<File | null> {
@@ -70,101 +74,67 @@ export async function pickAndCompressVideoForPlatform(): Promise<File | null> {
   }
 }
 
-let ffmpeg: FFmpeg | null = null;
-let ffmpegLoadPromise: Promise<FFmpeg> | null = null;
-
-async function getFfmpeg() {
-  if (ffmpeg?.loaded) return ffmpeg;
-  if (ffmpegLoadPromise) return ffmpegLoadPromise;
-  ffmpegLoadPromise = (async () => {
-    const instance = new FFmpeg();
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const coreURL = `${origin}/ffmpeg-core/ffmpeg-core.js`;
-    const wasmURL = `${origin}/ffmpeg-core/ffmpeg-core.wasm`;
-    const classWorkerURL = `${origin}/ffmpeg-worker/worker.js`;
-    logInfo("video-compression", "FFmpeg WASM loading", {
-      coreURL,
-      wasmURL,
-      classWorkerURL,
-      sameOrigin: true,
-    });
-    await instance.load({
-      classWorkerURL,
-      coreURL,
-      wasmURL,
-    });
-    logInfo("video-compression", "FFmpeg WASM loaded");
-    ffmpeg = instance;
-    return instance;
-  })().catch(error => {
-    ffmpegLoadPromise = null;
-    throw error;
-  });
-  return ffmpegLoadPromise;
-}
-
 export async function compressVideoForWeb(file: File): Promise<File> {
+  const platform = Capacitor.getPlatform();
   if (isNativeApp()) {
-    logInfo("video-compression", "Web compression skipped for native app", { platform: Capacitor.getPlatform(), originalBytes: file.size });
+    logInfo("video-compression", "Web compression skipped for native app", {
+      platform,
+      strategy: "native-compressor",
+      originalBytes: file.size,
+    });
     return file;
   }
-  if (file.size <= 10 * 1024 * 1024) {
-    logInfo("video-compression", "Web compression skipped: file below threshold", { platform: "web", originalBytes: file.size, thresholdBytes: 10 * 1024 * 1024 });
+  if (!isChromeOrEdgeBrowser()) {
+    logInfo("video-compression", "Web compression skipped: browser uses direct upload", {
+      platform: "web",
+      userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+      originalBytes: file.size,
+      strategy: "direct-upload",
+    });
+    return file;
+  }
+  if (file.size <= 8 * 1024 * 1024) {
+    logInfo("video-compression", "Web compression skipped: file below threshold", {
+      platform: "web",
+      strategy: "media-recorder",
+      originalBytes: file.size,
+      thresholdBytes: 8 * 1024 * 1024,
+    });
     return file;
   }
 
   const startedAt = performance.now();
-  const inputName = `input-${Date.now()}.mp4`;
-  const outputName = `output-${Date.now()}.mp4`;
+  logInfo("video-compression", "MediaRecorder compression started", {
+    platform: "web",
+    browser: /Edg\//i.test(navigator.userAgent) ? "edge" : "chrome",
+    originalBytes: file.size,
+    targetWidth: 1280,
+    targetVideoBitsPerSecond: 1_800_000,
+    targetAudioBitsPerSecond: 96_000,
+  });
   try {
-    const encoder = await getFfmpeg();
-    await encoder.writeFile(inputName, await fetchFile(file));
-    logInfo("video-compression", "Web FFmpeg compression started", {
-      platform: "web", originalBytes: file.size, targetWidth: MAX_WIDTH,
-      targetVideoBitsPerSecond: TARGET_VIDEO_BITS,
-      targetAudioBitsPerSecond: TARGET_AUDIO_BITS,
-    });
-    await encoder.exec([
-      "-i", inputName,
-      "-vf", "scale=w='if(gt(iw,ih),min(iw,1280),-2)':h='if(gt(iw,ih),-2,min(ih,1280))'",
-      "-c:v", "libx264", "-preset", "veryfast", "-b:v", "1500k",
-      "-maxrate", "1800k", "-bufsize", "3000k",
-      "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", outputName,
-    ]);
-    const output = await encoder.readFile(outputName);
-    const bytes = typeof output === "string" ? new TextEncoder().encode(output) : output;
-    const compressed = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
-    await encoder.deleteFile(inputName).catch(() => undefined);
-    await encoder.deleteFile(outputName).catch(() => undefined);
-    if (!compressed.size) {
-      logWarn("video-compression", "FFmpeg WASM returned empty output; using original", { platform: "web", originalBytes: file.size });
-      return file;
-    }
-    if (compressed.size >= file.size) {
-      logWarn("video-compression", "Web compression output was not smaller; using original", {
-        platform: "web",
-        originalBytes: file.size,
-        compressedBytes: compressed.size,
-        compressionRatio: Number((compressed.size / file.size).toFixed(4)),
-      });
-      return file;
-    }
-    const outputFileName = file.name.replace(/\.[^.]+$/, "") + ".mp4";
-    logInfo("video-compression", "Web FFmpeg compression completed", {
+    const compressed = await compressChatVideo(file);
+    logInfo("video-compression", "MediaRecorder compression finished", {
       platform: "web",
       originalBytes: file.size,
       compressedBytes: compressed.size,
-      compressionRatio: Number((compressed.size / file.size).toFixed(3)),
+      compressionRatio: file.size ? Number((compressed.size / file.size).toFixed(4)) : 0,
+      usedOriginal: compressed === file,
       elapsedMs: Math.round(performance.now() - startedAt),
     });
-    return new File([compressed], outputFileName, { type: "video/mp4", lastModified: Date.now() });
+    return compressed;
   } catch (error) {
-    logWarn("video-compression", "Web FFmpeg compression failed; using original", {
+    logWarn("video-compression", "MediaRecorder compression failed; using original", {
       platform: "web",
-      reason: error instanceof Error ? error.message : String(error),
       originalBytes: file.size,
       elapsedMs: Math.round(performance.now() - startedAt),
+      reason: error instanceof Error ? error.message : String(error),
     });
     return file;
   }
+}
+
+export function getVideoCompressionStrategy() {
+  if (isNativeApp()) return "native-compressor" as const;
+  return isChromeOrEdgeBrowser() ? "media-recorder" as const : "direct-upload" as const;
 }
