@@ -12,6 +12,7 @@
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		EC1500010000000000000001 /* NativeWebRTCPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1500110000000000000001 /* NativeWebRTCPlugin.swift */; };
+		EC1500010000000000000002 /* NativeVideoCompressorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1500110000000000000002 /* NativeVideoCompressorPlugin.swift */; };
 		EC1600010000000000000001 /* EChatExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = EC1600110000000000000001 /* EChatExceptionCatcher.m */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
@@ -30,6 +31,7 @@
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		EC1500110000000000000001 /* NativeWebRTCPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWebRTCPlugin.swift; sourceTree = "<group>"; };
+		EC1500110000000000000002 /* NativeVideoCompressorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVideoCompressorPlugin.swift; sourceTree = "<group>"; };
 		EC1600110000000000000001 /* EChatExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = EChatExceptionCatcher.m; sourceTree = "<group>"; };
 		EC1600120000000000000001 /* EChatExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = EChatExceptionCatcher.h; sourceTree = "<group>"; };
 		EC1600130000000000000001 /* EChat-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "EChat-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -83,6 +85,7 @@
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				EC1500110000000000000001 /* NativeWebRTCPlugin.swift */,
+				EC1500110000000000000002 /* NativeVideoCompressorPlugin.swift */,
 				EC1600110000000000000001 /* EChatExceptionCatcher.m */,
 				EC1600120000000000000001 /* EChatExceptionCatcher.h */,
 				EC1600130000000000000001 /* EChat-Bridging-Header.h */,
@@ -188,6 +191,7 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				EC1500010000000000000001 /* NativeWebRTCPlugin.swift in Sources */,
+				EC1500010000000000000002 /* NativeVideoCompressorPlugin.swift in Sources */,
 				EC1600010000000000000001 /* EChatExceptionCatcher.m in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 			);

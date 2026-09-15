@@ -67,6 +67,7 @@ public class MyViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(MediaPermissionsPlugin())
         bridge?.registerPluginInstance(NativeWebRTCPlugin())
+        bridge?.registerPluginInstance(NativeVideoCompressorPlugin())
     }
 }
 

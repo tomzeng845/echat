@@ -12,10 +12,10 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.1"),
-        .package(url: "https://github.com/livekit/webrtc-xcframework.git", exact: "150.7871.02"),
         .package(name: "CapacitorApp", path: "../../../node_modules/.pnpm/@capacitor+app@8.1.1_@capacitor+core@8.5.1/node_modules/@capacitor/app"),
         .package(name: "CapacitorLocalNotifications", path: "../../../node_modules/.pnpm/@capacitor+local-notifications@8.3.1_@capacitor+core@8.5.1/node_modules/@capacitor/local-notifications"),
-        .package(name: "CapacitorPushNotifications", path: "../../../node_modules/.pnpm/@capacitor+push-notifications@8.1.2_@capacitor+core@8.5.1/node_modules/@capacitor/push-notifications")
+        .package(name: "CapacitorPushNotifications", path: "../../../node_modules/.pnpm/@capacitor+push-notifications@8.1.2_@capacitor+core@8.5.1/node_modules/@capacitor/push-notifications"),
+        .package(name: "CapacitorPluginJpush", path: "../../../node_modules/.pnpm/capacitor-plugin-jpush@4.0.1_@capacitor+core@8.5.1/node_modules/capacitor-plugin-jpush")
     ],
     targets: [
         .target(
@@ -26,7 +26,7 @@ let package = Package(
                 .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapacitorLocalNotifications", package: "CapacitorLocalNotifications"),
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
-                .product(name: "LiveKitWebRTC", package: "webrtc-xcframework")
+                .product(name: "CapacitorPluginJpush", package: "CapacitorPluginJpush")
             ]
         )
     ]

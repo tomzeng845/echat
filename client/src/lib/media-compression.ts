@@ -190,5 +190,8 @@ export async function compressChatVideo(file: File): Promise<File> {
 }
 
 export async function prepareChatMedia(file: File, kind: "Image" | "Video") {
-  return kind === "Image" ? compressChatImage(file) : compressChatVideo(file);
+  // Video compression is handled once in sendChatMedia. Keeping the picker
+  // stage as a pass-through prevents two MediaRecorder pipelines from racing
+  // in browsers that expose captureStream only partially.
+  return kind === "Image" ? compressChatImage(file) : file;
 }

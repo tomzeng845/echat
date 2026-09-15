@@ -28,6 +28,7 @@ import {
   type User,
 } from "@/lib/echat-api";
 import { sendChatMedia, type ChatMediaKind } from "@/lib/echat-media";
+import { pickAndCompressVideoForPlatform } from "@/lib/video-compression";
 import { prepareChatMedia } from "@/lib/media-compression";
 import {
   info as diagnosticInfo,
@@ -2185,7 +2186,14 @@ function Messenger({
                     <EmojiPicker disabled={busy} onSelect={sendEmoji} />
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={async () => {
+                        const nativeVideo = await pickAndCompressVideoForPlatform();
+                        if (nativeVideo) {
+                          await sendMedia(nativeVideo, "Video");
+                          return;
+                        }
+                        fileInputRef.current?.click();
+                      }}
                       title="发送文件或视频"
                       className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-teal-600"
                     >
