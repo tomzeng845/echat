@@ -6,6 +6,7 @@ import {
   effectiveMediaMimeType,
   formatFileSize,
   parseMediaPayload,
+  streamChatVideo,
 } from "@/lib/echat-media";
 import { error as logError, info as logInfo } from "@/lib/runtime-diagnostics";
 
@@ -37,6 +38,18 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
+    if (message.kind === "Video" && !payload.fileNonce) {
+      setLoading(false);
+      return streamChatVideo(
+        payload,
+        nextUrl => {
+          if (active) setUrl(nextUrl);
+        },
+        cause => {
+          if (active) setError(cause.message);
+        }
+      );
+    }
     setLoading(true);
     downloadChatMedia(message.conversationId, message.keyVersion || 1, payload)
       .then(blob => {
@@ -61,6 +74,7 @@ export default function RichMessageContent({
     message.kind,
     message.state,
     payload?.assetId,
+    payload?.fileNonce,
     videoRequested,
   ]);
 

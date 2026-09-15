@@ -106,6 +106,68 @@ export async function downloadChatMedia(
   return new Blob([decrypted], { type: mimeType });
 }
 
+export function streamChatVideo(
+  payload: ChatMediaPayload,
+  onReady: (url: string) => void,
+  onError: (error: Error) => void
+) {
+  const mimeType = effectiveMediaMimeType(payload, "Video");
+  const mediaSource = new MediaSource();
+  const objectUrl = URL.createObjectURL(mediaSource);
+  let disposed = false;
+
+  onReady(objectUrl);
+  const start = async () => {
+    try {
+      const response = await authorizedFetch(
+        `/api/media/${payload.assetId}/content`
+      );
+      if (!response.ok || !response.body) throw new Error("视频流读取失败");
+      if (!MediaSource.isTypeSupported(mimeType))
+        throw new Error("当前浏览器不支持视频流格式");
+      await new Promise<void>(resolve => {
+        mediaSource.addEventListener("sourceopen", () => resolve(), {
+          once: true,
+        });
+      });
+      if (disposed) return;
+      const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+      const reader = response.body.getReader();
+      while (!disposed) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value?.length) continue;
+        await new Promise<void>((resolve, reject) => {
+          const finish = () => {
+            sourceBuffer.removeEventListener("updateend", finish);
+            sourceBuffer.removeEventListener("error", fail);
+            resolve();
+          };
+          const fail = () => {
+            sourceBuffer.removeEventListener("updateend", finish);
+            sourceBuffer.removeEventListener("error", fail);
+            reject(new Error("视频缓冲失败"));
+          };
+          sourceBuffer.addEventListener("updateend", finish, { once: true });
+          sourceBuffer.addEventListener("error", fail, { once: true });
+          sourceBuffer.appendBuffer(value);
+        });
+      }
+      if (!disposed && mediaSource.readyState === "open")
+        mediaSource.endOfStream();
+    } catch (error) {
+      if (!disposed)
+        onError(error instanceof Error ? error : new Error("视频加载失败"));
+    }
+  };
+  void start();
+  return () => {
+    disposed = true;
+    if (mediaSource.readyState === "open") mediaSource.endOfStream();
+    URL.revokeObjectURL(objectUrl);
+  };
+}
+
 export function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;

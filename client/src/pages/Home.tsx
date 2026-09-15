@@ -1457,7 +1457,7 @@ function Messenger({
               kind: "Text",
               keyVersion: 0,
               algorithm: "PLAINTEXT",
-              content: `转发消息：\n${content}`,
+              content,
               ciphertext: "",
               nonce: "",
               metadata: {
@@ -2013,6 +2013,13 @@ function Messenger({
                           onRecall={() => recall(message)}
                           selected={selectedMessageIds.includes(message.id)}
                           selectionMode={selectionMode}
+                          quotedMessage={
+                            message.replyToMessageId
+                              ? messages.find(
+                                  item => item.id === message.replyToMessageId
+                                )
+                              : undefined
+                          }
                           onToggleSelect={() =>
                             toggleMessageSelection(message.id)
                           }
@@ -2574,6 +2581,7 @@ function MessageBubble({
   onRecall,
   selected,
   selectionMode,
+  quotedMessage,
   onToggleSelect,
   onAction,
 }: {
@@ -2584,6 +2592,7 @@ function MessageBubble({
   onRecall: () => void;
   selected: boolean;
   selectionMode: boolean;
+  quotedMessage?: DecryptedMessage;
   onToggleSelect: () => void;
   onAction: (action: "menu" | "select") => void;
 }) {
@@ -2631,6 +2640,21 @@ function MessageBubble({
           className={`rounded-[20px] shadow-sm ${selected ? "ring-2 ring-amber-400 ring-offset-2" : ""} ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
         >
           <RichMessageContent message={message} />
+          {quotedMessage && (
+            <div className="mt-2 border-t border-current/15 pt-2 text-[11px] opacity-80">
+              <div className="mb-1 flex items-center gap-1 font-semibold">
+                <Quote size={12} /> 引用消息
+              </div>
+              <p className="line-clamp-2 border-l-2 border-current/40 pl-2 whitespace-pre-wrap">
+                {quotedMessage.plaintext}
+              </p>
+            </div>
+          )}
+          {message.metadata?.forwardedFromMessageId && (
+            <div className="mt-2 border-t border-current/15 pt-2 text-[10px] opacity-70">
+              转发消息
+            </div>
+          )}
         </div>
         <div
           className={`mt-1.5 flex items-center gap-2 px-1 text-[10px] text-slate-400 ${mine ? "justify-end" : "justify-start"}`}
