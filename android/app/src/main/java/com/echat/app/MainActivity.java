@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.content.Intent;
+import android.webkit.WebSettings;
 
 import com.getcapacitor.BridgeActivity;
 import cn.jpush.android.api.JPushInterface;
@@ -13,9 +14,17 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MediaPermissionsPlugin.class);
         registerPlugin(NativeVideoCompressorPlugin.class);
+        registerPlugin(NativeVideoPlayerPlugin.class);
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
-            getBridge().getWebView().setWebChromeClient(new HarmonyWebChromeClient(getBridge(), this));
+            android.webkit.WebView webView = getBridge().getWebView();
+            WebSettings settings = webView.getSettings();
+            settings.setMediaPlaybackRequiresUserGesture(false);
+            EChatNativeLog.info(this, "android-webview", "Media playback gesture policy configured",
+                "mediaPlaybackRequiresUserGesture", false,
+                "javaScriptEnabled", settings.getJavaScriptEnabled(),
+                "domStorageEnabled", settings.getDomStorageEnabled());
+            webView.setWebChromeClient(new HarmonyWebChromeClient(getBridge(), this));
         }
         new Handler(Looper.getMainLooper()).postDelayed(() -> logJPushStatus(), 3000L);
     }

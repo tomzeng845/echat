@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
@@ -14,6 +15,12 @@ import { error as logError, info as logInfo } from "@/lib/runtime-diagnostics";
 
 export type RenderableMessage = Message & { plaintext: string };
 
+type NativeVideoPlayer = {
+  playVideo(options: { url: string }): Promise<void>;
+};
+
+const nativeVideoPlayer = registerPlugin<NativeVideoPlayer>("NativeVideoPlayer");
+
 export default function RichMessageContent({
   message,
 }: {
@@ -28,7 +35,8 @@ export default function RichMessageContent({
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
   const [videoRequested, setVideoRequested] = useState(false);
   const [videoFallbackTried, setVideoFallbackTried] = useState(false);
-  const videoBufferGate = useRef(false);
+  const useNativeAndroidPlayer =
+    Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
   const supportsNativeHls =
     typeof navigator !== "undefined" &&
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -233,11 +241,27 @@ export default function RichMessageContent({
     return (
       <div>
         <video
-          controls
+          controls={!useNativeAndroidPlayer}
           playsInline
           preload="auto"
           poster={directChatThumbnailUrl(payload) || undefined}
           src={url}
+          onClick={event => {
+            if (!useNativeAndroidPlayer) return;
+            event.preventDefault();
+            event.stopPropagation();
+            logInfo("video-message", "Android native player requested", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              urlScheme: url.startsWith("https://") ? "https" : "other",
+            });
+            void nativeVideoPlayer.playVideo({ url }).catch(cause => {
+              logError("video-message", "Android native player failed to open", {
+                assetIdSuffix: payload.assetId.slice(-8),
+                reason: cause instanceof Error ? cause.message : String(cause),
+              });
+              setPlaybackError("原生播放器打开失败，请点击重试");
+            });
+          }}
           onLoadStart={event => {
             const video = event.currentTarget;
             logInfo("video-message", "Video load started", {
@@ -271,17 +295,9 @@ export default function RichMessageContent({
               readyState: video.readyState,
               networkState: video.networkState,
             });
-            // Do not consume the first tiny browser buffer immediately. Pausing
-            // here lets the native player request/fill more data before playback.
-            if (bufferedSeconds < 3 && video.readyState < 4) {
-              videoBufferGate.current = true;
-              video.pause();
-              logInfo("video-message", "Video playback held for initial buffer", {
-                assetIdSuffix: payload.assetId.slice(-8),
-                bufferedSeconds,
-                targetBufferedSeconds: 3,
-              });
-            }
+            // Do not pause here. Android WebView may not emit a timely progress
+            // event after a programmatic pause, which makes the user tap play
+            // repeatedly. Let the native player manage its own buffer.
           }}
           onProgress={event => {
             const video = event.currentTarget;
@@ -297,14 +313,6 @@ export default function RichMessageContent({
               readyState: video.readyState,
               networkState: video.networkState,
             });
-            if (videoBufferGate.current && bufferedSeconds >= 3) {
-              videoBufferGate.current = false;
-              logInfo("video-message", "Video initial buffer ready, resuming", {
-                assetIdSuffix: payload.assetId.slice(-8),
-                bufferedSeconds,
-              });
-              void video.play().catch(() => undefined);
-            }
           }}
           onCanPlay={event => {
             setLoading(false);

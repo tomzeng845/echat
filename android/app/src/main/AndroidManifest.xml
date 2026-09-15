@@ -24,6 +24,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".NativeVideoPlayerActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:screenOrientation="sensor"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
