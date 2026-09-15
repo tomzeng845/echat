@@ -213,12 +213,67 @@ export default function RichMessageContent({
           playsInline
           preload="auto"
           src={url}
-          onCanPlay={() => setLoading(false)}
-          onWaiting={() =>
+          onLoadStart={event => {
+            const video = event.currentTarget;
+            logInfo("video-message", "Video load started", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              srcType: url.startsWith("blob:") ? "blob" : "http-range",
+              readyState: video.readyState,
+              networkState: video.networkState,
+              duration: video.duration,
+            });
+          }}
+          onProgress={event => {
+            const video = event.currentTarget;
+            const bufferedEnd =
+              video.buffered.length > 0
+                ? video.buffered.end(video.buffered.length - 1)
+                : 0;
+            logInfo("video-message", "Video network progress", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              currentTime: video.currentTime,
+              bufferedSeconds: Math.max(0, bufferedEnd - video.currentTime),
+              readyState: video.readyState,
+              networkState: video.networkState,
+            });
+          }}
+          onCanPlay={event => {
+            setLoading(false);
+            const video = event.currentTarget;
+            logInfo("video-message", "Video can play", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              readyState: video.readyState,
+              networkState: video.networkState,
+            });
+          }}
+          onWaiting={event => {
+            const video = event.currentTarget;
+            const bufferedEnd =
+              video.buffered.length > 0
+                ? video.buffered.end(video.buffered.length - 1)
+                : 0;
             logInfo("video-message", "Video playback waiting for buffer", {
               assetIdSuffix: payload.assetId.slice(-8),
-            })
-          }
+              currentTime: video.currentTime,
+              bufferedSeconds: Math.max(0, bufferedEnd - video.currentTime),
+              readyState: video.readyState,
+              networkState: video.networkState,
+            });
+          }}
+          onStalled={event => {
+            const video = event.currentTarget;
+            logError("video-message", "Video network stalled", {
+              assetIdSuffix: payload.assetId.slice(-8),
+              currentTime: video.currentTime,
+              readyState: video.readyState,
+              networkState: video.networkState,
+              bufferedSeconds:
+                video.buffered.length > 0
+                  ? video.buffered.end(video.buffered.length - 1) -
+                    video.currentTime
+                  : 0,
+            });
+          }}
           onLoadedData={() =>
             logInfo("video-message", "Video message first frame loaded", {
               assetIdSuffix: payload.assetId.slice(-8),

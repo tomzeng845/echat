@@ -5,7 +5,10 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/media")]
-public sealed class MediaController(IChatRepository repository, IMediaStorage storage) : ControllerBase
+public sealed class MediaController(
+    IChatRepository repository,
+    IMediaStorage storage,
+    ILogger<MediaController> logger) : ControllerBase
 {
     private const long MaxSize = 25 * 1024 * 1024;
     private static readonly HashSet<string> BlockedTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -57,10 +60,18 @@ public sealed class MediaController(IChatRepository repository, IMediaStorage st
         var asset = await repository.GetMediaAssetAsync(id, ct);
         if (asset is null) return NotFound();
         if (!await CanAccessAsync(asset, ct)) return Forbid();
+        logger.LogInformation(
+            "Media content request {AssetId} {ContentType} {Size} range={Range} user={UserId}",
+            id,
+            asset.ContentType,
+            asset.Size,
+            Request.Headers.Range.ToString(),
+            User.UserId());
         Response.Headers.CacheControl = "private,max-age=3600";
         if (!string.IsNullOrWhiteSpace(asset.LocalPath) && System.IO.File.Exists(asset.LocalPath))
             return new FileStreamResult(System.IO.File.OpenRead(asset.LocalPath), asset.ContentType) { EnableRangeProcessing = true, FileDownloadName = IsInline(asset.ContentType) ? null : asset.FileName };
         var signedUrl = await storage.GetSignedReadUrlAsync(asset.StorageKey, ct);
+        logger.LogInformation("Media content redirect {AssetId} signedUrl={HasSignedUrl}", id, signedUrl is not null);
         return signedUrl is null ? NotFound() : RedirectPreserveMethod(signedUrl);
     }
 
