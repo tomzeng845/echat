@@ -3,6 +3,7 @@ import { Download, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { Message } from "@/lib/echat-api";
 import {
   downloadChatMedia,
+  directChatMediaUrl,
   directChatHlsUrl,
   directChatThumbnailUrl,
   effectiveMediaMimeType,
@@ -27,6 +28,10 @@ export default function RichMessageContent({
   const [loadedMedia, setLoadedMedia] = useState({ type: "", size: 0 });
   const [videoRequested, setVideoRequested] = useState(false);
   const [videoFallbackTried, setVideoFallbackTried] = useState(false);
+  const supportsNativeHls =
+    typeof navigator !== "undefined" &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.userAgent.includes("Macintosh") && "ontouchend" in document));
 
   useEffect(() => {
     if (
@@ -40,7 +45,12 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
-    if (message.kind === "Video" && payload.hlsUrl && !videoFallbackTried) {
+    if (
+      message.kind === "Video" &&
+      supportsNativeHls &&
+      payload.hlsUrl &&
+      !videoFallbackTried
+    ) {
       const hlsUrl = directChatHlsUrl(payload);
       if (hlsUrl) {
         setLoadedMedia({ type: "application/vnd.apple.mpegurl", size: 0 });
@@ -49,6 +59,18 @@ export default function RichMessageContent({
         return () => {
           active = false;
           setUrl(current => (current === hlsUrl ? undefined : current));
+        };
+      }
+    }
+    if (message.kind === "Video" && !payload.fileNonce) {
+      const mediaUrl = directChatMediaUrl(payload);
+      if (mediaUrl) {
+        setLoadedMedia({ type: "video/mp4", size: payload.size });
+        setUrl(mediaUrl);
+        setLoading(false);
+        return () => {
+          active = false;
+          setUrl(current => (current === mediaUrl ? undefined : current));
         };
       }
     }
@@ -80,6 +102,7 @@ export default function RichMessageContent({
     payload?.hlsUrl,
     videoRequested,
     videoFallbackTried,
+    supportsNativeHls,
   ]);
 
   if (message.state === "Recalled") return <span>{message.plaintext}</span>;
@@ -294,30 +317,40 @@ export default function RichMessageContent({
             });
             if (!videoFallbackTried) {
               setVideoFallbackTried(true);
-              setLoading(true);
-              void downloadChatMedia(
-                message.conversationId,
-                message.keyVersion || 1,
-                payload
-              )
-                .then(blob => {
-                  const fallbackUrl = URL.createObjectURL(blob);
-                  setLoadedMedia({ type: blob.type, size: blob.size });
-                  setUrl(current => {
-                    if (current?.startsWith("blob:"))
-                      URL.revokeObjectURL(current);
-                    return fallbackUrl;
-                  });
+              if (supportsNativeHls) {
+                const fallbackUrl = directChatMediaUrl(payload);
+                if (fallbackUrl) {
+                  setUrl(fallbackUrl);
                   setPlaybackError("");
-                })
-                .catch(cause => {
-                  setPlaybackError(
-                    cause instanceof Error
-                      ? `视频播放失败：${cause.message}`
-                      : "视频播放失败，请点击重试"
-                  );
-                })
-                .finally(() => setLoading(false));
+                } else setPlaybackError("视频播放失败，请点击重试");
+              } else if (payload.fileNonce) {
+                setLoading(true);
+                void downloadChatMedia(
+                  message.conversationId,
+                  message.keyVersion || 1,
+                  payload
+                )
+                  .then(blob => {
+                    const fallbackUrl = URL.createObjectURL(blob);
+                    setLoadedMedia({ type: blob.type, size: blob.size });
+                    setUrl(current => {
+                      if (current?.startsWith("blob:"))
+                        URL.revokeObjectURL(current);
+                      return fallbackUrl;
+                    });
+                    setPlaybackError("");
+                  })
+                  .catch(cause => {
+                    setPlaybackError(
+                      cause instanceof Error
+                        ? `视频播放失败：${cause.message}`
+                        : "视频播放失败，请点击重试"
+                    );
+                  })
+                  .finally(() => setLoading(false));
+              } else {
+                setPlaybackError("视频播放失败，请检查网络后重试");
+              }
             } else {
               setPlaybackError("视频播放失败，请点击重试");
             }
