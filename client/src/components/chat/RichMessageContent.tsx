@@ -38,15 +38,43 @@ export default function RichMessageContent({
     let objectUrl = "";
     setError("");
     setPlaybackError("");
-    if (message.kind === "Video" && !payload.fileNonce) {
+    const canStreamVideo =
+      message.kind === "Video" &&
+      !payload.fileNonce &&
+      typeof MediaSource !== "undefined" &&
+      MediaSource.isTypeSupported(effectiveMediaMimeType(payload, "Video"));
+    if (canStreamVideo) {
       setLoading(false);
       return streamChatVideo(
         payload,
         nextUrl => {
           if (active) setUrl(nextUrl);
         },
-        cause => {
-          if (active) setError(cause.message);
+        async () => {
+          // Some Android WebViews report MSE support but reject the actual
+          // container/codec. Fall back to the proven Blob URL path.
+          if (!active) return;
+          setLoading(true);
+          try {
+            const blob = await downloadChatMedia(
+              message.conversationId,
+              message.keyVersion || 1,
+              payload
+            );
+            if (!active) return;
+            objectUrl = URL.createObjectURL(blob);
+            setLoadedMedia({ type: blob.type, size: blob.size });
+            setUrl(objectUrl);
+          } catch (fallbackError) {
+            if (active)
+              setError(
+                fallbackError instanceof Error
+                  ? fallbackError.message
+                  : "视频加载失败"
+              );
+          } finally {
+            if (active) setLoading(false);
+          }
         }
       );
     }
