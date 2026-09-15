@@ -8,6 +8,7 @@ import {
 import { apiUrl } from "./runtime-config";
 import { decryptBinary, getConversationKey } from "./echat-crypto";
 import { createUuid } from "./uuid";
+import { compressVideoForWeb } from "./video-compression";
 
 export type ChatMediaKind = "Image" | "Voice" | "Video" | "File";
 export type ChatMediaPayload = {
@@ -29,23 +30,28 @@ export async function sendChatMedia(
   options: { fileName?: string; mimeType?: string; duration?: number } = {}
 ) {
   if (file.size > 25 * 1024 * 1024) throw new Error("文件不能超过 25 MB");
-  const fileName =
+  let fileName =
     options.fileName ||
     (file instanceof File ? file.name : `${kind.toLowerCase()}-${Date.now()}`);
-  const mimeType = options.mimeType || file.type || "application/octet-stream";
-  const upload =
+  let upload =
     file instanceof File
       ? file
       : new File([file], fileName, {
-          type: mimeType,
+          type: options.mimeType || file.type || "application/octet-stream",
           lastModified: Date.now(),
         });
+  if (kind === "Video") {
+    const compressed = await compressVideoForWeb(upload);
+    upload = compressed;
+    if (compressed !== file) fileName = compressed.name;
+  }
+  const mimeType = options.mimeType || upload.type || "application/octet-stream";
   const asset = await uploadMedia(upload, fileName, "Chat", conversationId);
   const payload: ChatMediaPayload = {
     assetId: asset.id,
     fileName,
     mimeType,
-    size: file.size,
+    size: upload.size,
     duration: options.duration,
     thumbnailUrl: asset.thumbnailUrl ?? undefined,
     hlsUrl: asset.hlsUrl ?? undefined,
