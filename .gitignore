@@ -115,6 +115,8 @@ temp/
 
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
+client/public/ffmpeg-core/
+client/public/ffmpeg-worker/
 .project-config.json
 
 # .NET build outputs and generated frontend bundle
@@ -129,6 +131,7 @@ releases/*.apk
 releases/*.aab
 releases/*.7z
 releases/*.zip
+releases/*.sha256
 releases/windows-x64/
 releases/*.pem
 releases/*password*.txt

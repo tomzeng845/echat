@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { fetchFile } from "@ffmpeg/util";
 import { info as logInfo, warn as logWarn } from "./runtime-diagnostics";
 
 const MAX_WIDTH = 1280;
@@ -78,11 +78,19 @@ async function getFfmpeg() {
   if (ffmpegLoadPromise) return ffmpegLoadPromise;
   ffmpegLoadPromise = (async () => {
     const instance = new FFmpeg();
-    const base = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
-    logInfo("video-compression", "FFmpeg WASM loading", { base });
+    const coreURL = "/ffmpeg-core/ffmpeg-core.js";
+    const wasmURL = "/ffmpeg-core/ffmpeg-core.wasm";
+    const classWorkerURL = "/ffmpeg-worker/worker.js";
+    logInfo("video-compression", "FFmpeg WASM loading", {
+      coreURL,
+      wasmURL,
+      classWorkerURL,
+      sameOrigin: true,
+    });
     await instance.load({
-      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+      classWorkerURL,
+      coreURL,
+      wasmURL,
     });
     logInfo("video-compression", "FFmpeg WASM loaded");
     ffmpeg = instance;

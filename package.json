@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "prebuild": "node scripts/copy-ffmpeg-assets.mjs",
     "build": "vite build && dotnet publish Api/EChat.Api.csproj -c Release -o dist/dotnet",
     "build:android:web": "VITE_ECHAT_API_BASE_URL=${ECHAT_ANDROID_API_URL:-https://platform.superseller88.com:2099} vite build",
     "android:sync": "pnpm build:android:web && cap sync android",
@@ -32,6 +33,7 @@
     "@capacitor/ios": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
+    "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hookform/resolvers": "^5.2.2",
