@@ -30,7 +30,8 @@ export async function sendChatMedia(
   kind: ChatMediaKind,
   options: { fileName?: string; mimeType?: string; duration?: number } = {}
 ) {
-  if (file.size > 25 * 1024 * 1024) throw new Error("文件不能超过 25 MB");
+  const maxUploadBytes = 1024 * 1024 * 1024;
+  if (file.size > maxUploadBytes) throw new Error("文件不能超过 1 GB");
   const startedAt = performance.now();
   logInfo("media-upload", "Media upload pipeline started", {
     kind,
