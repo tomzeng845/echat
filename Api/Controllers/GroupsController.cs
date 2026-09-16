@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/groups")]
-public sealed class GroupsController(IChatRepository repository, IHubContext<ChatHub> hub) : ControllerBase
+public sealed class GroupsController(IChatRepository repository, IHubContext<ChatHub> hub, ILogger<GroupsController> logger) : ControllerBase
 {
     [HttpGet("{id}")]
     public async Task<ActionResult> Info(string id, CancellationToken ct)
@@ -95,11 +95,24 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     [HttpPost("{id}/dissolve")]
     public async Task<ActionResult> Dissolve(string id, CancellationToken ct)
     {
-        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        logger.LogInformation("Group dissolve requested: conversationId={ConversationId}, userId={UserId}", id, User.UserId());
+        var group = await RequireManager(id, ct); if (group is null)
+        {
+            logger.LogWarning("Group dissolve denied: conversationId={ConversationId}, userId={UserId}", id, User.UserId());
+            return Forbid();
+        }
         group.IsDissolved = true;
         await repository.UpdateConversationAsync(group, ct);
-        await Notify(group, "dissolved", ct);
-        return NoContent();
+        try
+        {
+            await Notify(group, "dissolved", CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Group dissolve notification failed after persistence: conversationId={ConversationId}", id);
+        }
+        logger.LogInformation("Group dissolved successfully: conversationId={ConversationId}, userId={UserId}", id, User.UserId());
+        return Ok(new { dissolved = true, conversationId = group.Id });
     }
 
     [HttpPost("{id}/join-requests/{userId}/decision")]

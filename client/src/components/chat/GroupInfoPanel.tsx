@@ -76,6 +76,7 @@ export default function GroupInfoPanel({
   >([]);
   const [scan, setScan] = useState(false);
   const [error, setError] = useState("");
+  const [dissolving, setDissolving] = useState(false);
   const [profileMember, setProfileMember] = useState<ConversationMember | null>(
     null
   );
@@ -189,12 +190,16 @@ export default function GroupInfoPanel({
   const canManage = currentMember?.role === "Owner" || currentMember?.role === "Admin";
   const canDissolve = canManage;
   async function dissolve() {
-    if (!canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
+    if (dissolving || !canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
+    setError("");
+    setDissolving(true);
     try {
       await api(`/api/groups/${conversationId}/dissolve`, { method: "POST" });
       onDissolved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "解散群聊失败");
+    } finally {
+      setDissolving(false);
     }
   }
 
@@ -373,6 +378,11 @@ export default function GroupInfoPanel({
         )}
         {page === "manage" && canManage && (
           <section className="space-y-3 p-3">
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {error}
+              </div>
+            )}
             <div className="rounded-2xl bg-white p-4">
               <h3 className="font-semibold">二维码进群</h3>
               <p className="mt-1 text-xs text-slate-500">
@@ -531,9 +541,10 @@ export default function GroupInfoPanel({
                 <button
                   type="button"
                   onClick={() => void dissolve()}
+                  disabled={dissolving}
                   className="mt-3 w-full rounded-xl bg-rose-600 py-2.5 text-sm font-medium text-white hover:bg-rose-700"
                 >
-                  解散群组
+                  {dissolving ? "正在解散…" : "解散群组"}
                 </button>
               </div>
             )}
