@@ -403,21 +403,24 @@ export async function uploadMedia(
   purpose: "Chat" | "Moment" | "Avatar",
   conversationId?: string
 ) {
+  if (file.size > 16 * 1024 * 1024 && purpose !== "Avatar")
+    return uploadMediaResumable(file, fileName, purpose, conversationId);
   const form = new FormData();
   form.append("file", file, fileName);
   form.append("purpose", purpose);
   if (conversationId) form.append("conversationId", conversationId);
   const controller = new AbortController();
   const startedAt = performance.now();
+  const uploadTimeoutMs = 30 * 60 * 1000;
   const timer = window.setTimeout(() => {
     logError("media-upload", "Media API upload timeout; aborting request", {
       fileName,
       bytes: file.size,
-      timeoutMs: 150_000,
+      timeoutMs: uploadTimeoutMs,
       elapsedMs: Math.round(performance.now() - startedAt),
     });
     controller.abort();
-  }, 150_000);
+  }, uploadTimeoutMs);
   try {
     logInfo("media-upload", "uploadMedia request dispatched", {
       fileName,
@@ -446,10 +449,61 @@ export async function uploadMedia(
       reason: error instanceof Error ? error.message : String(error),
     });
     if (controller.signal.aborted)
-      throw new Error("视频处理超过 150 秒，服务器未完成，请稍后重试");
+      throw new Error("文件上传或视频处理超过 30 分钟，服务器未完成，请检查网络后重试");
     throw error;
   } finally {
     window.clearTimeout(timer);
+  }
+}
+
+async function uploadMediaResumable(
+  file: Blob,
+  fileName: string,
+  purpose: "Chat" | "Moment",
+  conversationId?: string
+) {
+  const chunkSize = 16 * 1024 * 1024;
+  const resumeKey = `echat-resumable:${purpose}:${conversationId || ""}:${fileName}:${file.size}`;
+  let uploadId = localStorage.getItem(resumeKey) || "";
+  try {
+    if (uploadId) {
+      const status = await authorizedFetch(`/api/media/resumable/${uploadId}`);
+      if (!status.ok) uploadId = "";
+    }
+    if (!uploadId) {
+      const init = await authorizedFetch("/api/media/resumable/init", {
+        method: "POST",
+        body: JSON.stringify({ fileName, size: file.size, contentType: file.type || "application/octet-stream", purpose, conversationId }),
+      });
+      if (!init.ok) throw new Error(`分块上传初始化失败 (${init.status})`);
+      uploadId = (await init.json()).uploadId;
+      localStorage.setItem(resumeKey, uploadId);
+    }
+    const status = await authorizedFetch(`/api/media/resumable/${uploadId}`);
+    if (!status.ok) throw new Error("无法查询断点上传进度");
+    let offset = Number((await status.json()).offset || 0);
+    logInfo("media-upload", "resumable upload started", { fileName, bytes: file.size, uploadIdSuffix: uploadId.slice(-8), offset });
+    while (offset < file.size) {
+      const end = Math.min(offset + chunkSize, file.size);
+      const response = await authorizedFetch(`/api/media/resumable/${uploadId}`, {
+        method: "PUT",
+        headers: { "Content-Range": `bytes ${offset}-${end - 1}/${file.size}` },
+        body: file.slice(offset, end),
+      });
+      if (!response.ok) throw new Error(`分块上传失败 (${response.status})，已上传 ${offset} 字节`);
+      offset = Number((await response.json()).offset);
+      logInfo("media-upload", "resumable chunk uploaded", { fileName, bytes: file.size, offset });
+    }
+    const complete = await authorizedFetch(`/api/media/resumable/${uploadId}/complete`, { method: "POST" });
+    if (!complete.ok) throw new Error(`分块上传完成失败 (${complete.status})`);
+    const result = (await complete.json()) as MediaAsset;
+    localStorage.removeItem(resumeKey);
+    logInfo("media-upload", "resumable upload completed", { fileName, bytes: file.size, assetIdSuffix: result.id.slice(-8) });
+    return result;
+  } catch (error) {
+    logError("media-upload", "resumable upload interrupted; can resume", { fileName, bytes: file.size, uploadIdSuffix: uploadId.slice(-8), reason: error instanceof Error ? error.message : String(error) });
+    if (uploadId) localStorage.setItem(resumeKey, uploadId);
+    throw error;
   }
 }
 

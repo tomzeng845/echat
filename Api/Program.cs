@@ -4,10 +4,12 @@ using EChat.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.StaticFiles;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
+const long MaxUploadSize = 1024L * 1024L * 1024L;
 var port = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_PORT") ?? Environment.GetEnvironmentVariable("PORT"), out var platformPort) ? platformPort : 2099;
 var httpsCertificatePath = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PATH");
 var httpsCertificatePassword = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PASSWORD");
@@ -15,6 +17,7 @@ var httpsEnabled = !string.IsNullOrWhiteSpace(httpsCertificatePath);
 var httpsPort = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_HTTPS_PORT"), out var configuredHttpsPort) ? configuredHttpsPort : port;
 builder.WebHost.ConfigureKestrel(options =>
 {
+    options.Limits.MaxRequestBodySize = MaxUploadSize;
     if (httpsEnabled)
     {
         options.ListenAnyIP(httpsPort, listen => listen.UseHttps(httpsCertificatePath!, httpsCertificatePassword));
@@ -25,6 +28,11 @@ builder.WebHost.ConfigureKestrel(options =>
     }
 });
 
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = MaxUploadSize;
+    options.ValueLengthLimit = 1024 * 1024;
+});
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR().AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddMemoryCache();
@@ -35,7 +43,7 @@ builder.Services.AddSingleton<AdminSecretProtector>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AdminBootstrapService>();
 builder.Services.AddHostedService<StartupDataInitializer>();
-builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(3));
+builder.Services.AddHttpClient("media-storage", client => client.Timeout = TimeSpan.FromMinutes(30));
 builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("apns", client => { client.Timeout = TimeSpan.FromSeconds(8); client.DefaultRequestVersion = new Version(2, 0); client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher; });
