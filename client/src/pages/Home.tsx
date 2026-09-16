@@ -488,6 +488,11 @@ function Messenger({
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [serviceGroupTemplates, setServiceGroupTemplates] = useState<
+    Array<{ id: string; name: string; namePattern: string; memberAccounts?: string[] }>
+  >([]);
+  const [serviceGroupCustomer, setServiceGroupCustomer] = useState<User | null>(null);
+  const [showServiceGroupDialog, setShowServiceGroupDialog] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
@@ -1544,40 +1549,59 @@ function Messenger({
   async function createServiceGroup(customer: User): Promise<void> {
     try {
       const templates = await api<
-        Array<{ id: string; name: string; namePattern: string }>
+        Array<{ id: string; name: string; namePattern: string; memberAccounts?: string[] }>
       >("/api/service-groups/templates");
       if (!templates.length) {
         toast.info("管理员尚未配置一键拉群模板");
         return;
       }
-      const choice = window.prompt(
-        templates
-          .map((item, index) => `${index + 1}. ${item.name}`)
-          .join("\n") + "\n\n请输入模板编号",
-        "1"
-      );
-      if (!choice) return;
-      const template = templates[Number(choice) - 1];
-      if (!template) {
-        toast.warning("模板编号无效");
-        return;
-      }
-      setBusy(true);
+      diagnosticInfo("service-group", "Template dialog opened", {
+        customerAccount: customer.account,
+        templateCount: templates.length,
+      });
+      setServiceGroupCustomer(customer);
+      setServiceGroupTemplates(templates);
+      setShowServiceGroupDialog(true);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "无法读取一键拉群模板");
+    }
+  }
+
+  async function confirmServiceGroup(templateId: string): Promise<void> {
+    if (!serviceGroupCustomer) return;
+    const template = serviceGroupTemplates.find(item => item.id === templateId);
+    if (!template) {
+      toast.warning("模板不存在或已失效");
+      return;
+    }
+    setBusy(true);
+    diagnosticInfo("service-group", "Create confirmed", {
+      templateId,
+      customerAccount: serviceGroupCustomer.account,
+    });
+    try {
       const created = await api<{ conversationId: string; name: string }>(
         "/api/service-groups/create",
         {
           method: "POST",
           body: JSON.stringify({
-            templateId: template.id,
-            customerAccount: customer.account,
+            templateId,
+            customerAccount: serviceGroupCustomer.account,
           }),
         }
       );
+      diagnosticInfo("service-group", "Create succeeded", created);
+      setShowServiceGroupDialog(false);
+      setServiceGroupCustomer(null);
       await loadData();
       setSelectedId(created.conversationId);
       setProfileUser(null);
       toast.success(`已创建「${created.name}」`);
     } catch (cause) {
+      diagnosticError("service-group", "Create failed", {
+        templateId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
       toast.error(cause instanceof Error ? cause.message : "一键拉群失败");
     } finally {
       setBusy(false);
@@ -2487,6 +2511,60 @@ function Messenger({
         user={user}
         connection={realtimeConnection}
       />
+      {showServiceGroupDialog && serviceGroupCustomer && (
+        <div className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold tracking-[.16em] text-teal-600">ONE-CLICK GROUP</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">选择拉群模板</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  客户：{serviceGroupCustomer.displayName}（{serviceGroupCustomer.account}）
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setShowServiceGroupDialog(false);
+                  setServiceGroupCustomer(null);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-500"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto">
+              {serviceGroupTemplates.map(template => (
+                <button
+                  key={template.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void confirmServiceGroup(template.id)}
+                  className="w-full rounded-2xl border border-slate-200 p-4 text-left transition hover:border-teal-400 hover:bg-teal-50 disabled:opacity-60"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-100 text-teal-700">
+                      <Users size={18} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-slate-900">{template.name}</span>
+                      <span className="mt-1 block truncate text-xs text-slate-500">
+                        {template.namePattern || "{customer}专属服务群"}
+                      </span>
+                    </span>
+                    <ChevronRight size={17} className="text-slate-400" />
+                  </div>
+                  <span className="mt-3 block text-xs text-slate-500">
+                    固定成员：{(template.memberAccounts || []).filter(account => account.toLowerCase() !== user.account.toLowerCase()).join("、") || "仅当前员工、客户"}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {busy && <p className="mt-3 text-center text-sm text-teal-600">正在创建群聊，请稍候…</p>}
+          </div>
+        </div>
+      )}
       {profileUser && (
         <UserProfileDialog
           user={profileUser}

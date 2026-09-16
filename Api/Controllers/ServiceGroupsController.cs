@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/service-groups")]
-public sealed class ServiceGroupsController(IChatRepository repository, IHubContext<ChatHub> hub) : ControllerBase
+public sealed class ServiceGroupsController(IChatRepository repository, IHubContext<ChatHub> hub, ILogger<ServiceGroupsController> logger) : ControllerBase
 {
     private const string Module = "chat.service-group-templates";
 
@@ -57,21 +57,33 @@ public sealed class ServiceGroupsController(IChatRepository repository, IHubCont
     public async Task<ActionResult> Create(ServiceGroupCreateRequest request, CancellationToken ct)
     {
         var employeeId = User.UserId();
+        logger.LogInformation("Service group create requested. EmployeeId={EmployeeId}, TemplateId={TemplateId}, CustomerAccount={CustomerAccount}", employeeId, request.TemplateId, request.CustomerAccount);
         var customer = await repository.GetUserByAccountAsync(request.CustomerAccount.Trim().ToLowerInvariant(), ct);
         var template = await repository.GetAdminRecordAsync(request.TemplateId, ct);
-        if (customer is null || template is null || template.Module != Module || template.Status != "Active") return BadRequest(new { error = "客户或拉群模板无效" });
+        if (customer is null || template is null || template.Module != Module || template.Status != "Active")
+        {
+            logger.LogWarning("Service group create rejected. CustomerFound={CustomerFound}, TemplateFound={TemplateFound}, TemplateActive={TemplateActive}", customer is not null, template is not null, template?.Module == Module && template.Status == "Active");
+            return BadRequest(new { error = "客户或拉群模板无效" });
+        }
         var employee = await repository.GetUserByIdAsync(employeeId, ct);
         var name = template.Data.GetValueOrDefault("namePattern", "{customer}专属服务群").Replace("{customer}", customer.DisplayName).Replace("{account}", customer.Account);
-        var accounts = template.Data.GetValueOrDefault("memberAccounts", "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Append(customer.Account).Append(employee?.Account ?? "").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var accounts = template.Data.GetValueOrDefault("memberAccounts", "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(account => !string.Equals(account, employee?.Account, StringComparison.OrdinalIgnoreCase))
+            .Append(customer.Account).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var members = new List<ConversationMember> { new() { UserId = employeeId, Role = MemberRole.Owner } };
         foreach (var account in accounts)
         {
             var user = await repository.GetUserByAccountAsync(account.ToLowerInvariant(), ct);
             if (user is not null && members.All(x => x.UserId != user.Id)) members.Add(new ConversationMember { UserId = user.Id });
         }
-        if (members.Count < 3) return BadRequest(new { error = "模板中的固定成员或客户不存在" });
+        if (members.Count < 3)
+        {
+            logger.LogWarning("Service group create rejected because member count is too small. MemberCount={MemberCount}, ConfiguredAccounts={ConfiguredAccounts}", members.Count, accounts.Count);
+            return BadRequest(new { error = "模板中的固定成员或客户不存在" });
+        }
         var conversation = await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Name = name, CreatedBy = employeeId, Members = members, KeyEnvelopes = [] }, ct);
         await hub.Clients.Users(members.Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = conversation.Id, action = "created" }, ct);
+        logger.LogInformation("Service group created. ConversationId={ConversationId}, MemberCount={MemberCount}, Name={Name}", conversation.Id, members.Count, name);
         return Ok(new { conversationId = conversation.Id, name, memberCount = members.Count });
     }
 
