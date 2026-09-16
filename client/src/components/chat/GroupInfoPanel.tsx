@@ -184,7 +184,8 @@ export default function GroupInfoPanel({
   }
 
   const currentMember = info?.members.find(member => member.userId === currentUserId);
-  const canDissolve = currentMember?.role === "Owner" || currentMember?.role === "Admin";
+  const canManage = currentMember?.role === "Owner" || currentMember?.role === "Admin";
+  const canDissolve = canManage;
   async function dissolve() {
     if (!canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
     try {
@@ -266,12 +267,14 @@ export default function GroupInfoPanel({
           >
             群资料
           </button>
-          <button
-            onClick={() => setPage("manage")}
-            className={`rounded-xl py-2 text-sm ${page === "manage" ? "bg-teal-500 text-white" : "bg-slate-100"}`}
-          >
-            群管理
-          </button>
+          {canManage && (
+            <button
+              onClick={() => setPage("manage")}
+              className={`rounded-xl py-2 text-sm ${page === "manage" ? "bg-teal-500 text-white" : "bg-slate-100"}`}
+            >
+              群管理
+            </button>
+          )}
         </section>
         {page === "info" && (
           <>
@@ -313,28 +316,32 @@ export default function GroupInfoPanel({
               icon={<QrCode size={18} />}
               onClick={createQr}
             />
-            <GroupRow
-              label="群公告"
-              value={info.announcement || "未设置"}
-              onClick={() => {
-                setEditing("announcement");
-                setValue(info.announcement);
-              }}
-            />
-            {info.announcement && (
-              <button
-                type="button"
-                onClick={() => void clearAnnouncement()}
-                className="w-full rounded-xl bg-amber-50 px-4 py-2.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-100"
-              >
-                关闭当前群公告
-              </button>
+            {canManage && (
+              <>
+                <GroupRow
+                  label="群公告"
+                  value={info.announcement || "未设置"}
+                  onClick={() => {
+                    setEditing("announcement");
+                    setValue(info.announcement);
+                  }}
+                />
+                {info.announcement && (
+                  <button
+                    type="button"
+                    onClick={() => void clearAnnouncement()}
+                    className="w-full rounded-xl bg-amber-50 px-4 py-2.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-100"
+                  >
+                    关闭当前群公告
+                  </button>
+                )}
+                <GroupRow
+                  label="群管理"
+                  value="成员、管理员、进群审核"
+                  onClick={() => setPage("manage")}
+                />
+              </>
             )}
-            <GroupRow
-              label="群管理"
-              value="成员、管理员、进群审核"
-              onClick={() => setPage("manage")}
-            />
             <GroupRow
               label="备注"
               value={info.remark || "未设置"}
@@ -363,7 +370,7 @@ export default function GroupInfoPanel({
             </button>
           </>
         )}
-        {page === "manage" && (
+        {page === "manage" && canManage && (
           <section className="space-y-3 p-3">
             <div className="rounded-2xl bg-white p-4">
               <h3 className="font-semibold">二维码进群</h3>
