@@ -192,7 +192,7 @@ export function getNativeCallListenerState() {
 }
 
 export async function getNativeRuntimeLogs(): Promise<DiagnosticEntry[]> {
-  if (!isNativeAndroid()) return [];
+  if (!isNativeMobile()) return [];
   try {
     const result = await MediaPermissions.getRuntimeLogs();
     const parsed = JSON.parse(result.entriesJson || "[]") as unknown;
@@ -212,7 +212,7 @@ export async function getNativeRuntimeLogs(): Promise<DiagnosticEntry[]> {
 }
 
 export async function uploadNativeRuntimeLog() {
-  if (!isNativeAndroid()) throw new Error("仅 Android 支持上传原生日志");
+  if (!isNativeMobile()) throw new Error("仅移动端支持上传运行日志");
   const native = await MediaPermissions.getRuntimeLogs();
   let nativeEntries: DiagnosticEntry[] = [];
   try {
@@ -238,7 +238,7 @@ export async function uploadNativeRuntimeLog() {
       entriesJson: JSON.stringify(entries),
       deviceId: getDeviceId(),
       appVersion: "0.9.0",
-      platform: "android",
+      platform: isNativeIos() ? "ios" : "android",
     }),
   });
 }

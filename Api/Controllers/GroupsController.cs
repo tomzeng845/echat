@@ -115,6 +115,11 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         return Ok(new { dissolved = true, conversationId = group.Id });
     }
 
+    // Compatibility alias for clients and reverse proxies that expose the
+    // destructive group operation as DELETE.
+    [HttpDelete("{id}/dissolve")]
+    public Task<ActionResult> DissolveDelete(string id, CancellationToken ct) => Dissolve(id, ct);
+
     [HttpPost("{id}/join-requests/{userId}/decision")]
     public async Task<ActionResult> Decide(string id, string userId, GroupJoinDecisionRequest request, CancellationToken ct)
     {

@@ -89,6 +89,8 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clearCallListenerAlert", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPendingCall", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getVoipToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getRuntimeLogs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportNativeRuntimeLog", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startVoiceRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopVoiceRecording", returnType: CAPPluginReturnPromise),
@@ -113,6 +115,14 @@ public class MediaPermissionsPlugin: CAPPlugin, CAPBridgedPlugin {
             "apnsAvailable": true,
             "voipAvailable": true
         ])
+    }
+
+    @objc func getRuntimeLogs(_ call: CAPPluginCall) {
+        call.resolve(["entriesJson": "[]"])
+    }
+
+    @objc func exportNativeRuntimeLog(_ call: CAPPluginCall) {
+        call.resolve(["saved": false, "bytes": 0, "filename": "", "location": "server-upload"])
     }
 
     @objc func getBackgroundCallSupport(_ call: CAPPluginCall) {

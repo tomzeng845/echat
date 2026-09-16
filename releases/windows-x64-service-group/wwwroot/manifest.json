@@ -1,0 +1,11 @@
+{
+  "name": "E聊",
+  "short_name": "E聊",
+  "description": "端到端加密即时通信",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071424",
+  "theme_color": "#071424",
+  "lang": "zh-CN",
+  "icons": []
+}

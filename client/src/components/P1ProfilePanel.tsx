@@ -273,8 +273,8 @@ export default function P1ProfilePanel({
   }
 
   async function exportRuntimeLogs() {
-    const nativeAndroid = isNativeAndroid();
-    const confirmed = nativeAndroid
+    const nativeMobile = isNativeMobile();
+    const confirmed = nativeMobile
       ? window.confirm(
           "运行日志可能包含设备型号、网络地址和通话诊断信息。确认上传给技术支持吗？"
         )
@@ -283,7 +283,7 @@ export default function P1ProfilePanel({
       logInfo("settings", "Runtime log export cancelled by user");
       return;
     }
-    if (!nativeAndroid) {
+    if (!nativeMobile) {
       try {
         logInfo("settings", "Web runtime log export started");
         await exportDiagnosticLog();

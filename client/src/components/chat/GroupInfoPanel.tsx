@@ -194,7 +194,15 @@ export default function GroupInfoPanel({
     setError("");
     setDissolving(true);
     try {
-      await api(`/api/groups/${conversationId}/dissolve`, { method: "POST" });
+      try {
+        await api(`/api/groups/${conversationId}/dissolve`, { method: "POST" });
+      } catch (cause) {
+        const status = cause && typeof cause === "object" && "status" in cause
+          ? Number((cause as { status?: unknown }).status)
+          : 0;
+        if (status !== 405) throw cause;
+        await api(`/api/groups/${conversationId}/dissolve`, { method: "DELETE" });
+      }
       onDissolved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "解散群聊失败");
