@@ -25,6 +25,22 @@ function stopAndReleaseHtmlVideo(video: HTMLVideoElement | null) {
   if (activeHtmlVideo === video) activeHtmlVideo = null;
 }
 
+export function stopAllHtmlVideos(reason = "conversation exited") {
+  if (typeof document === "undefined") return;
+  const videos = Array.from(
+    document.querySelectorAll<HTMLVideoElement>('video[data-echat-video="true"]')
+  );
+  videos.forEach(stopAndReleaseHtmlVideo);
+  activeHtmlVideo = null;
+  if (videos.length) {
+    logInfo("video-message", "All HTML videos stopped", {
+      reason,
+      count: videos.length,
+      platform: Capacitor.getPlatform(),
+    });
+  }
+}
+
 export default function RichMessageContent({
   message,
 }: {

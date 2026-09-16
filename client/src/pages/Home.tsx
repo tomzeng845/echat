@@ -4,7 +4,9 @@ import CallManager, {
 } from "@/components/chat/CallManager";
 import GroupInfoPanel from "@/components/chat/GroupInfoPanel";
 import EmojiPicker from "@/components/chat/EmojiPicker";
-import RichMessageContent from "@/components/chat/RichMessageContent";
+import RichMessageContent, {
+  stopAllHtmlVideos,
+} from "@/components/chat/RichMessageContent";
 import VoiceRecorderButton from "@/components/chat/VoiceRecorderButton";
 import MomentsPanel from "@/components/MomentsPanel";
 import P1ProfilePanel from "@/components/P1ProfilePanel";
@@ -517,6 +519,13 @@ function Messenger({
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
   selectedRef.current = chatVisible ? selectedId : null;
   conversationsRef.current = conversations;
+
+  useEffect(() => {
+    stopAllHtmlVideos(
+      chatVisible ? "conversation changed" : "conversation view exited"
+    );
+    return () => stopAllHtmlVideos("conversation view unmounted");
+  }, [selectedId, chatVisible, nav]);
 
   useEffect(() => {
     const handleCallSummary = (event: Event) => {
