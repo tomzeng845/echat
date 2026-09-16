@@ -1789,15 +1789,22 @@ function Messenger({
                     }}
                     className={`mb-1 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? "bg-white shadow-sm ring-1 ring-slate-200/60" : "hover:bg-white/70"}`}
                   >
+                    {(() => {
+                      const conversationName =
+                        item.type === "Direct"
+                          ? contacts.find(contact => contact.user.id === item.peerId)?.user.displayName || item.name
+                          : item.name;
+                      return (
+                        <>
                     <Avatar
-                      name={item.name}
+                      name={conversationName}
                       src={resolveBuiltinAvatar(item.avatarUrl)}
                       online={item.type === "Direct"}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="min-w-0 truncate text-sm font-semibold">
-                          {item.name}
+                          {conversationName || "未命名会话"}
                         </span>
                         <time className="shrink-0 text-[11px] text-slate-400">
                           {item.lastMessageAtUtc
@@ -1824,6 +1831,9 @@ function Messenger({
                         )}
                       </div>
                     </div>
+                        </>
+                      );
+                    })()}
                   </button>
                 ))
               ) : (
