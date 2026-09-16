@@ -2854,15 +2854,19 @@ function MessageBubble({
         if (holdTimer.current) window.clearTimeout(holdTimer.current);
       }}
     >
-      {!mine && <Avatar name={avatarName} src={avatarSrc} size="sm" />}
+      {!mine && (
+        <div className="flex w-12 shrink-0 flex-col items-center gap-1 self-end">
+          <Avatar name={avatarName} src={avatarSrc} size="sm" />
+          {senderName && (
+            <span className="w-full truncate text-center text-[10px] leading-3 text-slate-500">
+              {senderName}
+            </span>
+          )}
+        </div>
+      )}
       <div
         className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}
       >
-        {senderName && (
-          <div className="mb-1 px-1 text-[11px] leading-4 text-slate-400">
-            {senderName}
-          </div>
-        )}
         <div
           className={`rounded-[20px] shadow-sm ${selected ? "ring-2 ring-amber-400 ring-offset-2" : ""} ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
         >
