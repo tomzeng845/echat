@@ -1796,18 +1796,9 @@ function Messenger({
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 truncate">
-                          <span className="block truncate text-sm font-semibold">
-                            {item.name}
-                          </span>
-                          {item.type === "Direct" && (
-                            <span className="mt-0.5 block truncate text-[11px] leading-4 text-slate-400">
-                              {contacts.find(contact => contact.user.id === item.peerId)?.user.account
-                                ? `账号：${contacts.find(contact => contact.user.id === item.peerId)?.user.account}`
-                                : "账号昵称"}
-                            </span>
-                          )}
-                        </div>
+                        <span className="min-w-0 truncate text-sm font-semibold">
+                          {item.name}
+                        </span>
                         <time className="shrink-0 text-[11px] text-slate-400">
                           {item.lastMessageAtUtc
                             ? new Date(
