@@ -2518,6 +2518,12 @@ function Messenger({
           currentUserId={user.id}
           messages={messages}
           onClose={() => setShowGroupInfo(false)}
+          onDissolved={async () => {
+            setShowGroupInfo(false);
+            setSelectedId(null);
+            await loadData();
+            toast.success("群聊已解散");
+          }}
           onChanged={() => {
             loadData();
             api<{ announcement: string }>(`/api/groups/${selected.id}`)

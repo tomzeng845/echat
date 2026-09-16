@@ -33,6 +33,7 @@ type Props = {
   conversationId: string;
   messages: Array<{ id: string; plaintext: string; sentAtUtc: string }>;
   onClose: () => void;
+  onDissolved: () => void;
   onChanged: () => void;
   onClear: () => void;
   onLeave: () => void;
@@ -47,6 +48,7 @@ export default function GroupInfoPanel({
   conversationId,
   messages,
   onClose,
+  onDissolved,
   onChanged,
   onClear,
   onLeave,
@@ -190,8 +192,7 @@ export default function GroupInfoPanel({
     if (!canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
     try {
       await api(`/api/groups/${conversationId}/dissolve`, { method: "POST" });
-      onClose();
-      onChanged();
+      onDissolved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "解散群聊失败");
     }
