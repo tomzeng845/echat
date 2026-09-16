@@ -28,7 +28,12 @@ public sealed class ServiceGroupsController(IChatRepository repository, IHubCont
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.NamePattern)) return BadRequest(new { error = "模板名称和群名称规则不能为空" });
         var accounts = request.MemberAccounts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToLowerInvariant()).Distinct().ToList();
         if (accounts.Count == 0 || accounts.Count > 100) return BadRequest(new { error = "固定成员数量无效" });
-        var record = new AdminModuleRecord { Module = Module, Name = request.Name.Trim(), Status = request.Enabled ? "Active" : "Disabled", Data = new Dictionary<string, string> { ["namePattern"] = request.NamePattern.Trim(), ["memberAccounts"] = string.Join(",", accounts) } };
+        var record = string.IsNullOrWhiteSpace(request.Id)
+            ? new AdminModuleRecord { Module = Module }
+            : await repository.GetAdminRecordAsync(request.Id, ct) ?? new AdminModuleRecord { Id = request.Id, Module = Module };
+        record.Name = request.Name.Trim();
+        record.Status = request.Enabled ? "Active" : "Disabled";
+        record.Data = new Dictionary<string, string> { ["namePattern"] = request.NamePattern.Trim(), ["memberAccounts"] = string.Join(",", accounts) };
         await repository.UpsertAdminRecordAsync(record, ct);
         return Ok(ToView(record));
     }

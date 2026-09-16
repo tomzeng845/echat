@@ -62,6 +62,7 @@ import {
   FundAdjustmentsPanel as DocFundAdjustmentsPanel,
   FundSubjectsPanel as DocFundSubjectsPanel,
   GenericManagedPanel as DocGenericManagedPanel,
+  ServiceGroupTemplatesPanel,
   GroupInvitesPanel as DocGroupInvitesPanel,
   InviteManagementPanel as DocInviteManagementPanel,
   LogsPanel as DocLogsPanel,
@@ -849,22 +850,7 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
   if (page === "chat-groups")
     return <DocConversationSearchPanel refresh={refresh} groupsOnly />;
   if (page === "chat-service-groups")
-    return (
-      <DocGenericManagedPanel
-        refresh={refresh}
-        title="一键拉群模板"
-        description="配置固定服务成员和群名称规则；{customer} 替换为客户昵称，{account} 替换为客户账号。"
-        module="chat.service-group-templates"
-        fields={[
-          { key: "namePattern", label: "群名称规则" },
-          {
-            key: "memberAccounts",
-            label: "固定入群成员账号（逗号分隔）",
-            multiline: true,
-          },
-        ]}
-      />
-    );
+    return <ServiceGroupTemplatesPanel refresh={refresh} />;
   if (page === "chat-customer")
     return (
       <DocGenericManagedPanel

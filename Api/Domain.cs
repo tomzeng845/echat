@@ -458,5 +458,5 @@ public sealed record GroupInviteRedeemRequest(string Code);
 
 // Service-group quick-create configuration. Stored as AdminModuleRecord data so it remains
 // compatible with existing Mongo deployments without a schema migration.
-public sealed record ServiceGroupTemplateRequest(string Name, string NamePattern, IReadOnlyList<string> MemberAccounts, bool Enabled = true);
+public sealed record ServiceGroupTemplateRequest(string Name, string NamePattern, IReadOnlyList<string> MemberAccounts, bool Enabled = true, string? Id = null);
 public sealed record ServiceGroupCreateRequest(string TemplateId, string CustomerAccount);

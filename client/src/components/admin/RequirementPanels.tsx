@@ -51,6 +51,14 @@ type Conversation = {
   isDissolved: boolean;
 };
 
+type ServiceGroupTemplate = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  namePattern: string;
+  memberAccounts: string[];
+};
+
 const time = (value?: string) =>
   value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 const badge = (value: string) => (
@@ -1930,6 +1938,78 @@ export function OperatorsPanel({ refresh }: { refresh: number }) {
           )}
         </Modal>
       )}
+    </div>
+  );
+}
+
+export function ServiceGroupTemplatesPanel({ refresh }: { refresh: number }) {
+  const emptyPage: Page<User> = { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 };
+  const { data: templates, reload: reloadTemplates } = useLoad<ServiceGroupTemplate[]>(
+    "/api/service-groups/templates/all",
+    [],
+    refresh
+  );
+  const [userPage, setUserPage] = useState(1);
+  const [userSearch, setUserSearch] = useState("");
+  const [userQuery, setUserQuery] = useState("");
+  const { data: users } = useLoad<Page<User>>(
+    `/api/admin/users?page=${userPage}&pageSize=20&status=Active&search=${encodeURIComponent(userQuery)}`,
+    emptyPage,
+    refresh
+  );
+  const [editingId, setEditingId] = useState("");
+  const [name, setName] = useState("");
+  const [namePattern, setNamePattern] = useState("{customer}专属服务群");
+  const [memberAccounts, setMemberAccounts] = useState<string[]>([]);
+  const [enabled, setEnabled] = useState(true);
+
+  function edit(template: ServiceGroupTemplate) {
+    setEditingId(template.id);
+    setName(template.name);
+    setNamePattern(template.namePattern);
+    setMemberAccounts(template.memberAccounts);
+    setEnabled(template.enabled);
+  }
+  function reset() {
+    setEditingId(""); setName(""); setNamePattern("{customer}专属服务群"); setMemberAccounts([]); setEnabled(true);
+  }
+  function toggleAccount(account: string) {
+    setMemberAccounts(current => current.includes(account) ? current.filter(x => x !== account) : [...current, account]);
+  }
+  async function save() {
+    if (!name.trim() || !namePattern.trim()) return toast.error("请填写模板名称和群名称规则");
+    if (!memberAccounts.length) return toast.error("请至少选择一名固定入群成员");
+    await api("/api/service-groups/templates", { method: "POST", body: JSON.stringify({ id: editingId || null, name, namePattern, memberAccounts, enabled }) });
+    toast.success("一键拉群模板已保存"); reset(); reloadTemplates();
+  }
+  async function remove(id: string) {
+    if (!window.confirm("确定停用这个一键拉群模板吗？")) return;
+    await api(`/api/service-groups/templates/${id}`, { method: "DELETE" });
+    reloadTemplates(); toast.success("模板已停用");
+  }
+  return (
+    <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
+      <Box>
+        <Title title={`${editingId ? "编辑" : "新增"}一键拉群模板`} description="固定入群成员支持搜索、分页和跨页多选；{customer} 替换为客户昵称，{account} 替换为客户账号。" />
+        <div className="space-y-3">
+          <input value={name} onChange={e => setName(e.target.value)} className="admin-input" placeholder="模板名称" />
+          <input value={namePattern} onChange={e => setNamePattern(e.target.value)} className="admin-input" placeholder="群名称规则" />
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-2 flex items-center justify-between text-sm font-medium"><span>固定入群成员账号</span><span className="text-xs text-teal-700">已选 {memberAccounts.length} 人</span></div>
+            <div className="mb-2 flex gap-2"><input value={userSearch} onChange={e => setUserSearch(e.target.value)} className="admin-filter-input min-w-0 flex-1" placeholder="搜索账号或昵称" /><button className="admin-secondary" onClick={() => { setUserPage(1); setUserQuery(userSearch.trim()); }}>搜索</button></div>
+            <div className="max-h-64 space-y-1 overflow-y-auto">
+              {users.items.map(user => <label key={user.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm ${memberAccounts.includes(user.account) ? "bg-teal-50 text-teal-800" : "bg-white"}`}><input type="checkbox" checked={memberAccounts.includes(user.account)} onChange={() => toggleAccount(user.account)} className="accent-teal-600" /><span className="min-w-0 truncate">{user.account} <span className="text-xs text-slate-400">· {user.displayName}</span></span></label>)}
+              {!users.items.length && <div className="py-5 text-center text-xs text-slate-400">没有匹配的普通用户</div>}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-500"><span>第 {users.page} / {users.totalPages} 页，共 {users.total} 人</span><span className="space-x-1"><button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} className="admin-secondary disabled:opacity-40">上一页</button><button disabled={userPage >= users.totalPages} onClick={() => setUserPage(p => p + 1)} className="admin-secondary disabled:opacity-40">下一页</button></span></div>
+          </div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="accent-teal-600" />启用模板</label>
+          <div className="flex gap-2"><button onClick={save} className="admin-primary">保存模板</button>{editingId && <button onClick={reset} className="admin-secondary">取消编辑</button>}</div>
+        </div>
+      </Box>
+      <Box className="overflow-x-auto p-0">
+        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-4">模板名称</th><th>群名称规则</th><th>固定成员</th><th>状态</th><th>操作</th></tr></thead><tbody>{templates.map(template => <tr key={template.id} className="border-t"><td className="p-4 font-medium">{template.name}</td><td>{template.namePattern}</td><td>{template.memberAccounts.join("、")}</td><td>{badge(template.enabled ? "Active" : "Disabled")}</td><td className="space-x-2"><button onClick={() => edit(template)} className="admin-secondary">编辑</button>{template.enabled && <button onClick={() => remove(template.id)} className="admin-danger">停用</button>}</td></tr>)}</tbody></table>{!templates.length && <Empty text="暂无一键拉群模板" />}
+      </Box>
     </div>
   );
 }
