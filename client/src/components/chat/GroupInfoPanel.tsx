@@ -36,6 +36,7 @@ type Props = {
   onChanged: () => void;
   onClear: () => void;
   onLeave: () => void;
+  currentUserId: string;
   friendUserIds: string[];
   onMessageMember: (member: ConversationMember) => void;
   onVoiceCallMember: (member: ConversationMember) => void;
@@ -49,6 +50,7 @@ export default function GroupInfoPanel({
   onChanged,
   onClear,
   onLeave,
+  currentUserId,
   friendUserIds,
   onMessageMember,
   onVoiceCallMember,
@@ -179,6 +181,19 @@ export default function GroupInfoPanel({
     });
     await load();
     onChanged();
+  }
+
+  const currentMember = info?.members.find(member => member.userId === currentUserId);
+  const canDissolve = currentMember?.role === "Owner" || currentMember?.role === "Admin";
+  async function dissolve() {
+    if (!canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
+    try {
+      await api(`/api/groups/${conversationId}/dissolve`, { method: "POST" });
+      onClose();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "解散群聊失败");
+    }
   }
 
   if (!info)
@@ -499,6 +514,21 @@ export default function GroupInfoPanel({
                 ))}
               </div>
             </div>
+            {canDissolve && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <h3 className="font-semibold text-rose-800">危险操作</h3>
+                <p className="mt-1 text-xs text-rose-700">
+                  群主或群管理员可以解散群组，解散后所有成员将无法继续发送消息。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void dissolve()}
+                  className="mt-3 w-full rounded-xl bg-rose-600 py-2.5 text-sm font-medium text-white hover:bg-rose-700"
+                >
+                  解散群组
+                </button>
+              </div>
+            )}
             {info.joinRequests.length > 0 && (
               <div className="rounded-2xl bg-white p-4">
                 <h3 className="font-semibold">待审核入群申请</h3>

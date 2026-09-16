@@ -92,6 +92,16 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         member.LeftAtSequence = group.LastSequence + 1; await repository.UpdateConversationAsync(group, ct); return NoContent();
     }
 
+    [HttpPost("{id}/dissolve")]
+    public async Task<ActionResult> Dissolve(string id, CancellationToken ct)
+    {
+        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        group.IsDissolved = true;
+        await repository.UpdateConversationAsync(group, ct);
+        await Notify(group, "dissolved", ct);
+        return NoContent();
+    }
+
     [HttpPost("{id}/join-requests/{userId}/decision")]
     public async Task<ActionResult> Decide(string id, string userId, GroupJoinDecisionRequest request, CancellationToken ct)
     {

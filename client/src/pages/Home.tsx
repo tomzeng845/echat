@@ -2515,6 +2515,7 @@ function Messenger({
       {showGroupInfo && selected?.type === "Group" && (
         <GroupInfoPanel
           conversationId={selected.id}
+          currentUserId={user.id}
           messages={messages}
           onClose={() => setShowGroupInfo(false)}
           onChanged={() => {

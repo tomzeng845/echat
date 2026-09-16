@@ -1949,6 +1949,11 @@ export function ServiceGroupTemplatesPanel({ refresh }: { refresh: number }) {
     [],
     refresh
   );
+  const safeTemplates = templates.map(template => ({
+    ...template,
+    namePattern: template.namePattern || "{customer}专属服务群",
+    memberAccounts: Array.isArray(template.memberAccounts) ? template.memberAccounts : [],
+  }));
   const [userPage, setUserPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   const [userQuery, setUserQuery] = useState("");
@@ -2008,7 +2013,7 @@ export function ServiceGroupTemplatesPanel({ refresh }: { refresh: number }) {
         </div>
       </Box>
       <Box className="overflow-x-auto p-0">
-        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-4">模板名称</th><th>群名称规则</th><th>固定成员</th><th>状态</th><th>操作</th></tr></thead><tbody>{templates.map(template => <tr key={template.id} className="border-t"><td className="p-4 font-medium">{template.name}</td><td>{template.namePattern}</td><td>{template.memberAccounts.join("、")}</td><td>{badge(template.enabled ? "Active" : "Disabled")}</td><td className="space-x-2"><button onClick={() => edit(template)} className="admin-secondary">编辑</button>{template.enabled && <button onClick={() => remove(template.id)} className="admin-danger">停用</button>}</td></tr>)}</tbody></table>{!templates.length && <Empty text="暂无一键拉群模板" />}
+        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-4">模板名称</th><th>群名称规则</th><th>固定成员</th><th>状态</th><th>操作</th></tr></thead><tbody>{safeTemplates.map(template => <tr key={template.id} className="border-t"><td className="p-4 font-medium">{template.name}</td><td>{template.namePattern}</td><td>{template.memberAccounts.join("、") || "未设置"}</td><td>{badge(template.enabled ? "Active" : "Disabled")}</td><td className="space-x-2"><button onClick={() => edit(template)} className="admin-secondary">编辑</button>{template.enabled && <button onClick={() => remove(template.id)} className="admin-danger">停用</button>}</td></tr>)}</tbody></table>{!safeTemplates.length && <Empty text="暂无一键拉群模板" />}
       </Box>
     </div>
   );

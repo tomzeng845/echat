@@ -19,7 +19,11 @@ public sealed class ServiceGroupsController(IChatRepository repository, IHubCont
 
     [HttpGet("templates/all")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult> AllTemplates(CancellationToken ct) => Ok(await repository.GetAdminRecordsAsync(Module, 200, ct));
+    public async Task<ActionResult> AllTemplates(CancellationToken ct)
+    {
+        var records = await repository.GetAdminRecordsAsync(Module, 200, ct);
+        return Ok(records.Select(ToView));
+    }
 
     [HttpPost("templates")]
     [Authorize(Roles = nameof(UserRole.Admin))]
