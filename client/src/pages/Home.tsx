@@ -2142,8 +2142,21 @@ function Messenger({
                           avatarSrc={
                             message.senderId === user.id
                               ? user.avatarUrl
-                              : selectedContact?.user.avatarUrl ||
-                                selected.avatarUrl
+                              : selected.type === "Group"
+                                ? groupMentionMembers.find(
+                                    member => member.userId === message.senderId
+                                  )?.avatarUrl || selected.avatarUrl
+                                : selectedContact?.user.avatarUrl ||
+                                  selected.avatarUrl
+                          }
+                          senderName={
+                            selected.type === "Group"
+                              ? message.senderId === user.id
+                                ? user.displayName
+                                : groupMentionMembers.find(
+                                    member => member.userId === message.senderId
+                                  )?.displayName || "群成员"
+                              : undefined
                           }
                           onRecall={() => recall(message)}
                           selected={selectedMessageIds.includes(message.id)}
@@ -2785,6 +2798,7 @@ function MessageBubble({
   mine,
   avatarName,
   avatarSrc,
+  senderName,
   onRecall,
   selected,
   selectionMode,
@@ -2796,6 +2810,7 @@ function MessageBubble({
   mine: boolean;
   avatarName: string;
   avatarSrc?: string;
+  senderName?: string;
   onRecall: () => void;
   selected: boolean;
   selectionMode: boolean;
@@ -2843,6 +2858,11 @@ function MessageBubble({
       <div
         className={`max-w-[82%] md:max-w-[68%] ${mine ? "items-end" : "items-start"}`}
       >
+        {senderName && (
+          <div className="mb-1 px-1 text-[11px] leading-4 text-slate-400">
+            {senderName}
+          </div>
+        )}
         <div
           className={`rounded-[20px] shadow-sm ${selected ? "ring-2 ring-amber-400 ring-offset-2" : ""} ${emoji ? "bg-transparent px-1 py-0 text-[42px] leading-none shadow-none" : `text-sm leading-6 ${rich ? "p-1.5" : "px-4 py-3"} ${message.state === "Recalled" ? "bg-transparent text-xs text-slate-400 shadow-none" : mine ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}`}
         >
