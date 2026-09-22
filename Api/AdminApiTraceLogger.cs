@@ -5,15 +5,31 @@ namespace EChat.Api;
 
 public sealed class AdminApiTraceLogger
 {
-    private readonly string _directory;
+    private readonly string[] _directories;
     private readonly long _maxBytes;
     private readonly object _gate = new();
 
     public AdminApiTraceLogger(string directory, long maxBytes = 200L * 1024L * 1024L)
     {
-        _directory = directory;
+        var commonDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EChat", "Logs");
+        _directories = new[] { directory, commonDataDirectory }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         _maxBytes = maxBytes;
-        Directory.CreateDirectory(_directory);
+        foreach (var target in _directories)
+        {
+            try
+            {
+                Directory.CreateDirectory(target);
+                File.AppendAllText(Path.Combine(target, "api-startup.log"), $"{DateTimeOffset.UtcNow:O} API logger initialized; base={AppContext.BaseDirectory}{Environment.NewLine}", Encoding.UTF8);
+                break;
+            }
+            catch
+            {
+                // Try the next writable directory.
+            }
+        }
     }
 
     public void Write(HttpContext context, long elapsedMs, Exception? error = null)
@@ -44,20 +60,24 @@ public sealed class AdminApiTraceLogger
 
         lock (_gate)
         {
-            try
+            foreach (var directory in _directories)
             {
-                Directory.CreateDirectory(_directory);
-                var path = Path.Combine(_directory, "admin-api-trace.log");
-                if (File.Exists(path) && new FileInfo(path).Length + Encoding.UTF8.GetByteCount(line) > _maxBytes)
+                try
                 {
-                    var archive = Path.Combine(_directory, $"admin-api-trace-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log");
-                    File.Move(path, archive, true);
+                    Directory.CreateDirectory(directory);
+                    var path = Path.Combine(directory, "admin-api-trace.log");
+                    if (File.Exists(path) && new FileInfo(path).Length + Encoding.UTF8.GetByteCount(line) > _maxBytes)
+                    {
+                        var archive = Path.Combine(directory, $"admin-api-trace-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log");
+                        File.Move(path, archive, true);
+                    }
+                    File.AppendAllText(path, line, Encoding.UTF8);
+                    return;
                 }
-                File.AppendAllText(path, line, Encoding.UTF8);
-            }
-            catch (Exception writeError)
-            {
-                Console.Error.WriteLine($"Admin API trace write failed: {writeError.Message}");
+                catch (Exception writeError)
+                {
+                    Console.Error.WriteLine($"Admin API trace write failed at {directory}: {writeError.Message}");
+                }
             }
         }
     }
