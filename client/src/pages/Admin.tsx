@@ -2328,12 +2328,12 @@ function UserCreateDialog({
           "/api/admin/users/batch",
           {
             method: "POST",
-            body: JSON.stringify({
-              accountType,
-              prefix,
-              startIndex: Number(startIndex),
-              count: Number(count),
-              password: batchPassword,
+              body: JSON.stringify({
+              accountType: accountType || "username",
+              prefix: prefix.trim() || "user",
+              startIndex: Number.isFinite(Number(startIndex)) ? Number(startIndex) : 1,
+              count: Number.isFinite(Number(count)) && Number(count) > 0 ? Number(count) : 1,
+              password: batchPassword.trim() || "user123",
               displayNamePrefix,
               mobilePrefix,
               status,

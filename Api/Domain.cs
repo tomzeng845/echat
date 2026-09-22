@@ -455,7 +455,21 @@ public sealed class AdminUserQuery
 }
 public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
 public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User, UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true);
-public sealed record AdminUserBatchCreateRequest(IReadOnlyList<AdminUserCreateRequest>? Users = null, string AccountType = "username", string Prefix = "user", int StartIndex = 1, int Count = 0, int SequenceDigits = 3, string Password = "", string DisplayNamePrefix = "", string MobilePrefix = "", UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true);
+public sealed class AdminUserBatchCreateRequest
+{
+    public IReadOnlyList<AdminUserCreateRequest>? Users { get; set; }
+    public string AccountType { get; set; } = "username";
+    public string Prefix { get; set; } = "user";
+    public int StartIndex { get; set; } = 1;
+    public int Count { get; set; } = 1;
+    public int SequenceDigits { get; set; } = 3;
+    public string Password { get; set; } = "user123";
+    public string DisplayNamePrefix { get; set; } = "";
+    public string MobilePrefix { get; set; } = "";
+    public UserStatus Status { get; set; } = UserStatus.Active;
+    public bool CanAddFriend { get; set; } = true;
+    public bool CanCreateGroup { get; set; } = true;
+}
 public sealed record AdminUserProfileRequest(string? DisplayName = null, string? MobilePhone = null, string? InviteSource = null, string? LoginIpRestriction = null, string? LoginIpAllowList = null, string? Gender = null, string? CommunicationId = null);
 public sealed record AdminUserSecurityRequest(bool? AccountLocked = null, bool? LoginLocked = null, bool? BankCardLocked = null, bool? CancellationEnabled = null, bool? RedFlagged = null, bool? RealNameVerified = null, bool? EnterpriseVerified = null, int? RiskLevel1 = null, int? RiskLevel2 = null, string Reason = "");
 public sealed record AdminUserPermissionsRequest(bool? CanAddFriend = null, bool? CanCreateGroup = null, string? LoginIpAllowList = null, string Reason = "");
