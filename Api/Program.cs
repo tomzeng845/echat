@@ -224,7 +224,25 @@ app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment enviro
     openIm = new { configured = openIm.Configured },
     utcNow = DateTime.UtcNow
 }));
-app.MapFallbackToFile("index.html");
+app.MapFallback(async context =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            error = "API 接口不存在，请确认前后端版本一致",
+            path = context.Request.Path.Value,
+            traceId = context.TraceIdentifier
+        });
+        return;
+    }
+
+    var indexPath = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html");
+    await context.Response.SendFileAsync(indexPath);
+});
 
 await app.StartAsync();
 Console.WriteLine($"E聊 development service ready, port {port}");
