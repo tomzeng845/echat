@@ -52,6 +52,7 @@ import {
   type AuthResponse,
 } from "@/lib/echat-api";
 import AuthenticatedMedia from "@/components/AuthenticatedMedia";
+import { useAuthenticatedImage } from "@/hooks/useAuthenticatedImage";
 import { apiUrl } from "@/lib/runtime-config";
 import {
   AnnouncementPanel as DocAnnouncementPanel,
@@ -191,6 +192,33 @@ type AdminUserPage = {
   pageSize: number;
   totalPages: number;
 };
+
+function AdminUserAvatar({ user }: { user: AdminUser }) {
+  const source = useAuthenticatedImage(user.avatarUrl);
+  const [failed, setFailed] = useState(false);
+  const label = (user.displayName || user.account || "用户").slice(0, 2);
+
+  if (!source || failed) {
+    return (
+      <span
+        className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-[10px] text-slate-600"
+        title={user.avatarUrl ? "头像加载失败" : "未设置头像"}
+      >
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={source}
+      alt={`${user.displayName || user.account}的头像`}
+      className="h-8 w-8 rounded-full object-cover"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 type AdminUserDetail = {
   user: AdminUser;
   friends: Array<{ peerUserId: string; remark: string; user: { id: string; account: string; displayName: string; avatarUrl: string; mobilePhone: string } | null }>;
@@ -1769,7 +1797,7 @@ function UsersPanel({
                       <Status value={user.status} />
                     </td>
                     <td className="px-2">
-                      {user.avatarUrl ? <img src={user.avatarUrl} alt="头像" className="h-8 w-8 rounded-full object-cover" /> : <span className="text-slate-400">—</span>}
+                      <AdminUserAvatar user={user} />
                     </td>
                     <td className="px-2">{user.gender || "—"}</td>
                     <td className="px-2">{user.communicationId || "—"}</td>
