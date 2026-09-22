@@ -303,6 +303,18 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<AdminModuleRecord> UpsertAdminRecordAsync(AdminModuleRecord record, CancellationToken ct = default) { record.UpdatedAtUtc = DateTime.UtcNow; _adminRecords[record.Id] = record; return Task.FromResult(record); }
     public Task<AdminModuleRecord?> GetAdminRecordAsync(string id, CancellationToken ct = default) => Task.FromResult(_adminRecords.TryGetValue(id, out var item) ? item : null);
     public Task<IReadOnlyList<AdminModuleRecord>> GetAdminRecordsAsync(string module, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AdminModuleRecord>>(_adminRecords.Values.Where(x => x.Module == module).OrderByDescending(x => x.UpdatedAtUtc).Take(limit).ToList());
+    public Task<IReadOnlyList<AdminModuleRecord>> SearchAdminRecordsAsync(string module, string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var query = _adminRecords.Values.Where(x => x.Module == module);
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || x.Data.Values.Any(value => value.Contains(search, StringComparison.OrdinalIgnoreCase)));
+        return Task.FromResult<IReadOnlyList<AdminModuleRecord>>(query.OrderByDescending(x => x.CreatedAtUtc).Skip(skip).Take(limit).ToList());
+    }
+    public Task<long> CountAdminRecordsAsync(string module, string? search, CancellationToken ct = default)
+    {
+        var query = _adminRecords.Values.Where(x => x.Module == module);
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || x.Data.Values.Any(value => value.Contains(search, StringComparison.OrdinalIgnoreCase)));
+        return Task.FromResult((long)query.Count());
+    }
     public Task DeleteAdminRecordAsync(string id, CancellationToken ct = default) { _adminRecords.TryRemove(id, out _); return Task.CompletedTask; }
     public Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RefreshSession>>(_sessions.Values.OrderByDescending(x => x.LastSeenAtUtc).Take(limit).ToList());
     public Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Conversation>>(_conversations.Values.OrderByDescending(x => x.LastMessageAtUtc ?? x.CreatedAtUtc).Take(limit).ToList());

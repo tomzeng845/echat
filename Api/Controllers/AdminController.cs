@@ -55,6 +55,43 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     [HttpGet("users")]
     public async Task<ActionResult<AdminUserPage>> Users([FromQuery] AdminUserQuery query, CancellationToken ct) => Ok(await SearchUsersAsync(query, ct));
 
+    [HttpGet("sms-registration-channel")]
+    public async Task<ActionResult> SmsRegistrationChannel(CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync("config:sms-registration", ct);
+        return Ok(new { enabled = record?.Data.GetValueOrDefault("enabled") != "false", updatedAtUtc = record?.UpdatedAtUtc });
+    }
+
+    [HttpPut("sms-registration-channel")]
+    public async Task<ActionResult> UpdateSmsRegistrationChannel(AdminSmsChannelRequest request, CancellationToken ct)
+    {
+        var record = new AdminModuleRecord { Id = "config:sms-registration", Module = "config:sms-registration", Name = "注册短信验证通道", Status = request.Enabled ? "Enabled" : "Disabled", Data = new() { ["enabled"] = request.Enabled ? "true" : "false" } };
+        await repository.UpsertAdminRecordAsync(record, ct);
+        await AuditAsync("sms.registration-channel", "config", record.Id, request.Enabled ? "开启" : "关闭", ct);
+        return Ok(new { enabled = request.Enabled, updatedAtUtc = record.UpdatedAtUtc });
+    }
+
+    [HttpGet("sms-records")]
+    public async Task<ActionResult> SmsRecords([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 10, 100);
+        var total = await repository.CountAdminRecordsAsync("account.sms-sends", search, ct);
+        var records = await repository.SearchAdminRecordsAsync("account.sms-sends", search, (safePage - 1) * safePageSize, safePageSize, ct);
+        var items = records.Select(record => new
+        {
+            id = record.Id,
+            phone = record.Data.GetValueOrDefault("phone", record.Name),
+            content = record.Data.GetValueOrDefault("content", ""),
+            provider = record.Data.GetValueOrDefault("provider", ""),
+            type = record.Data.GetValueOrDefault("type", "注册验证码"),
+            sentAtUtc = record.CreatedAtUtc,
+            success = record.Status == "Success",
+            error = record.Data.GetValueOrDefault("error", "")
+        });
+        return Ok(new { items, total, page = safePage, pageSize = safePageSize, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize)) });
+    }
+
     [HttpGet("locked-ip-users")]
     public async Task<ActionResult<AdminLockedIpPage>> LockedIpUsers([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {

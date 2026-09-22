@@ -48,10 +48,12 @@ builder.Services.AddHttpClient("geoip", client => client.Timeout = TimeSpan.From
 builder.Services.AddHttpClient("fcm", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddHttpClient("apns", client => { client.Timeout = TimeSpan.FromSeconds(8); client.DefaultRequestVersion = new Version(2, 0); client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher; });
 builder.Services.AddHttpClient("openim", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient("sms", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<OpenImService>();
 builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
+builder.Services.AddScoped<SmsService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 builder.Services.AddSingleton<VideoProcessingService>();
 

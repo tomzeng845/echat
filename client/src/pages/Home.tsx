@@ -180,11 +180,29 @@ function AuthScreen({
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [mobilePhone, setMobilePhone] = useState("");
+  const [smsCode, setSmsCode] = useState("");
+  const [smsBusy, setSmsBusy] = useState(false);
+  const [smsCountdown, setSmsCountdown] = useState(0);
   const [agreement, setAgreement] = useState(false);
   const [pendingToken, setPendingToken] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (smsCountdown <= 0) return;
+    const timer = window.setTimeout(() => setSmsCountdown(value => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [smsCountdown]);
+
+  async function sendSmsCode() {
+    const phone = mobilePhone.replace(/[ -]/g, "");
+    if (!/^\+?[0-9]{6,20}$/.test(phone)) { setError("请输入有效的手机号"); return; }
+    setSmsBusy(true); setError("");
+    try { await api("/api/auth/sms/send", { method: "POST", body: JSON.stringify({ mobilePhone: phone }) }); setSmsCountdown(60); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "短信发送失败"); }
+    finally { setSmsBusy(false); }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -209,6 +227,8 @@ function AuthScreen({
             password,
             inviteCode,
             displayName,
+            mobilePhone,
+            smsCode,
             agreementAccepted: agreement,
             deviceName: navigator.userAgent,
             deviceId: getDeviceId(),
@@ -371,6 +391,12 @@ function AuthScreen({
                         className="auth-input"
                       />
                     </label>
+                  )}
+                  {mode === "register" && (
+                    <>
+                      <label className="block"><span className="mb-2 block text-sm text-slate-300">手机号</span><input value={mobilePhone} onChange={e => setMobilePhone(e.target.value)} inputMode="tel" placeholder="注册手机号" className="auth-input" /></label>
+                      <label className="block"><span className="mb-2 block text-sm text-slate-300">短信验证码</span><div className="flex gap-2"><input value={smsCode} onChange={e => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6位验证码" className="auth-input min-w-0 flex-1" /><button type="button" disabled={smsBusy || smsCountdown > 0} onClick={() => void sendSmsCode()} className="shrink-0 rounded-xl bg-white/10 px-3 text-xs text-teal-200 disabled:opacity-50">{smsBusy ? "发送中" : smsCountdown > 0 ? `${smsCountdown}s 后重发` : "获取验证码"}</button></div></label>
+                    </>
                   )}
                   <label className="block">
                     <span className="mb-2 block text-sm text-slate-300">

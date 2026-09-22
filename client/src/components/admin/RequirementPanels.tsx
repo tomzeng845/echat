@@ -803,6 +803,34 @@ export function BannedUsersPanel({ refresh }: { refresh: number }) {
   );
 }
 
+export function SmsRecordsPanel({ refresh }: { refresh: number }) {
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [channelEnabled, setChannelEnabled] = useState(true);
+  const [savingChannel, setSavingChannel] = useState(false);
+  const channel = useLoad<{ enabled: boolean; updatedAtUtc?: string }>("/api/admin/sms-registration-channel", { enabled: true }, refresh);
+  useEffect(() => setChannelEnabled(channel.data.enabled), [channel.data.enabled]);
+  const { data, loading, reload } = useLoad<{
+    items: Array<{ id: string; phone: string; content: string; provider: string; type: string; sentAtUtc: string; success: boolean; error: string }>;
+    total: number; page: number; pageSize: number; totalPages: number;
+  }>(`/api/admin/sms-records?page=${page}&pageSize=20&search=${encodeURIComponent(query)}`, { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }, refresh);
+  async function saveChannel(enabled: boolean) {
+    setSavingChannel(true);
+    try { const result = await api<{ enabled: boolean }>("/api/admin/sms-registration-channel", { method: "PUT", body: JSON.stringify({ enabled }) }); setChannelEnabled(result.enabled); toast.success(result.enabled ? "注册短信验证已开启" : "注册短信验证已关闭"); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "保存失败"); setChannelEnabled(!enabled); }
+    finally { setSavingChannel(false); }
+  }
+  return (
+    <div>
+      <Title title="用户短信发送记录" description="查看用户注册时发送的短信验证码记录，并管理注册短信验证通道。" action={<label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm"><span className="font-medium">注册短信验证</span><button type="button" disabled={savingChannel} onClick={() => void saveChannel(!channelEnabled)} className={`relative h-6 w-11 rounded-full transition ${channelEnabled ? "bg-emerald-500" : "bg-slate-300"}`} aria-label="切换注册短信验证"><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${channelEnabled ? "left-6" : "left-1"}`} /></button><span className={channelEnabled ? "text-emerald-600" : "text-slate-500"}>{channelEnabled ? "已开启" : "已关闭"}</span></label>} />
+      <Box className="mb-4"><div className="flex justify-end gap-2"><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { setPage(1); setQuery(search.trim()); } }} placeholder="手机号/短信内容" className="admin-filter-input max-w-xs" /><button onClick={() => { setPage(1); setQuery(search.trim()); }} className="bg-pink-400 px-5 py-2 text-sm font-medium text-white hover:bg-pink-500"><Search size={15} />查询</button></div></Box>
+      <Box className="overflow-x-auto p-0">{loading ? <div className="p-6"><RefreshCw className="animate-spin text-teal-600" /></div> : <table className="w-full min-w-[980px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-600"><tr><th className="w-12 p-3">序号</th><th>手机号</th><th>发送内容</th><th>发送平台</th><th>发送类型</th><th>发送时间</th><th>是否发送成功</th></tr></thead><tbody>{data.items.map((item, index) => <tr key={item.id} className="border-t border-slate-100 hover:bg-pink-50/30"><td className="p-3 text-slate-500">{(data.page - 1) * data.pageSize + index + 1}</td><td className="font-mono">{item.phone}</td><td className="max-w-sm truncate" title={item.content}>{item.content || "—"}</td><td>{item.provider || "—"}</td><td>{item.type || "注册验证码"}</td><td className="whitespace-nowrap">{time(item.sentAtUtc)}</td><td>{item.success ? <span className="text-emerald-600">是</span> : <span className="text-rose-600" title={item.error}>否</span>}</td></tr>)}</tbody></table>}{!loading && !data.items.length && <Empty text="暂无短信发送记录" />}</Box>
+      <Box className="mt-3"><div className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>共 {data.total.toLocaleString()} 条记录</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(v => v - 1)} className="admin-filter-button">上一页</button><span className="px-2 py-2">第 {data.page} / {data.totalPages} 页</span><button disabled={page >= data.totalPages} onClick={() => setPage(v => v + 1)} className="admin-filter-button">下一页</button><button onClick={reload} className="admin-filter-button"><RefreshCw size={15} /></button></div></div></Box>
+    </div>
+  );
+}
+
 export function FeedbackPanel({ refresh }: { refresh: number }) {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);

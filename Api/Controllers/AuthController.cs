@@ -7,8 +7,18 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, SmsService sms, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
+    [HttpPost("sms/send")]
+    public async Task<ActionResult> SendSmsCode(SendSmsCodeRequest request, CancellationToken ct)
+    {
+        if (!await SmsRegistrationEnabled(ct)) return StatusCode(StatusCodes.Status503ServiceUnavailable, Fail("注册短信验证通道当前已关闭"));
+        var phone = NormalizePhone(request.MobilePhone);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(phone, "^\\+?[0-9]{6,20}$")) return BadRequest(Fail("手机号格式无效"));
+        var result = await sms.SendRegistrationCodeAsync(phone, RequestMetadata.ClientIp(HttpContext), ct);
+        return result.Success ? Ok(new { success = true, expiresAtUtc = result.ExpiresAtUtc }) : StatusCode(502, Fail("短信发送失败，请稍后重试"));
+    }
+
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
     {
@@ -16,6 +26,15 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(Fail("账号需以字母开头，并由 4–20 位字母、数字或下划线组成"));
         if (request.Password.Length is < 8 or > 72) return BadRequest(Fail("密码长度需为 8–72 位"));
         if (!request.AgreementAccepted) return BadRequest(Fail("请先同意服务协议和隐私政策"));
+        var phone = NormalizePhone(request.MobilePhone);
+        if (await SmsRegistrationEnabled(ct))
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(phone, "^\\+?[0-9]{6,20}$") || string.IsNullOrWhiteSpace(request.SmsCode)) return BadRequest(Fail("请先获取并填写手机验证码"));
+            var records = await repository.GetAdminRecordsAsync("account.sms-sends", 1000, ct);
+            var verified = records.Where(x => x.Data.GetValueOrDefault("phone") == phone && x.Data.GetValueOrDefault("purpose") == "register" && x.Data.GetValueOrDefault("success") == "true")
+                .OrderByDescending(x => x.CreatedAtUtc).FirstOrDefault(x => DateTime.TryParse(x.Data.GetValueOrDefault("expiresAtUtc"), out var expires) && expires > DateTime.UtcNow && x.Data.GetValueOrDefault("codeHash") == TokenService.Hash(request.SmsCode.Trim()));
+            if (verified is null) return BadRequest(Fail("手机验证码无效或已过期"));
+        }
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(Fail("账号已存在"));
         if (!await repository.TryConsumeInviteAsync(request.InviteCode.Trim().ToUpperInvariant(), ct)) return BadRequest(Fail("邀请码无效、已过期或已用完"));
 
@@ -23,6 +42,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         {
             Account = account,
             DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : request.DisplayName.Trim(),
+            MobilePhone = phone,
             AgreementAcceptedAtUtc = DateTime.UtcNow,
             RegistrationSource = "邀请注册",
             InviteSource = request.InviteCode.Trim().ToUpperInvariant()
@@ -154,6 +174,12 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     }
 
     private static AuthResponse Fail(string error) => new(false, null, null, null, null, Error: error);
+    private async Task<bool> SmsRegistrationEnabled(CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync("config:sms-registration", ct);
+        return record?.Data.GetValueOrDefault("enabled") != "false";
+    }
+    private static string NormalizePhone(string? phone) => (phone ?? "").Trim().Replace(" ", "").Replace("-", "");
     private static UserView View(UserAccount user) => SessionService.View(user);
     private string CurrentIp() => RequestMetadata.ClientIp(HttpContext);
     private static bool IpAllowed(string restriction, string currentIp) => string.IsNullOrWhiteSpace(restriction)

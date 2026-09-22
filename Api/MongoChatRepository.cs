@@ -352,6 +352,26 @@ public sealed class MongoChatRepository : IChatRepository
     public async Task<AdminModuleRecord> UpsertAdminRecordAsync(AdminModuleRecord record, CancellationToken ct = default) { record.UpdatedAtUtc = DateTime.UtcNow; await _adminRecords.ReplaceOneAsync(x => x.Id == record.Id, record, new ReplaceOptions { IsUpsert = true }, ct); return record; }
     public async Task<AdminModuleRecord?> GetAdminRecordAsync(string id, CancellationToken ct = default) => await _adminRecords.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<AdminModuleRecord>> GetAdminRecordsAsync(string module, int limit, CancellationToken ct = default) => await _adminRecords.Find(x => x.Module == module).SortByDescending(x => x.UpdatedAtUtc).Limit(limit).ToListAsync(ct);
+    public async Task<IReadOnlyList<AdminModuleRecord>> SearchAdminRecordsAsync(string module, string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var filter = Builders<AdminModuleRecord>.Filter.Eq(x => x.Module, module);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
+            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern));
+        }
+        return await _adminRecords.Find(filter).SortByDescending(x => x.CreatedAtUtc).Skip(skip).Limit(limit).ToListAsync(ct);
+    }
+    public Task<long> CountAdminRecordsAsync(string module, string? search, CancellationToken ct = default)
+    {
+        var filter = Builders<AdminModuleRecord>.Filter.Eq(x => x.Module, module);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
+            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern));
+        }
+        return _adminRecords.CountDocumentsAsync(filter, cancellationToken: ct);
+    }
     public Task DeleteAdminRecordAsync(string id, CancellationToken ct = default) => _adminRecords.DeleteOneAsync(x => x.Id == id, ct);
     public async Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default) => await _sessions.Find(FilterDefinition<RefreshSession>.Empty).SortByDescending(x => x.LastSeenAtUtc).Limit(limit).ToListAsync(ct);
     public async Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default) => await _conversations.Find(FilterDefinition<Conversation>.Empty).SortByDescending(x => x.LastMessageAtUtc).Limit(limit).ToListAsync(ct);

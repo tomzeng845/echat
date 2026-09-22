@@ -321,7 +321,9 @@ public sealed class AdminModuleRecord
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web", string? DeviceId = null);
+public sealed record RegisterRequest(string Account, string Password, string InviteCode, string DisplayName, bool AgreementAccepted, string DeviceName = "Web", string? DeviceId = null, string? MobilePhone = null, string? SmsCode = null);
+public sealed record SendSmsCodeRequest(string MobilePhone, string Purpose = "register");
+public sealed record AdminSmsChannelRequest(bool Enabled);
 public sealed record LoginRequest(string Account, string Password, string DeviceName = "Web", string? DeviceId = null);
 public sealed record RefreshRequest(string RefreshToken, string DeviceName = "Web", string? DeviceId = null);
 public sealed record TotpVerifyRequest(string PendingToken, string Code, string DeviceName = "Admin Web", string? DeviceId = null);

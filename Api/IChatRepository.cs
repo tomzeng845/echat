@@ -81,6 +81,8 @@ public interface IChatRepository
     Task<AdminModuleRecord> UpsertAdminRecordAsync(AdminModuleRecord record, CancellationToken ct = default);
     Task<AdminModuleRecord?> GetAdminRecordAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<AdminModuleRecord>> GetAdminRecordsAsync(string module, int limit, CancellationToken ct = default);
+    Task<IReadOnlyList<AdminModuleRecord>> SearchAdminRecordsAsync(string module, string? search, int skip, int limit, CancellationToken ct = default);
+    Task<long> CountAdminRecordsAsync(string module, string? search, CancellationToken ct = default);
     Task DeleteAdminRecordAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default);
     Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default);
