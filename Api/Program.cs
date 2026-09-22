@@ -78,6 +78,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
                 context.Token = context.Request.Query["access_token"];
             return Task.CompletedTask;
         },
+	        OnChallenge = async context =>
+	        {
+	            context.HandleResponse();
+	            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+	            context.Response.ContentType = "application/json; charset=utf-8";
+	            await context.Response.WriteAsJsonAsync(new { success = false, error = "登录状态已失效，请重新登录", code = "AUTH_REQUIRED" });
+	        },
+	        OnForbidden = async context =>
+	        {
+	            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+	            context.Response.ContentType = "application/json; charset=utf-8";
+	            await context.Response.WriteAsJsonAsync(new { success = false, error = "没有权限执行此操作", code = "FORBIDDEN" });
+	        },
 	        OnTokenValidated = async context =>
 	        {
 	            if (context.Principal?.FindFirst("scope")?.Value is not ("app" or "call_listener")) return;
