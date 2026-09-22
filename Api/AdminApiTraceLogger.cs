@@ -22,7 +22,8 @@ public sealed class AdminApiTraceLogger
         var response = context.Response;
         var forwardedFor = request.Headers["X-Forwarded-For"].FirstOrDefault() ?? "";
         var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var hasBearer = request.Headers.Authorization.Any(value => value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase));
+        var authorization = request.Headers.Authorization.ToString();
+        var hasBearer = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
         var line = string.Join(" | ", new[]
         {
             DateTimeOffset.UtcNow.ToString("O"),
