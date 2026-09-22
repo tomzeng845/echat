@@ -254,6 +254,7 @@ public sealed class MongoChatRepository : IChatRepository
         await _friendRequests.InsertOneAsync(request, cancellationToken: ct); return request;
     }
     public async Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(x => x.ReceiverId == userId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(x => x.SenderId == userId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
     public async Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => await _friendRequests.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
     public Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default) => _friendRequests.ReplaceOneAsync(x => x.Id == request.Id, request, cancellationToken: ct);
     public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) => _relations.ReplaceOneAsync(x => x.Id == relation.Id, relation, new ReplaceOptions { IsUpsert = true }, ct);

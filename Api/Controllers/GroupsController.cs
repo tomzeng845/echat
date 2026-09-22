@@ -14,11 +14,24 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireMember(id, ct);
         if (group is null || group.Type != ConversationType.Group) return Forbid();
-        return Ok(new { group.Id, group.Name, group.Announcement, group.Remark, group.RequireJoinApproval, members = await MemberViews(group, ct), joinRequests = group.JoinRequests.Keys });
+        return Ok(new { group.Id, group.Name, group.AvatarUrl, group.Announcement, group.Remark, group.RequireJoinApproval, group.AllowMemberAddFriend, group.MuteAll, group.DisableRecall, group.DisableNameChange, group.HideMemberCount, group.HistoryVisibleToNewMembers, memberCount = group.HideMemberCount ? 0 : group.Members.Count(x => x.LeftAtSequence is null), members = await MemberViews(group, ct), joinRequests = group.JoinRequests.Keys });
     }
 
     [HttpPut("{id}/name")]
-    public Task<ActionResult> Name(string id, GroupNameRequest request, CancellationToken ct) => Update(id, request.Name, (group, value) => group.Name = value, ct);
+    public Task<ActionResult> Name(string id, GroupNameRequest request, CancellationToken ct) => Update(id, request.Name, (group, value) => { if (!group.DisableNameChange) group.Name = value; }, ct);
+
+    [HttpPut("{id}/settings")]
+    public async Task<ActionResult> Settings(string id, GroupSettingsRequest request, CancellationToken ct)
+    {
+        var group = await RequireOwner(id, ct); if (group is null) return Forbid();
+        if (request.AllowMemberAddFriend.HasValue) group.AllowMemberAddFriend = request.AllowMemberAddFriend.Value;
+        if (request.MuteAll.HasValue) group.MuteAll = request.MuteAll.Value;
+        if (request.DisableRecall.HasValue) group.DisableRecall = request.DisableRecall.Value;
+        if (request.DisableNameChange.HasValue) group.DisableNameChange = request.DisableNameChange.Value;
+        if (request.HideMemberCount.HasValue) group.HideMemberCount = request.HideMemberCount.Value;
+        if (request.HistoryVisibleToNewMembers.HasValue) group.HistoryVisibleToNewMembers = request.HistoryVisibleToNewMembers.Value;
+        await repository.UpdateConversationAsync(group, ct); await Notify(group, "group-settings-updated", ct); return Ok(group);
+    }
 
     [HttpPut("{id}/announcement")]
     public Task<ActionResult> Announcement(string id, GroupAnnouncementRequest request, CancellationToken ct) => Update(id, request.Announcement, (group, value) => group.Announcement = value, ct);
@@ -65,6 +78,28 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         await repository.UpdateConversationAsync(group, ct);
         await Notify(group, request.Muted ? "members-muted" : "members-unmuted", ct);
         return NoContent();
+    }
+
+    [HttpPut("{id}/mute-all")]
+    public async Task<ActionResult> MuteAll(string id, GroupMuteRequest request, CancellationToken ct)
+    {
+        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        group.MuteAll = request.Muted; await repository.UpdateConversationAsync(group, ct); await Notify(group, request.Muted ? "group-muted" : "group-unmuted", ct); return NoContent();
+    }
+
+    [HttpPut("{id}/blacklist/{userId}")]
+    public async Task<ActionResult> Blacklist(string id, string userId, CancellationToken ct)
+    {
+        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        if (!group.BlacklistedUserIds.Contains(userId)) group.BlacklistedUserIds.Add(userId);
+        await repository.UpdateConversationAsync(group, ct); await Notify(group, "group-blacklist-updated", ct); return NoContent();
+    }
+
+    [HttpDelete("{id}/blacklist/{userId}")]
+    public async Task<ActionResult> RemoveBlacklist(string id, string userId, CancellationToken ct)
+    {
+        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        group.BlacklistedUserIds.RemoveAll(x => x == userId); await repository.UpdateConversationAsync(group, ct); await Notify(group, "group-blacklist-updated", ct); return NoContent();
     }
 
     [HttpPost("{id}/transfer-owner")]

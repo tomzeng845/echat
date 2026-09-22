@@ -168,6 +168,7 @@ public sealed class ConversationMember
     public long DeliveredSequence { get; set; }
     public long ReadSequence { get; set; }
     public bool Muted { get; set; }
+    public DateTime? LastMessageAtUtc { get; set; }
     public bool Pinned { get; set; }
 }
 
@@ -190,6 +191,13 @@ public sealed class Conversation
     public string Remark { get; set; } = "";
     public bool RequireJoinApproval { get; set; }
     public Dictionary<string, DateTime> JoinRequests { get; set; } = [];
+    public bool AllowMemberAddFriend { get; set; } = true;
+    public bool MuteAll { get; set; }
+    public bool DisableRecall { get; set; }
+    public bool DisableNameChange { get; set; }
+    public bool HideMemberCount { get; set; }
+    public bool HistoryVisibleToNewMembers { get; set; } = true;
+    public List<string> BlacklistedUserIds { get; set; } = [];
 }
 
 public sealed class ConversationKeyEnvelopeRecord
@@ -344,6 +352,7 @@ public sealed record UserView(string Id, string Account, string DisplayName, str
 public sealed record FriendRequestInput(string RequestId, string PeerAccount, string Note = "", string Source = "account");
 public sealed record ConversationCreateRequest(string PeerAccount, Dictionary<string, string>? KeyEnvelopes = null);
 public sealed record GroupCreateRequest(string Name, IReadOnlyList<string> MemberAccounts, Dictionary<string, string>? KeyEnvelopes = null);
+public sealed record GroupSettingsRequest(bool? AllowMemberAddFriend = null, bool? MuteAll = null, bool? DisableRecall = null, bool? DisableNameChange = null, bool? HideMemberCount = null, bool? HistoryVisibleToNewMembers = null);
 public sealed record SendMessageRequest(string ClientMessageId, MessageKind Kind, string Ciphertext, string Nonce, string Algorithm = "AES-GCM-256", int KeyVersion = 1, string? ReplyToMessageId = null, Dictionary<string, string>? Metadata = null, string? Content = null);
 public sealed record RotateConversationKeyRequest(int KeyVersion, Dictionary<string, string> KeyEnvelopes);
 public sealed record ConversationView(string Id, ConversationType Type, string Name, string AvatarUrl, long LastSequence, string LastMessagePreview, DateTime? LastMessageAtUtc, int MemberCount, long ReadSequence, bool Muted, bool Pinned, int KeyVersion, string? KeyEnvelope, string? PeerId = null);

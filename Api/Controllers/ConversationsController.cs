@@ -167,6 +167,14 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
         var blockedOperation = conversation.Type == ConversationType.Group ? "group-message" : "direct-message";
         if (await curfew.IsBlockedAsync(blockedOperation, ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许发送此类消息" });
+        if (conversation.Type == ConversationType.Group)
+        {
+            var member = conversation.Members.First(member => member.UserId == User.UserId());
+            if (conversation.BlacklistedUserIds.Contains(User.UserId()) || (conversation.MuteAll && member.Role == MemberRole.Member) || member.Muted)
+                return StatusCode(403, new { error = "你当前不能在本群发送消息" });
+            if (member.LastMessageAtUtc is { } last && DateTime.UtcNow - last < TimeSpan.FromSeconds(5))
+                return StatusCode(429, new { error = "群消息发送过于频繁，请至少间隔5秒" });
+        }
         if (conversation.Type == ConversationType.Direct)
         {
             var userId = User.UserId();
@@ -200,6 +208,11 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             if (asset is null || asset.OwnerId != User.UserId() || asset.Purpose != MediaPurpose.Chat || asset.ConversationId != id) return BadRequest(new { error = "媒体资产无效" });
         }
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? filteredContent : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
+        if (conversation.Type == ConversationType.Group)
+        {
+            conversation.Members.First(member => member.UserId == User.UserId()).LastMessageAtUtc = DateTime.UtcNow;
+            await repository.UpdateConversationAsync(conversation, ct);
+        }
         var view = View(message);
         var memberUserIds = conversation.Members
             .Where(member => member.LeftAtSequence is null)
@@ -228,9 +241,10 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     [HttpPost("{id}/messages/{messageId}/recall")]
     public async Task<ActionResult> Recall(string id, string messageId, CancellationToken ct)
     {
-        if (await RequireMemberAsync(id, ct) is null) return Forbid();
+        var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
         var message = await repository.GetMessageAsync(messageId, ct);
         if (message is null || message.ConversationId != id || message.SenderId != User.UserId()) return NotFound();
+        if (conversation.Type == ConversationType.Group && conversation.DisableRecall) return StatusCode(403, new { error = "本群禁止撤回消息" });
         if (DateTime.UtcNow - message.SentAtUtc > TimeSpan.FromMinutes(2)) return BadRequest(new { error = "已超过 2 分钟撤回时限" });
         message.State = MessageState.Recalled; message.RecalledAtUtc = DateTime.UtcNow; message.Content = ""; message.Ciphertext = ""; message.Nonce = "";
         await repository.UpdateMessageAsync(message, ct);

@@ -49,6 +49,23 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         return Ok(result);
     }
 
+    [HttpGet("requests/sent")]
+    public async Task<ActionResult> SentRequests(CancellationToken ct)
+    {
+        var items = await repository.GetSentFriendRequestsAsync(User.UserId(), ct);
+        return Ok(items.Select(item => new { item.Id, item.ReceiverId, item.Status, item.Note, item.CreatedAtUtc }));
+    }
+
+    [HttpDelete("requests/{id}")]
+    public async Task<ActionResult> RevokeRequest(string id, CancellationToken ct)
+    {
+        var item = await repository.GetFriendRequestAsync(id, ct);
+        if (item is null || item.SenderId != User.UserId() || item.Status != FriendRequestStatus.Pending) return NotFound(new { error = "好友申请不存在或已处理" });
+        item.Status = FriendRequestStatus.Revoked;
+        await repository.UpdateFriendRequestAsync(item, ct);
+        return NoContent();
+    }
+
     [HttpGet("blocked")]
     public async Task<ActionResult> Blocked(CancellationToken ct)
     {

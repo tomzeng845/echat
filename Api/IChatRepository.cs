@@ -34,6 +34,7 @@ public interface IChatRepository
     Task<bool> TryUseContactQrAsync(string id, CancellationToken ct = default);
     Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default);
+    Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default);
     Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default);
     Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default);
     Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default);

@@ -25,6 +25,12 @@ type GroupInfo = {
   announcement: string;
   remark: string;
   requireJoinApproval: boolean;
+  allowMemberAddFriend: boolean;
+  muteAll: boolean;
+  disableRecall: boolean;
+  disableNameChange: boolean;
+  hideMemberCount: boolean;
+  historyVisibleToNewMembers: boolean;
   members: ConversationMember[];
   joinRequests: string[];
 };
@@ -126,6 +132,11 @@ export default function GroupInfoPanel({
       method: "PUT",
       body: JSON.stringify({ userIds: selectedMuteIds, muted }),
     });
+    await load();
+    onChanged();
+  }
+  async function updateSettings(key: string, value: boolean) {
+    await api(`/api/groups/${conversationId}/settings`, { method: "PUT", body: JSON.stringify({ [key]: value }) });
     await load();
     onChanged();
   }
@@ -426,6 +437,7 @@ export default function GroupInfoPanel({
                 />
                 进群需要管理员确认
               </label>
+              {currentMember?.role === "Owner" && <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">{([["allowMemberAddFriend", "允许群成员相互添加好友"], ["muteAll", "全员禁言"], ["disableRecall", "禁止撤回消息"], ["disableNameChange", "禁止修改群名称"], ["hideMemberCount", "隐藏群人数"], ["historyVisibleToNewMembers", "新成员可查看历史消息"]] as const).map(([key, label]) => <label key={key} className="flex items-center justify-between gap-3 text-sm"><span>{label}</span><input type="checkbox" checked={Boolean(info[key])} onChange={e => void updateSettings(key, e.target.checked)} /></label>)}</div>}
             </div>
             <div className="rounded-2xl bg-white p-4">
               <h3 className="font-semibold">增加群员</h3>

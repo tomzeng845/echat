@@ -175,6 +175,8 @@ public sealed class InMemoryChatRepository : IChatRepository
 
     public Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => x.ReceiverId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
+    public Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => x.SenderId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
     public Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => Task.FromResult(_friendRequests.TryGetValue(id, out var item) ? item : null);
     public Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default) { _friendRequests[request.Id] = request; return Task.CompletedTask; }
     public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) { _relations[relation.Id] = relation; return Task.CompletedTask; }
