@@ -370,7 +370,18 @@ export async function api<T>(
           .json()
           .catch(() => ({ error: `请求失败 (${response.status})` }))
       : {
-          error: `API 地址配置错误或服务未启动（${response.status}，返回了 HTML 页面）`,
+          error:
+            response.status === 401
+              ? "登录状态已失效，请重新登录"
+              : response.status === 403
+                ? "没有权限执行此操作"
+                : response.status === 404
+                  ? "API 接口不存在，请确认前后端版本一致"
+                  : response.status === 502 || response.status === 503
+                    ? "API 服务暂时不可用，请检查后端服务状态"
+                    : response.status >= 200 && response.status < 300
+                      ? "API 地址配置错误：服务器返回了网页而不是 JSON"
+                      : `API 请求失败（HTTP ${response.status}）`,
         };
     throw new ApiError(
       problem.error || problem.title || `请求失败 (${response.status})`,
