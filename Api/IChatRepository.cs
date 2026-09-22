@@ -13,6 +13,8 @@ public interface IChatRepository
     Task<IReadOnlyList<UserAccount>> GetUsersAsync(string? search, UserStatus? status, int limit, CancellationToken ct = default);
     Task<IReadOnlyList<UserAccount>> GetLockedIpUsersAsync(string? search, int skip, int limit, CancellationToken ct = default);
     Task<long> CountLockedIpUsersAsync(string? search, CancellationToken ct = default);
+    Task<IReadOnlyList<UserAccount>> GetBannedUsersAsync(string? search, int skip, int limit, CancellationToken ct = default);
+    Task<long> CountBannedUsersAsync(string? search, CancellationToken ct = default);
     Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default);
     Task AddSessionAsync(RefreshSession session, CancellationToken ct = default);
     Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default);

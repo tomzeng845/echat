@@ -80,6 +80,32 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new { user.Account, unlocked = true });
     }
 
+    [HttpGet("banned-users")]
+    public async Task<ActionResult<AdminBannedUserPage>> BannedUsers([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 10, 100);
+        var total = await repository.CountBannedUsersAsync(search, ct);
+        var users = await repository.GetBannedUsersAsync(search, (safePage - 1) * safePageSize, safePageSize, ct);
+        var sessions = (await repository.GetAllSessionsAsync(20000, ct)).Where(x => x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow).GroupBy(x => x.UserId).ToDictionary(x => x.Key, x => (IReadOnlyList<RefreshSession>)x.ToList());
+        var items = users.Select(user => ToView(user, sessions.GetValueOrDefault(user.Id) ?? [])).ToList();
+        return Ok(new AdminBannedUserPage(items, total, safePage, safePageSize, Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize))));
+    }
+
+    [HttpPost("banned-users/{account}/unban")]
+    public async Task<ActionResult> UnbanUser(string account, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null) return NotFound(new { error = "用户不存在" });
+        if (user.Id == User.UserId()) return BadRequest(new { error = "不能解禁当前管理账号" });
+        user.Status = UserStatus.Active;
+        user.FailedLoginAttempts = 0;
+        user.LockoutUntilUtc = null;
+        await repository.UpdateUserAsync(user, ct);
+        await AuditAsync("user.unban", "user", user.Id, "解除账号封禁", ct);
+        return Ok(new { user.Account, unbanned = true });
+    }
+
     [HttpGet("users/{account}")]
     public async Task<ActionResult> UserByAccount(string account, CancellationToken ct)
     {

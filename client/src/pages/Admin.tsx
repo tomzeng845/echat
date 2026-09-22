@@ -65,6 +65,7 @@ import {
   ServiceGroupTemplatesPanel,
   GroupInvitesPanel as DocGroupInvitesPanel,
   LockedIpPanel as DocLockedIpPanel,
+  BannedUsersPanel as DocBannedUsersPanel,
   InviteManagementPanel as DocInviteManagementPanel,
   LogsPanel as DocLogsPanel,
   OperatorsPanel as DocOperatorsPanel,
@@ -95,6 +96,7 @@ type PageId =
   | "account-offline"
   | "account-failures"
   | "account-locked-ips"
+  | "account-banned-users"
   | "account-feedback"
   | "account-invites"
   | "fund-subjects"
@@ -238,6 +240,7 @@ const groups: MenuGroup[] = [
       { id: "account-offline", label: "离线日志" },
       { id: "account-failures", label: "登录失败IP统计" },
       { id: "account-locked-ips", label: "锁定IP列表" },
+      { id: "account-banned-users", label: "封禁用户列表" },
       { id: "account-feedback", label: "意见反馈" },
       { id: "account-invites", label: "邀请码设置" },
     ],
@@ -790,6 +793,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocFailureIpPanel refresh={refresh} />;
   if (page === "account-locked-ips")
     return <DocLockedIpPanel refresh={refresh} />;
+  if (page === "account-banned-users")
+    return <DocBannedUsersPanel refresh={refresh} />;
   if (page === "account-feedback")
     return <DocFeedbackPanel refresh={refresh} />;
   if (page === "account-invites")

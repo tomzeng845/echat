@@ -412,6 +412,7 @@ public sealed class AdminUserView
 }
 public sealed record AdminUserPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
 public sealed record AdminLockedIpPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
+public sealed record AdminBannedUserPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
 public sealed class AdminUserQuery
 {
     public int Page { get; set; } = 1;
