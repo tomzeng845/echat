@@ -862,6 +862,23 @@ export function ForbiddenWordsPanel({ refresh }: { refresh: number }) {
   );
 }
 
+export function CurfewPanel({ refresh }: { refresh: number }) {
+  type Settings = { enabled: boolean; startTime: string; endTime: string; blockRegistration: boolean; blockLogin: boolean; blockAddFriend: boolean; blockGroupMessages: boolean; blockDirectMessages: boolean; blockCreateGroup: boolean; blockOtherOperations: boolean };
+  const defaults: Settings = { enabled: false, startTime: "00:00", endTime: "08:00", blockRegistration: false, blockLogin: false, blockAddFriend: false, blockGroupMessages: false, blockDirectMessages: false, blockCreateGroup: false, blockOtherOperations: false };
+  const { data, loading } = useLoad<Settings>("/api/admin/curfew", defaults, refresh);
+  const [settings, setSettings] = useState<Settings>(defaults);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setSettings(data), [data]);
+  const toggles: Array<[keyof Settings, string]> = [["blockRegistration", "禁止注册"], ["blockLogin", "禁止登录"], ["blockAddFriend", "禁止添加好友"], ["blockGroupMessages", "禁止群发消息"], ["blockDirectMessages", "禁止私发消息"], ["blockCreateGroup", "禁止建群"], ["blockOtherOperations", "禁止其他操作"]];
+  async function save() {
+    setSaving(true);
+    try { await api<Settings>("/api/admin/curfew", { method: "PUT", body: JSON.stringify(settings) }); toast.success("宵禁设置已保存"); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "保存失败"); }
+    finally { setSaving(false); }
+  }
+  return <div><Title title="宵禁功能" description="在指定时间段内，按需限制登录、注册、好友、消息和建群等操作。管理员账号不受登录宵禁影响。" /><Box className="max-w-2xl"><div className="flex items-center justify-between border-b border-slate-100 pb-4"><span className="font-medium">是否开启宵禁功能</span><button type="button" disabled={loading} onClick={() => setSettings(value => ({ ...value, enabled: !value.enabled }))} className={`relative h-6 w-11 rounded-full transition ${settings.enabled ? "bg-pink-400" : "bg-slate-300"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${settings.enabled ? "left-6" : "left-1"}`} /></button></div><div className="mt-5 rounded-xl border border-slate-200 p-4"><p className="mb-3 text-sm font-medium">安全操作时间段</p><div className="flex items-center gap-3"><input type="time" value={settings.startTime} onChange={e => setSettings(value => ({ ...value, startTime: e.target.value }))} className="admin-filter-input" /><span>—</span><input type="time" value={settings.endTime} onChange={e => setSettings(value => ({ ...value, endTime: e.target.value }))} className="admin-filter-input" /></div><p className="mt-2 text-xs text-slate-500">支持跨午夜设置，例如 22:00 — 08:00。</p></div><div className="mt-5 space-y-3">{toggles.map(([key, label]) => <label key={String(key)} className="flex items-center justify-between rounded-xl px-3 py-2 hover:bg-slate-50"><span className="text-sm">{label}</span><button type="button" onClick={() => setSettings(value => ({ ...value, [key]: !value[key] }))} className={`relative h-6 w-11 rounded-full transition ${settings[key] ? "bg-pink-400" : "bg-slate-300"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${settings[key] ? "left-6" : "left-1"}`} /></button></label>)}</div><button disabled={saving} onClick={() => void save()} className="mt-6 bg-pink-400 px-8 py-2 text-sm font-medium text-white hover:bg-pink-500 disabled:opacity-50">{saving ? "保存中…" : "保存"}</button></Box></div>;
+}
+
 export function FeedbackPanel({ refresh }: { refresh: number }) {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);

@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, SmsService sms, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, SmsService sms, CurfewService curfew, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
 {
     [HttpPost("sms/send")]
     public async Task<ActionResult> SendSmsCode(SendSmsCodeRequest request, CancellationToken ct)
@@ -22,6 +22,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request, CancellationToken ct)
     {
+        if (await curfew.IsBlockedAsync("register", ct)) return StatusCode(403, Fail("当前处于宵禁时段，暂不允许注册"));
         var account = request.Account.Trim().ToLowerInvariant();
         if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(Fail("账号需以字母开头，并由 4–20 位字母、数字或下划线组成"));
         if (request.Password.Length is < 8 or > 72) return BadRequest(Fail("密码长度需为 8–72 位"));
@@ -66,6 +67,8 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request, CancellationToken ct)
     {
         var user = await repository.GetUserByAccountAsync(request.Account.Trim().ToLowerInvariant(), ct);
+        if (user is null || user.Role != UserRole.Admin)
+            if (await curfew.IsBlockedAsync("login", ct)) return StatusCode(403, Fail("当前处于宵禁时段，暂不允许登录"));
         if (user is null) { await LogLoginAsync(request.Account, request.DeviceName, "failed", "账号不存在", null, ct); return Unauthorized(Fail("账号或密码错误")); }
         if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion || user.CancellationEnabled) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用或注销", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
         if (user.AccountLocked || user.LoginLocked) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号或登录已锁定", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号登录已被管理员锁定")); }

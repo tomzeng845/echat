@@ -68,6 +68,7 @@ import {
   BannedUsersPanel as DocBannedUsersPanel,
   SmsRecordsPanel as DocSmsRecordsPanel,
   ForbiddenWordsPanel as DocForbiddenWordsPanel,
+  CurfewPanel as DocCurfewPanel,
   InviteManagementPanel as DocInviteManagementPanel,
   LogsPanel as DocLogsPanel,
   OperatorsPanel as DocOperatorsPanel,
@@ -101,6 +102,7 @@ type PageId =
   | "account-banned-users"
   | "account-sms-records"
   | "account-forbidden-words"
+  | "account-curfew"
   | "account-feedback"
   | "account-invites"
   | "fund-subjects"
@@ -247,6 +249,7 @@ const groups: MenuGroup[] = [
       { id: "account-banned-users", label: "封禁用户列表" },
       { id: "account-sms-records", label: "用户短信发送记录" },
       { id: "account-forbidden-words", label: "违禁词列表" },
+      { id: "account-curfew", label: "宵禁功能" },
       { id: "account-feedback", label: "意见反馈" },
       { id: "account-invites", label: "邀请码设置" },
     ],
@@ -805,6 +808,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocSmsRecordsPanel refresh={refresh} />;
   if (page === "account-forbidden-words")
     return <DocForbiddenWordsPanel refresh={refresh} />;
+  if (page === "account-curfew")
+    return <DocCurfewPanel refresh={refresh} />;
   if (page === "account-feedback")
     return <DocFeedbackPanel refresh={refresh} />;
   if (page === "account-invites")

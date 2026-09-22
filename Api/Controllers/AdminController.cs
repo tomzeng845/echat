@@ -8,7 +8,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -54,6 +54,26 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
 
     [HttpGet("users")]
     public async Task<ActionResult<AdminUserPage>> Users([FromQuery] AdminUserQuery query, CancellationToken ct) => Ok(await SearchUsersAsync(query, ct));
+
+    [HttpGet("curfew")]
+    public async Task<ActionResult> GetCurfew(CancellationToken ct) => Ok(await curfew.GetAsync(ct));
+
+    [HttpPut("curfew")]
+    public async Task<ActionResult> SaveCurfew(AdminCurfewRequest request, CancellationToken ct)
+    {
+        if (!TimeSpan.TryParse(request.StartTime, out _) || !TimeSpan.TryParse(request.EndTime, out _)) return BadRequest(new { error = "时间格式必须为 HH:mm" });
+        var data = new Dictionary<string, string>
+        {
+            ["enabled"] = request.Enabled ? "true" : "false", ["startTime"] = request.StartTime, ["endTime"] = request.EndTime,
+            ["blockRegistration"] = request.BlockRegistration ? "true" : "false", ["blockLogin"] = request.BlockLogin ? "true" : "false",
+            ["blockAddFriend"] = request.BlockAddFriend ? "true" : "false", ["blockGroupMessages"] = request.BlockGroupMessages ? "true" : "false",
+            ["blockDirectMessages"] = request.BlockDirectMessages ? "true" : "false", ["blockCreateGroup"] = request.BlockCreateGroup ? "true" : "false",
+            ["blockOtherOperations"] = request.BlockOtherOperations ? "true" : "false"
+        };
+        await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Id = "config:curfew", Module = "config:curfew", Name = "宵禁功能", Status = request.Enabled ? "Enabled" : "Disabled", Data = data }, ct);
+        curfew.Invalidate();
+        return Ok(await curfew.GetAsync(ct));
+    }
 
     [HttpGet("forbidden-words")]
     public async Task<ActionResult> ForbiddenWords([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)

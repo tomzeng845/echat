@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/conversations")]
-public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, ILogger<ConversationsController> logger, ForbiddenWordService forbiddenWords) : ControllerBase
+public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, ILogger<ConversationsController> logger, ForbiddenWordService forbiddenWords, CurfewService curfew) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ConversationView>>> List(CancellationToken ct)
@@ -40,6 +40,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     [HttpPost("direct")]
     public async Task<ActionResult<ConversationView>> CreateDirect(ConversationCreateRequest request, CancellationToken ct)
     {
+        if (await curfew.IsBlockedAsync("direct-message", ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许发起私聊" });
         var userId = User.UserId();
         var peer = await repository.GetUserByAccountAsync(request.PeerAccount.Trim().ToLowerInvariant(), ct);
         if (peer is null || peer.Id == userId) return BadRequest(new { error = "联系人无效" });
@@ -74,6 +75,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     [HttpPost("groups")]
     public async Task<ActionResult<ConversationView>> CreateGroup(GroupCreateRequest request, CancellationToken ct)
     {
+        if (await curfew.IsBlockedAsync("create-group", ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许建群" });
         var userId = User.UserId();
         var creator = await repository.GetUserByIdAsync(userId, ct);
         if (creator is null || !creator.CanCreateGroup) return StatusCode(403, new { error = "当前账号不允许创建群聊" });
@@ -163,6 +165,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult<MessageView>> Send(string id, SendMessageRequest request, CancellationToken ct)
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
+        var blockedOperation = conversation.Type == ConversationType.Group ? "group-message" : "direct-message";
+        if (await curfew.IsBlockedAsync(blockedOperation, ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许发送此类消息" });
         if (conversation.Type == ConversationType.Direct)
         {
             var userId = User.UserId();

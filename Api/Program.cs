@@ -55,6 +55,7 @@ builder.Services.AddSingleton<ApnsNotificationService>();
 builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddScoped<SmsService>();
 builder.Services.AddSingleton<ForbiddenWordService>();
+builder.Services.AddSingleton<CurfewService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 builder.Services.AddSingleton<VideoProcessingService>();
 

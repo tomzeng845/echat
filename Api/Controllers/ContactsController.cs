@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/contacts")]
-public sealed class ContactsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
+public sealed class ContactsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, CurfewService curfew) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult> List(CancellationToken ct)
@@ -24,6 +24,7 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
     [HttpPost("requests")]
     public async Task<ActionResult> RequestFriend(FriendRequestInput input, CancellationToken ct)
     {
+        if (await curfew.IsBlockedAsync("add-friend", ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许添加好友" });
         var senderId = User.UserId();
         var sender = await repository.GetUserByIdAsync(senderId, ct);
         if (sender is null || !sender.CanAddFriend) return StatusCode(403, new { error = "当前账号不允许添加好友" });
