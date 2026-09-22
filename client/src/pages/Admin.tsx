@@ -2224,7 +2224,7 @@ function UserCreateDialog({
       <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {mode === "single" ? "新增用户" : "批量新增账号"}
+            {mode === "single" ? "新增用户" : "批量添加用户"}
           </h3>
           <button onClick={onClose}>
             <X />
@@ -2277,30 +2277,51 @@ function UserCreateDialog({
             </select>
           </div>
         ) : (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <select value={accountType} onChange={e => setAccountType(e.target.value as "username" | "phone")} className="admin-input">
-              <option value="username">按用户名批量新增</option>
-              <option value="phone">按手机号批量新增</option>
-            </select>
-            <input value={prefix} onChange={e => setPrefix(e.target.value)} className="admin-input" placeholder={accountType === "phone" ? "手机号前缀，如 138" : "用户名，需以字母开头，如 user"} />
-            <input value={startIndex} onChange={e => setStartIndex(e.target.value)} type="number" min="0" className="admin-input" placeholder="开始序号，如 1" />
-            <input value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max="300" className="admin-input" placeholder="添加数量，最高 300" />
-            <input value={batchPassword} onChange={e => setBatchPassword(e.target.value)} type="password" className="admin-input" placeholder="统一初始密码（至少 6 位字母或数字）" />
-            <input value={displayNamePrefix} onChange={e => setDisplayNamePrefix(e.target.value)} className="admin-input" placeholder="昵称前缀（可选）" />
-            <input value={mobilePrefix} onChange={e => setMobilePrefix(e.target.value)} className="admin-input" placeholder="手机号前缀（用户名批量时可选）" />
-            <select value={status} onChange={e => setStatus(e.target.value as UserStatus)} className="admin-input">
-              <option value="Active">状态：正常</option>
-              <option value="Disabled">状态：禁用</option>
-            </select>
-            <select value={canAddFriend ? "yes" : "no"} onChange={e => setCanAddFriend(e.target.value === "yes")} className="admin-input">
-              <option value="yes">能否加好友：是</option>
-              <option value="no">能否加好友：否</option>
-            </select>
-            <select value={canCreateGroup ? "yes" : "no"} onChange={e => setCanCreateGroup(e.target.value === "yes")} className="admin-input">
-              <option value="yes">能否建群：是</option>
-              <option value="no">能否建群：否</option>
-            </select>
-            <p className="sm:col-span-2 text-xs text-slate-500">将按序生成 {accountType === "phone" ? "手机号" : "用户名"}，例如 {prefix || (accountType === "phone" ? "138" : "user")}001、{prefix || (accountType === "phone" ? "138" : "user")}002。账号和密码均要求至少 6 位。</p>
+          <div className="mt-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 用户名：</label>
+              <div className="min-w-0 flex-1">
+                <input value={prefix} onChange={e => setPrefix(e.target.value)} className="admin-input w-full" placeholder="请输入用户名，如 user" />
+                <p className="mt-1 text-xs text-rose-500">请输入用户名前缀，系统会按序生成账号</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 登录密码：</label>
+              <div className="min-w-0 flex-1">
+                <input value={batchPassword} onChange={e => setBatchPassword(e.target.value)} type="password" className="admin-input w-full" placeholder="请输入登录密码（至少 6 位）" />
+                <p className="mt-1 text-xs text-rose-500">请输入字母或数字密码</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 开始序号：</label>
+              <input value={startIndex} onChange={e => setStartIndex(e.target.value)} type="number" min="0" className="admin-input min-w-0 flex-1" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 添加数量：</label>
+              <input value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max="300" className="admin-input min-w-0 flex-1" />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 状态：</span>
+              <div className="flex gap-6 text-sm">
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-status" checked={status === "Active"} onChange={() => setStatus("Active")} className="accent-pink-500" />正常</label>
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-status" checked={status === "Disabled"} onChange={() => setStatus("Disabled")} className="accent-pink-500" />禁用</label>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 能否加好友：</span>
+              <div className="flex gap-6 text-sm">
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-friend" checked={canAddFriend} onChange={() => setCanAddFriend(true)} className="accent-pink-500" />是</label>
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-friend" checked={!canAddFriend} onChange={() => setCanAddFriend(false)} className="accent-pink-500" />否</label>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-24 shrink-0 text-right text-sm text-slate-700"><span className="text-rose-500">*</span> 能否建群：</span>
+              <div className="flex gap-6 text-sm">
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-group" checked={canCreateGroup} onChange={() => setCanCreateGroup(true)} className="accent-pink-500" />是</label>
+                <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="batch-group" checked={!canCreateGroup} onChange={() => setCanCreateGroup(false)} className="accent-pink-500" />否</label>
+              </div>
+            </div>
+            <div className="mt-2 border-t border-slate-100 pt-2 text-center text-xs text-slate-500">示例：{prefix || "user"}001、{prefix || "user"}002；最多添加 300 个账号</div>
           </div>
         )}
         <div className="mt-5 flex justify-end gap-2">
@@ -2310,7 +2331,7 @@ function UserCreateDialog({
           <button
             disabled={busy || (mode === "single" && (!account || !password)) || (mode === "batch" && (!prefix || !batchPassword || Number(count) < 1 || Number(count) > 300))}
             onClick={submit}
-            className="admin-primary !w-auto"
+            className={mode === "batch" ? "w-full bg-pink-400 py-2.5 font-medium text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:opacity-50" : "admin-primary !w-auto"}
           >
             {busy ? "处理中…" : "确认新增"}
           </button>
