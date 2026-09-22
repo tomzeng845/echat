@@ -8,7 +8,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -54,6 +54,46 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
 
     [HttpGet("users")]
     public async Task<ActionResult<AdminUserPage>> Users([FromQuery] AdminUserQuery query, CancellationToken ct) => Ok(await SearchUsersAsync(query, ct));
+
+    [HttpGet("forbidden-words")]
+    public async Task<ActionResult> ForbiddenWords([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var safePage = Math.Max(1, page); var safePageSize = Math.Clamp(pageSize, 10, 100);
+        var total = await repository.CountAdminRecordsAsync("system.forbidden-words", search, ct);
+        var records = await repository.SearchAdminRecordsAsync("system.forbidden-words", search, (safePage - 1) * safePageSize, safePageSize, ct);
+        var items = records.Select(x => new { id = x.Id, word = x.Data.GetValueOrDefault("word", x.Name), enabled = x.Status == "Active", updatedAtUtc = x.UpdatedAtUtc });
+        return Ok(new { items, total, page = safePage, pageSize = safePageSize, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize)) });
+    }
+
+    [HttpPost("forbidden-words")]
+    public async Task<ActionResult> AddForbiddenWord(AdminForbiddenWordRequest request, CancellationToken ct)
+    {
+        var word = request.Word.Trim();
+        if (word.Length is < 1 or > 100) return BadRequest(new { error = "违禁词长度需为 1–100 个字符" });
+        var id = $"forbidden-word:{TokenService.Hash(word.ToLowerInvariant())[..24]}";
+        await repository.UpsertAdminRecordAsync(new AdminModuleRecord { Id = id, Module = "system.forbidden-words", Name = word, Status = request.Enabled ? "Active" : "Disabled", Data = new() { ["word"] = word } }, ct);
+        forbiddenWords.Invalidate();
+        return Ok(new { id, word, enabled = request.Enabled });
+    }
+
+    [HttpPut("forbidden-words/{id}/status")]
+    public async Task<ActionResult> SetForbiddenWordStatus(string id, AdminSmsChannelRequest request, CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "system.forbidden-words") return NotFound(new { error = "违禁词不存在" });
+        record.Status = request.Enabled ? "Active" : "Disabled";
+        await repository.UpsertAdminRecordAsync(record, ct); forbiddenWords.Invalidate();
+        return Ok(new { id, enabled = request.Enabled });
+    }
+
+    [HttpDelete("forbidden-words/{id}")]
+    public async Task<ActionResult> DeleteForbiddenWord(string id, CancellationToken ct)
+    {
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "system.forbidden-words") return NotFound(new { error = "违禁词不存在" });
+        await repository.DeleteAdminRecordAsync(id, ct); forbiddenWords.Invalidate();
+        return NoContent();
+    }
 
     [HttpGet("sms-registration-channel")]
     public async Task<ActionResult> SmsRegistrationChannel(CancellationToken ct)

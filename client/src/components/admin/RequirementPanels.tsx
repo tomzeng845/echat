@@ -831,6 +831,37 @@ export function SmsRecordsPanel({ refresh }: { refresh: number }) {
   );
 }
 
+export function ForbiddenWordsPanel({ refresh }: { refresh: number }) {
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [word, setWord] = useState("");
+  const [page, setPage] = useState(1);
+  const { data, loading, reload } = useLoad<{ items: Array<{ id: string; word: string; enabled: boolean; updatedAtUtc: string }>; total: number; page: number; pageSize: number; totalPages: number }>(`/api/admin/forbidden-words?page=${page}&pageSize=20&search=${encodeURIComponent(query)}`, { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }, refresh);
+  async function addWord() {
+    const value = word.trim();
+    if (!value) { toast.warning("请输入违禁词"); return; }
+    try { await api("/api/admin/forbidden-words", { method: "POST", body: JSON.stringify({ word: value, enabled: true }) }); setWord(""); setPage(1); reload(); toast.success("违禁词已添加"); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "添加失败"); }
+  }
+  async function toggle(item: { id: string; enabled: boolean }) {
+    try { await api(`/api/admin/forbidden-words/${encodeURIComponent(item.id)}/status`, { method: "PUT", body: JSON.stringify({ enabled: !item.enabled }) }); reload(); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "更新失败"); }
+  }
+  async function remove(item: { id: string }) {
+    if (!window.confirm("确定删除这个违禁词吗？")) return;
+    try { await api(`/api/admin/forbidden-words/${encodeURIComponent(item.id)}`, { method: "DELETE" }); reload(); toast.success("违禁词已删除"); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "删除失败"); }
+  }
+  return (
+    <div>
+      <Title title="违禁词列表" description="聊天消息命中已启用的违禁词后，会在服务器保存、广播和客户端显示为 ***。" />
+      <Box className="mb-4"><div className="flex flex-wrap justify-between gap-2"><div className="flex gap-2"><input value={word} onChange={e => setWord(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void addWord(); }} placeholder="输入违禁词，例如：比特币" className="admin-filter-input w-72" /><button onClick={() => void addWord()} className="bg-pink-400 px-5 py-2 text-sm font-medium text-white hover:bg-pink-500">添加</button></div><div className="flex gap-2"><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { setPage(1); setQuery(search.trim()); } }} placeholder="搜索违禁词" className="admin-filter-input max-w-xs" /><button onClick={() => { setPage(1); setQuery(search.trim()); }} className="bg-slate-800 px-5 py-2 text-sm font-medium text-white">查询</button></div></div></Box>
+      <Box className="overflow-x-auto p-0">{loading ? <div className="p-6"><RefreshCw className="animate-spin text-teal-600" /></div> : <table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-600"><tr><th className="w-14 p-3">序号</th><th>违禁词</th><th>状态</th><th>更新时间</th><th className="text-right">操作</th></tr></thead><tbody>{data.items.map((item, index) => <tr key={item.id} className="border-t border-slate-100 hover:bg-pink-50/30"><td className="p-3 text-slate-500">{(data.page - 1) * data.pageSize + index + 1}</td><td className="font-medium">{item.word}</td><td><button onClick={() => void toggle(item)} className={`rounded-full px-3 py-1 text-xs ${item.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{item.enabled ? "已启用" : "已停用"}</button></td><td>{time(item.updatedAtUtc)}</td><td className="text-right"><button onClick={() => void remove(item)} className="px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50">删除</button></td></tr>)}</tbody></table>}{!loading && !data.items.length && <Empty text="暂无违禁词" />}</Box>
+      <Box className="mt-3"><div className="flex items-center justify-between gap-3 text-sm"><span>共 {data.total.toLocaleString()} 条记录</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(v => v - 1)} className="admin-filter-button">上一页</button><span className="px-2 py-2">第 {data.page} / {data.totalPages} 页</span><button disabled={page >= data.totalPages} onClick={() => setPage(v => v + 1)} className="admin-filter-button">下一页</button></div></div></Box>
+    </div>
+  );
+}
+
 export function FeedbackPanel({ refresh }: { refresh: number }) {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);

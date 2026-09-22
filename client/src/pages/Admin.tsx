@@ -67,6 +67,7 @@ import {
   LockedIpPanel as DocLockedIpPanel,
   BannedUsersPanel as DocBannedUsersPanel,
   SmsRecordsPanel as DocSmsRecordsPanel,
+  ForbiddenWordsPanel as DocForbiddenWordsPanel,
   InviteManagementPanel as DocInviteManagementPanel,
   LogsPanel as DocLogsPanel,
   OperatorsPanel as DocOperatorsPanel,
@@ -99,6 +100,7 @@ type PageId =
   | "account-locked-ips"
   | "account-banned-users"
   | "account-sms-records"
+  | "account-forbidden-words"
   | "account-feedback"
   | "account-invites"
   | "fund-subjects"
@@ -244,6 +246,7 @@ const groups: MenuGroup[] = [
       { id: "account-locked-ips", label: "锁定IP列表" },
       { id: "account-banned-users", label: "封禁用户列表" },
       { id: "account-sms-records", label: "用户短信发送记录" },
+      { id: "account-forbidden-words", label: "违禁词列表" },
       { id: "account-feedback", label: "意见反馈" },
       { id: "account-invites", label: "邀请码设置" },
     ],
@@ -800,6 +803,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocBannedUsersPanel refresh={refresh} />;
   if (page === "account-sms-records")
     return <DocSmsRecordsPanel refresh={refresh} />;
+  if (page === "account-forbidden-words")
+    return <DocForbiddenWordsPanel refresh={refresh} />;
   if (page === "account-feedback")
     return <DocFeedbackPanel refresh={refresh} />;
   if (page === "account-invites")

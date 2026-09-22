@@ -6,7 +6,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize]
 [Route("api/conversations")]
-public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, ILogger<ConversationsController> logger) : ControllerBase
+public sealed class ConversationsController(IChatRepository repository, IHubContext<ChatHub> hub, PushNotificationService push, ILogger<ConversationsController> logger, ForbiddenWordService forbiddenWords) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ConversationView>>> List(CancellationToken ct)
@@ -187,6 +187,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         else if (string.IsNullOrWhiteSpace(request.Ciphertext) || request.Ciphertext.Length > 50_000)
             return BadRequest(new { error = "历史加密消息格式无效或内容过大" });
         var keyVersion = plaintext ? 0 : Math.Max(1, request.KeyVersion);
+        var filteredContent = plaintext ? await forbiddenWords.ReplaceAsync(request.Content ?? "", ct) : "";
         if (!plaintext && keyVersion != conversation.KeyVersion) return Conflict(new { error = "会话密钥已更新，请刷新后重试" });
         if (request.Kind is MessageKind.Image or MessageKind.Voice or MessageKind.Video or MessageKind.File)
         {
@@ -194,7 +195,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             var asset = await repository.GetMediaAssetAsync(assetId, ct);
             if (asset is null || asset.OwnerId != User.UserId() || asset.Purpose != MediaPurpose.Chat || asset.ConversationId != id) return BadRequest(new { error = "媒体资产无效" });
         }
-        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? request.Content ?? "" : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? filteredContent : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         var view = View(message);
         var memberUserIds = conversation.Members
             .Where(member => member.LeftAtSequence is null)

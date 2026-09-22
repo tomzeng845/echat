@@ -358,7 +358,7 @@ public sealed class MongoChatRepository : IChatRepository
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
-            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern));
+            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.word", pattern));
         }
         return await _adminRecords.Find(filter).SortByDescending(x => x.CreatedAtUtc).Skip(skip).Limit(limit).ToListAsync(ct);
     }
@@ -368,7 +368,7 @@ public sealed class MongoChatRepository : IChatRepository
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
-            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern));
+            filter &= Builders<AdminModuleRecord>.Filter.Or(Builders<AdminModuleRecord>.Filter.Regex("Name", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.phone", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.content", pattern), Builders<AdminModuleRecord>.Filter.Regex("Data.word", pattern));
         }
         return _adminRecords.CountDocumentsAsync(filter, cancellationToken: ct);
     }

@@ -1324,7 +1324,7 @@ function Messenger({
           }),
         }
       );
-      const value = { ...created, plaintext: text };
+      const value = { ...created, plaintext: created.content || text };
       setMentionMap({});
       setQuotedMessage(null);
       setMessages(current =>
