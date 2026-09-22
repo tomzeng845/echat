@@ -25,12 +25,13 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
     public async Task<ActionResult> RequestFriend(FriendRequestInput input, CancellationToken ct)
     {
         var senderId = User.UserId();
+        var sender = await repository.GetUserByIdAsync(senderId, ct);
+        if (sender is null || !sender.CanAddFriend) return StatusCode(403, new { error = "当前账号不允许添加好友" });
         var peer = await repository.GetUserByAccountAsync(input.PeerAccount.Trim().ToLowerInvariant(), ct);
         if (peer is null || peer.Id == senderId) return BadRequest(new { error = "无法添加该账号" });
         var blocked = await repository.GetRelationAsync(peer.Id, senderId, ct);
         if (blocked?.Status == RelationStatus.Blocked) return StatusCode(403, new { error = "暂时无法发送好友申请" });
         var item = await repository.AddFriendRequestAsync(new FriendRequest { RequestId = input.RequestId, SenderId = senderId, ReceiverId = peer.Id, Note = input.Note.Trim(), Source = input.Source }, ct);
-        var sender = await repository.GetUserByIdAsync(senderId, ct);
         var view = RequestView(item, sender);
         await hub.Clients.Group($"user:{peer.Id}").SendAsync("contact.requested", view, ct);
         if (sender is not null) _ = push.SendFriendRequestAsync(peer.Id, sender, item, CancellationToken.None);

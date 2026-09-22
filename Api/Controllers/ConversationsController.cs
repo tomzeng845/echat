@@ -75,6 +75,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult<ConversationView>> CreateGroup(GroupCreateRequest request, CancellationToken ct)
     {
         var userId = User.UserId();
+        var creator = await repository.GetUserByIdAsync(userId, ct);
+        if (creator is null || !creator.CanCreateGroup) return StatusCode(403, new { error = "当前账号不允许创建群聊" });
         if (string.IsNullOrWhiteSpace(request.Name) || request.MemberAccounts.Count is < 2 or > 499) return BadRequest(new { error = "群名称或成员数量无效" });
         var members = new List<ConversationMember> { new() { UserId = userId, Role = MemberRole.Owner } };
         foreach (var account in request.MemberAccounts.Distinct(StringComparer.OrdinalIgnoreCase))

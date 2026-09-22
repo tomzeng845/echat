@@ -139,6 +139,8 @@ type AdminUser = {
   displayName: string;
   role: string;
   status: UserStatus;
+  canAddFriend: boolean;
+  canCreateGroup: boolean;
   createdAtUtc: string;
   lastSeenAtUtc: string;
   activeSessions: number;
@@ -2154,7 +2156,16 @@ function UserCreateDialog({
   const [displayName, setDisplayName] = useState("");
   const [mobilePhone, setMobilePhone] = useState("");
   const [inviteSource, setInviteSource] = useState("后台开户");
-  const [batch, setBatch] = useState("# 每行：账号,密码,昵称,手机号\n");
+  const [accountType, setAccountType] = useState<"username" | "phone">("username");
+  const [prefix, setPrefix] = useState("user");
+  const [startIndex, setStartIndex] = useState("1");
+  const [count, setCount] = useState("1");
+  const [batchPassword, setBatchPassword] = useState("user123");
+  const [displayNamePrefix, setDisplayNamePrefix] = useState("");
+  const [mobilePrefix, setMobilePrefix] = useState("");
+  const [status, setStatus] = useState<UserStatus>("Active");
+  const [canAddFriend, setCanAddFriend] = useState(true);
+  const [canCreateGroup, setCanCreateGroup] = useState(true);
   const [busy, setBusy] = useState(false);
   async function submit() {
     setBusy(true);
@@ -2168,26 +2179,29 @@ function UserCreateDialog({
             displayName,
             mobilePhone,
             inviteSource,
+            status,
+            canAddFriend,
+            canCreateGroup,
           }),
         });
       else {
-        const users = batch
-          .split(/\r?\n/)
-          .filter(line => line.trim() && !line.trim().startsWith("#"))
-          .map(line => {
-            const [valueAccount, valuePassword, valueName, valueMobile = ""] =
-              line.split(",").map(value => value.trim());
-            return {
-              account: valueAccount,
-              password: valuePassword,
-              displayName: valueName,
-              mobilePhone: valueMobile,
-              inviteSource: "批量后台开户",
-            };
-          });
         const result = await api<{ created: string[]; skipped: string[] }>(
           "/api/admin/users/batch",
-          { method: "POST", body: JSON.stringify({ users }) }
+          {
+            method: "POST",
+            body: JSON.stringify({
+              accountType,
+              prefix,
+              startIndex: Number(startIndex),
+              count: Number(count),
+              password: batchPassword,
+              displayNamePrefix,
+              mobilePrefix,
+              status,
+              canAddFriend,
+              canCreateGroup,
+            }),
+          }
         );
         toast.info(
           `成功 ${result.created.length} 个，跳过 ${result.skipped.length} 个`
@@ -2234,7 +2248,7 @@ function UserCreateDialog({
               value={password}
               onChange={e => setPassword(e.target.value)}
               type="password"
-              placeholder="初始密码（至少 8 位）"
+              placeholder="初始密码（至少 6 位字母或数字）"
               className="admin-input"
             />
             <input
@@ -2249,21 +2263,52 @@ function UserCreateDialog({
               placeholder="开户/邀请码来源"
               className="admin-input sm:col-span-2"
             />
+            <select value={status} onChange={e => setStatus(e.target.value as UserStatus)} className="admin-input">
+              <option value="Active">状态：正常</option>
+              <option value="Disabled">状态：禁用</option>
+            </select>
+            <select value={canAddFriend ? "yes" : "no"} onChange={e => setCanAddFriend(e.target.value === "yes")} className="admin-input">
+              <option value="yes">能否加好友：是</option>
+              <option value="no">能否加好友：否</option>
+            </select>
+            <select value={canCreateGroup ? "yes" : "no"} onChange={e => setCanCreateGroup(e.target.value === "yes")} className="admin-input">
+              <option value="yes">能否建群：是</option>
+              <option value="no">能否建群：否</option>
+            </select>
           </div>
         ) : (
-          <textarea
-            value={batch}
-            onChange={e => setBatch(e.target.value)}
-            rows={12}
-            className="admin-input mt-5 font-mono text-sm"
-          />
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <select value={accountType} onChange={e => setAccountType(e.target.value as "username" | "phone")} className="admin-input">
+              <option value="username">按用户名批量新增</option>
+              <option value="phone">按手机号批量新增</option>
+            </select>
+            <input value={prefix} onChange={e => setPrefix(e.target.value)} className="admin-input" placeholder={accountType === "phone" ? "手机号前缀，如 138" : "用户名，需以字母开头，如 user"} />
+            <input value={startIndex} onChange={e => setStartIndex(e.target.value)} type="number" min="0" className="admin-input" placeholder="开始序号，如 1" />
+            <input value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max="300" className="admin-input" placeholder="添加数量，最高 300" />
+            <input value={batchPassword} onChange={e => setBatchPassword(e.target.value)} type="password" className="admin-input" placeholder="统一初始密码（至少 6 位字母或数字）" />
+            <input value={displayNamePrefix} onChange={e => setDisplayNamePrefix(e.target.value)} className="admin-input" placeholder="昵称前缀（可选）" />
+            <input value={mobilePrefix} onChange={e => setMobilePrefix(e.target.value)} className="admin-input" placeholder="手机号前缀（用户名批量时可选）" />
+            <select value={status} onChange={e => setStatus(e.target.value as UserStatus)} className="admin-input">
+              <option value="Active">状态：正常</option>
+              <option value="Disabled">状态：禁用</option>
+            </select>
+            <select value={canAddFriend ? "yes" : "no"} onChange={e => setCanAddFriend(e.target.value === "yes")} className="admin-input">
+              <option value="yes">能否加好友：是</option>
+              <option value="no">能否加好友：否</option>
+            </select>
+            <select value={canCreateGroup ? "yes" : "no"} onChange={e => setCanCreateGroup(e.target.value === "yes")} className="admin-input">
+              <option value="yes">能否建群：是</option>
+              <option value="no">能否建群：否</option>
+            </select>
+            <p className="sm:col-span-2 text-xs text-slate-500">将按序生成 {accountType === "phone" ? "手机号" : "用户名"}，例如 {prefix || (accountType === "phone" ? "138" : "user")}001、{prefix || (accountType === "phone" ? "138" : "user")}002。账号和密码均要求至少 6 位。</p>
+          </div>
         )}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="admin-secondary">
             取消
           </button>
           <button
-            disabled={busy || (mode === "single" && (!account || !password))}
+            disabled={busy || (mode === "single" && (!account || !password)) || (mode === "batch" && (!prefix || !batchPassword || Number(count) < 1 || Number(count) > 300))}
             onClick={submit}
             className="admin-primary !w-auto"
           >

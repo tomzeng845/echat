@@ -72,16 +72,33 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
                 context.Token = context.Request.Query["access_token"];
             return Task.CompletedTask;
         },
-        OnTokenValidated = async context =>
-        {
-            if (context.Principal?.FindFirst("scope")?.Value is not ("app" or "call_listener")) return;
-            var sessionId = context.Principal.SessionId();
-            if (string.IsNullOrWhiteSpace(sessionId)) return;
-            var repository = context.HttpContext.RequestServices.GetRequiredService<IChatRepository>();
-            var active = await repository.GetSessionsAsync(context.Principal.UserId(), context.HttpContext.RequestAborted);
-            var user = await repository.GetUserByIdAsync(context.Principal.UserId(), context.HttpContext.RequestAborted);
-            if (!active.Any(x => x.Id == sessionId) || user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled) context.Fail("SESSION_REVOKED");
-        }
+	        OnTokenValidated = async context =>
+	        {
+	            if (context.Principal?.FindFirst("scope")?.Value is not ("app" or "call_listener")) return;
+	            var sessionId = context.Principal.SessionId();
+	            if (string.IsNullOrWhiteSpace(sessionId)) return;
+	            var repository = context.HttpContext.RequestServices.GetRequiredService<IChatRepository>();
+	            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EChat.JwtSessionValidation");
+	            using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(context.HttpContext.RequestAborted);
+	            validationCts.CancelAfter(TimeSpan.FromSeconds(8));
+	            try
+	            {
+	                var active = await repository.GetSessionsAsync(context.Principal.UserId(), validationCts.Token);
+	                var user = await repository.GetUserByIdAsync(context.Principal.UserId(), validationCts.Token);
+	                if (!active.Any(x => x.Id == sessionId) || user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled) context.Fail("SESSION_REVOKED");
+            }
+            catch (OperationCanceledException) when (context.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // The client disconnected while authentication was still checking the session.
+                // Do not turn a normal aborted request into a JwtBearer authentication error.
+                logger.LogDebug("JWT session validation canceled because the request was aborted: userId={UserId}, path={Path}", context.Principal.UserId(), context.HttpContext.Request.Path);
+            }
+            catch (OperationCanceledException)
+            {
+                logger.LogWarning("JWT session validation timed out: userId={UserId}, path={Path}", context.Principal.UserId(), context.HttpContext.Request.Path);
+                context.Fail("AUTH_BACKEND_TIMEOUT");
+            }
+	        }
     };
 });
 builder.Services.AddAuthorization(options =>

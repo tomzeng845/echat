@@ -38,6 +38,8 @@ public sealed class UserAccount
     public Dictionary<string, string> DevicePublicKeys { get; set; } = [];
     public UserRole Role { get; set; } = UserRole.User;
     public UserStatus Status { get; set; } = UserStatus.Active;
+    public bool CanAddFriend { get; set; } = true;
+    public bool CanCreateGroup { get; set; } = true;
     public int RiskLevel1 { get; set; }
     public int RiskLevel2 { get; set; }
     public decimal AccountBalance { get; set; }
@@ -368,6 +370,8 @@ public sealed class AdminUserView
     public string MobilePhone { get; set; } = "";
     public UserRole Role { get; set; }
     public UserStatus Status { get; set; }
+    public bool CanAddFriend { get; set; }
+    public bool CanCreateGroup { get; set; }
     public int RiskLevel1 { get; set; }
     public int RiskLevel2 { get; set; }
     public decimal AccountBalance { get; set; }
@@ -424,8 +428,8 @@ public sealed class AdminUserQuery
     public int? FailedLoginMax { get; set; }
 }
 public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
-public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User);
-public sealed record AdminUserBatchCreateRequest(IReadOnlyList<AdminUserCreateRequest> Users);
+public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User, UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true);
+public sealed record AdminUserBatchCreateRequest(IReadOnlyList<AdminUserCreateRequest>? Users = null, string AccountType = "username", string Prefix = "user", int StartIndex = 1, int Count = 0, int SequenceDigits = 3, string Password = "", string DisplayNamePrefix = "", string MobilePrefix = "", UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true);
 public sealed record AdminUserProfileRequest(string? DisplayName = null, string? MobilePhone = null, string? InviteSource = null, string? LoginIpRestriction = null);
 public sealed record AdminUserSecurityRequest(bool? AccountLocked = null, bool? LoginLocked = null, bool? BankCardLocked = null, bool? CancellationEnabled = null, bool? RedFlagged = null, bool? RealNameVerified = null, bool? EnterpriseVerified = null, int? RiskLevel1 = null, int? RiskLevel2 = null, string Reason = "");
 public sealed record AdminUserPasswordRequest(string Password);

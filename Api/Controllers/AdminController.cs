@@ -77,10 +77,12 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     [HttpPost("users/batch")]
     public async Task<ActionResult> BatchCreateUsers(AdminUserBatchCreateRequest request, CancellationToken ct)
     {
-        if (request.Users is null || request.Users.Count is < 1 or > 200) return BadRequest(new { error = "单次批量新增需为 1–200 个账号" });
+        IReadOnlyList<AdminUserCreateRequest> users;
+        try { users = ExpandBatchRequest(request); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
         var created = new List<string>();
         var skipped = new List<string>();
-        foreach (var item in request.Users)
+        foreach (var item in users)
         {
             try
             {
@@ -354,7 +356,11 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (query.FailedLoginMin.HasValue) filtered = filtered.Where(x => x.FailedLoginAttempts >= query.FailedLoginMin.Value);
         if (query.FailedLoginMax.HasValue) filtered = filtered.Where(x => x.FailedLoginAttempts <= query.FailedLoginMax.Value);
 
-        var ordered = filtered.OrderByDescending(x => x.CreatedAtUtc).ToList();
+        var ordered = filtered
+            .OrderBy(x => SequenceSortKey(x.Account))
+            .ThenBy(x => x.Account, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToList();
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize, 10, 10000);
         var items = ordered.Skip((page - 1) * pageSize).Take(pageSize)
@@ -366,8 +372,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     {
         if (string.IsNullOrWhiteSpace(request.Account)) throw new ArgumentException("账号不能为空");
         var account = NormalizeAccount(request.Account);
-        if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) throw new ArgumentException("账号需以字母开头，并由 4–20 位字母、数字或下划线组成");
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length is < 8 or > 72) throw new ArgumentException("密码长度需为 8–72 位");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z0-9]{6,20}$")) throw new ArgumentException("账号需为 6–20 位字母或数字");
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length is < 6 or > 72 || !System.Text.RegularExpressions.Regex.IsMatch(request.Password, "^[a-zA-Z0-9]+$")) throw new ArgumentException("密码需为 6–72 位字母或数字");
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return null;
         var user = new UserAccount
         {
@@ -375,6 +381,9 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
             DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : Trim(request.DisplayName, 60),
             MobilePhone = Trim(request.MobilePhone, 30),
             Role = UserRole.User,
+            Status = request.Status,
+            CanAddFriend = request.CanAddFriend,
+            CanCreateGroup = request.CanCreateGroup,
             RegistrationSource = "后台开户",
             InviteSource = Trim(request.InviteSource, 60),
             AgreementVersion = "admin-created",
@@ -385,10 +394,48 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return user;
     }
 
+    private static IReadOnlyList<AdminUserCreateRequest> ExpandBatchRequest(AdminUserBatchCreateRequest request)
+    {
+        if (request.Users is { Count: > 0 })
+        {
+            if (request.Users.Count > 300) throw new ArgumentException("单次批量新增最多 300 个账号");
+            return request.Users;
+        }
+        if (request.Count is < 1 or > 300) throw new ArgumentException("添加数量必须为 1–300");
+        if (request.StartIndex < 0) throw new ArgumentException("开始序号不能小于 0");
+        if (request.SequenceDigits is < 1 or > 12) throw new ArgumentException("序号位数必须为 1–12");
+        var type = request.AccountType.Trim().ToLowerInvariant();
+        if (type is not ("username" or "phone")) throw new ArgumentException("账号类型只能是用户名或手机号");
+        var prefix = request.Prefix.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(prefix)) throw new ArgumentException("账号前缀不能为空");
+        var prefixPattern = type == "phone" ? "^[0-9]+$" : "^[a-z][a-z0-9]*$";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(prefix, prefixPattern)) throw new ArgumentException(type == "phone" ? "手机号前缀只能包含数字" : "用户名前缀需以字母开头且只能包含字母或数字");
+        var password = request.Password.Trim();
+        if (password.Length is < 6 or > 72 || !System.Text.RegularExpressions.Regex.IsMatch(password, "^[a-zA-Z0-9]+$")) throw new ArgumentException("密码需为 6–72 位字母或数字");
+        var items = new List<AdminUserCreateRequest>(request.Count);
+        for (var offset = 0; offset < request.Count; offset++)
+        {
+            var index = checked(request.StartIndex + offset);
+            var account = prefix + index.ToString($"D{request.SequenceDigits}");
+            if (account.Length is < 6 or > 20) throw new ArgumentException($"生成的账号 {account} 长度必须为 6–20 位");
+            items.Add(new AdminUserCreateRequest(account, password, string.IsNullOrWhiteSpace(request.DisplayNamePrefix) ? account : $"{request.DisplayNamePrefix.Trim()}{index}", type == "phone" ? account : $"{request.MobilePrefix.Trim()}{index}", "批量后台开户", UserRole.User, request.Status, request.CanAddFriend, request.CanCreateGroup));
+        }
+        return items;
+    }
+
+    private static (int HasNumber, string Prefix, long Number) SequenceSortKey(string account)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(account, "^(.*?)(\\d+)$");
+        return match.Success && long.TryParse(match.Groups[2].Value, out var number)
+            ? (0, match.Groups[1].Value, number)
+            : (1, account, long.MaxValue);
+    }
+
     private static AdminUserView ToView(UserAccount user, IReadOnlyList<RefreshSession> sessions) => new()
     {
         Id = user.Id, Account = user.Account, DisplayName = user.DisplayName, MobilePhone = user.MobilePhone,
         Role = user.Role, Status = user.Status, RiskLevel1 = user.RiskLevel1, RiskLevel2 = user.RiskLevel2,
+        CanAddFriend = user.CanAddFriend, CanCreateGroup = user.CanCreateGroup,
         AccountBalance = user.AccountBalance, FrozenBalance = user.FrozenBalance, ActiveSessions = sessions.Count,
         Online = sessions.Count > 0, AccountLocked = user.AccountLocked, LoginLocked = user.LoginLocked,
         BankCardLocked = user.BankCardLocked, CancellationEnabled = user.CancellationEnabled,
