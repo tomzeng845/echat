@@ -12,6 +12,7 @@ builder.Host.UseWindowsService();
 const long MaxUploadSize = 1024L * 1024L * 1024L;
 const long MaxErrorLogFileSize = 200L * 1024L * 1024L;
 builder.Logging.AddProvider(new ErrorFileLoggerProvider(Path.Combine(AppContext.BaseDirectory, "Logs"), MaxErrorLogFileSize));
+builder.Services.AddSingleton(new AdminApiTraceLogger(Path.Combine(AppContext.BaseDirectory, "Logs"), MaxErrorLogFileSize));
 var port = int.TryParse(Environment.GetEnvironmentVariable("ECHAT_PORT") ?? Environment.GetEnvironmentVariable("PORT"), out var platformPort) ? platformPort : 2099;
 var httpsCertificatePath = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PATH");
 var httpsCertificatePassword = Environment.GetEnvironmentVariable("ECHAT_HTTPS_CERT_PASSWORD");
@@ -187,6 +188,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: https:; media-src 'self' blob:; frame-ancestors 'none';";
     await next();
 });
+app.UseAdminApiTrace();
 app.UseCors();
 app.UseAuthentication();
 app.UseRateLimiter();
