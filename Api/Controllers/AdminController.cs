@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using System.Text;
 
 namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -61,6 +62,78 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         var sessions = await repository.GetSessionsAsync(user.Id, ct);
         return Ok(ToView(user, sessions));
+    }
+
+    [HttpGet("users/{account}/detail")]
+    public async Task<ActionResult> UserDetail(string account, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        var relations = await repository.GetRelationsAsync(user.Id, ct);
+        var users = new Dictionary<string, UserAccount>();
+        foreach (var relation in relations)
+        {
+            var peer = await repository.GetUserByIdAsync(relation.PeerUserId, ct);
+            if (peer is not null) users[peer.Id] = peer;
+        }
+        var conversations = await repository.GetConversationsAsync(user.Id, ct);
+        return Ok(new
+        {
+            user = ToView(user, await repository.GetSessionsAsync(user.Id, ct)),
+            friends = relations.Where(x => x.Status == RelationStatus.Friend).Select(x => new { x.PeerUserId, x.Remark, user = users.GetValueOrDefault(x.PeerUserId) is { } peer ? new { peer.Id, peer.Account, peer.DisplayName, peer.AvatarUrl, peer.MobilePhone } : null }),
+            blacklist = relations.Where(x => x.Status == RelationStatus.Blocked).Select(x => new { x.PeerUserId, x.Remark, user = users.GetValueOrDefault(x.PeerUserId) is { } peer ? new { peer.Id, peer.Account, peer.DisplayName, peer.AvatarUrl } : null }),
+            groups = conversations.Where(x => x.Type == ConversationType.Group).Select(x => new { x.Id, x.Name, x.AvatarUrl, memberCount = x.Members.Count(m => m.LeftAtSequence is null), x.CreatedAtUtc, x.IsDissolved })
+        });
+    }
+
+    [HttpPut("users/{account}/permissions")]
+    public async Task<ActionResult<AdminUserView>> UpdateUserPermissions(string account, AdminUserPermissionsRequest request, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        if (request.CanAddFriend.HasValue) user.CanAddFriend = request.CanAddFriend.Value;
+        if (request.CanCreateGroup.HasValue) user.CanCreateGroup = request.CanCreateGroup.Value;
+        if (request.LoginIpAllowList is not null) user.LoginIpAllowList = Trim(request.LoginIpAllowList, 2000);
+        await repository.UpdateUserAsync(user, ct);
+        await AuditAsync("user.permissions", "user", user.Id, TrimDetail(request.Reason), ct);
+        return Ok(ToView(user, await repository.GetSessionsAsync(user.Id, ct)));
+    }
+
+    [HttpPost("users/{account}/messages")]
+    public async Task<ActionResult> SendUserMessage(string account, AdminUserMessageRequest request, CancellationToken ct)
+    {
+        var admin = await repository.GetUserByIdAsync(User.UserId(), ct);
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (admin is null || user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        var content = request.Content?.Trim() ?? "";
+        if (content.Length is < 1 or > 50000) return BadRequest(new { error = "消息内容不能为空且不能超过 50000 个字符" });
+        var conversation = await repository.FindDirectConversationAsync(admin.Id, user.Id, ct)
+            ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = admin.Id, Members = [new() { UserId = admin.Id }, new() { UserId = user.Id }] }, ct);
+        var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage
+        {
+            ClientMessageId = $"admin:{Guid.NewGuid():N}", ConversationId = conversation.Id, SenderId = admin.Id,
+            Kind = MessageKind.Text, Algorithm = "PLAINTEXT", KeyVersion = 0, Content = content
+        }, ct);
+        var view = new MessageView(message.Id, message.ClientMessageId, message.ConversationId, message.Sequence, message.SenderId, message.Kind, message.Ciphertext, message.Nonce, message.Algorithm, message.KeyVersion, message.ReplyToMessageId, message.Metadata, message.State, message.SentAtUtc, message.RecalledAtUtc, message.Content);
+        await hub.Clients.Group($"user:{admin.Id}").SendAsync("message.created", view, ct);
+        await hub.Clients.Group($"user:{user.Id}").SendAsync("message.created", view, ct);
+        _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
+        await AuditAsync("user.message", "user", user.Id, "管理员向用户发送消息", ct);
+        return Ok(view);
+    }
+
+    [HttpPost("users/{account}/force-friend")]
+    public async Task<ActionResult> ForceFriend(string account, AdminForceFriendRequest request, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        var peer = await repository.GetUserByAccountAsync(NormalizeAccount(request.PeerAccount), ct);
+        if (user is null || peer is null || user.Role != UserRole.User || peer.Id == user.Id) return BadRequest(new { error = "目标好友账号无效" });
+        await repository.UpsertRelationAsync(new ContactRelation { Id = $"{user.Id}:{peer.Id}", UserId = user.Id, PeerUserId = peer.Id, Status = RelationStatus.Friend }, ct);
+        await repository.UpsertRelationAsync(new ContactRelation { Id = $"{peer.Id}:{user.Id}", UserId = peer.Id, PeerUserId = user.Id, Status = RelationStatus.Friend }, ct);
+        await hub.Clients.Group($"user:{user.Id}").SendAsync("contact.updated", new { status = RelationStatus.Friend, peerId = peer.Id }, ct);
+        await hub.Clients.Group($"user:{peer.Id}").SendAsync("contact.updated", new { status = RelationStatus.Friend, peerId = user.Id }, ct);
+        await AuditAsync("user.force-friend", "user", user.Id, $"peer={peer.Account}", ct);
+        return Ok(new { user = user.Account, friend = peer.Account });
     }
 
     [HttpPost("users")]
@@ -122,6 +195,9 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (request.MobilePhone is not null) user.MobilePhone = Trim(request.MobilePhone, 30);
         if (request.InviteSource is not null) user.InviteSource = Trim(request.InviteSource, 60);
         if (request.LoginIpRestriction is not null) user.LoginIpRestriction = Trim(request.LoginIpRestriction, 500);
+        if (request.LoginIpAllowList is not null) user.LoginIpAllowList = Trim(request.LoginIpAllowList, 2000);
+        if (request.Gender is not null) user.Gender = Trim(request.Gender, 20);
+        if (request.CommunicationId is not null) user.CommunicationId = Trim(request.CommunicationId, 60);
         await repository.UpdateUserAsync(user, ct);
         await AuditAsync("user.profile", "user", user.Id, "修改昵称、手机号、邀请码来源或登录 IP", ct);
         return Ok(ToView(user, await repository.GetSessionsAsync(user.Id, ct)));
@@ -150,6 +226,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (user.AccountLocked || user.LoginLocked || user.CancellationEnabled)
         {
             await repository.RevokeSessionsAsync(user.Id, null, "admin-security", ct);
+            user.LastOfflineAtUtc = DateTime.UtcNow;
+            await repository.UpdateUserAsync(user, ct);
             await AddOfflineLogAsync(user, "用户安全状态变更", ct);
         }
         await AuditAsync("user.security", "user", user.Id, TrimDetail(request.Reason), ct);
@@ -159,7 +237,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     [HttpPut("users/{account}/password")]
     public async Task<ActionResult> ResetUserPassword(string account, AdminUserPasswordRequest request, CancellationToken ct)
     {
-        if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" });
+        if (request.Password.Length is < 6 or > 72 || !System.Text.RegularExpressions.Regex.IsMatch(request.Password, "^[a-zA-Z0-9]+$")) return BadRequest(new { error = "密码需为 6–72 位字母或数字" });
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
         if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
@@ -240,6 +318,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (request.Status != UserStatus.Active)
         {
             await repository.RevokeSessionsAsync(user.Id, null, $"admin:{request.Status}", ct);
+            user.LastOfflineAtUtc = DateTime.UtcNow;
+            await repository.UpdateUserAsync(user, ct);
             await AddOfflineLogAsync(user, $"状态变更为 {request.Status}", ct);
         }
         await AuditAsync("user.status", "user", user.Id, $"{previous} -> {request.Status}; {TrimDetail(request.Reason)}", ct);
@@ -256,6 +336,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId()) return BadRequest(new { error = "请勿从此入口撤销当前管理会话" });
         await repository.RevokeSessionsAsync(user.Id, null, "admin-revoked", ct);
+        user.LastOfflineAtUtc = DateTime.UtcNow;
+        await repository.UpdateUserAsync(user, ct);
         await AddOfflineLogAsync(user, "管理员强制退出全部设备", ct);
         await AuditAsync("user.sessions.revoke", "user", user.Id, "撤销全部活跃设备会话", ct);
         return NoContent();
@@ -434,6 +516,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     private static AdminUserView ToView(UserAccount user, IReadOnlyList<RefreshSession> sessions) => new()
     {
         Id = user.Id, Account = user.Account, DisplayName = user.DisplayName, MobilePhone = user.MobilePhone,
+        AvatarUrl = user.AvatarUrl, Gender = user.Gender, CommunicationId = user.CommunicationId,
         Role = user.Role, Status = user.Status, RiskLevel1 = user.RiskLevel1, RiskLevel2 = user.RiskLevel2,
         CanAddFriend = user.CanAddFriend, CanCreateGroup = user.CanCreateGroup,
         AccountBalance = user.AccountBalance, FrozenBalance = user.FrozenBalance, ActiveSessions = sessions.Count,
@@ -441,6 +524,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         BankCardLocked = user.BankCardLocked, CancellationEnabled = user.CancellationEnabled,
         RealNameVerified = user.RealNameVerified, EnterpriseVerified = user.EnterpriseVerified, RedFlagged = user.RedFlagged,
         RegistrationSource = user.RegistrationSource, InviteSource = user.InviteSource, LoginIpRestriction = user.LoginIpRestriction,
+        LoginIpAllowList = user.LoginIpAllowList, LastOfflineAtUtc = user.LastOfflineAtUtc,
         CreatedAtUtc = user.CreatedAtUtc, LastSeenAtUtc = user.LastSeenAtUtc, LastLoginAtUtc = user.LastLoginAtUtc,
         LoginPasswordChangedAtUtc = user.LoginPasswordChangedAtUtc, LockoutUntilUtc = user.LockoutUntilUtc,
         FailedLoginAttempts = user.FailedLoginAttempts, LastLoginAddress = user.LastLoginAddress,

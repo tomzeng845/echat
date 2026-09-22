@@ -137,6 +137,9 @@ type AdminUser = {
   id: string;
   account: string;
   displayName: string;
+  avatarUrl: string;
+  gender: string;
+  communicationId: string;
   role: string;
   status: UserStatus;
   canAddFriend: boolean;
@@ -168,6 +171,8 @@ type AdminUser = {
   lastLoginIp: string;
   lastOnlineIp: string;
   lastNodeIp: string;
+  lastOfflineAtUtc?: string;
+  loginIpAllowList: string;
 };
 type AdminUserPage = {
   items: AdminUser[];
@@ -175,6 +180,12 @@ type AdminUserPage = {
   page: number;
   pageSize: number;
   totalPages: number;
+};
+type AdminUserDetail = {
+  user: AdminUser;
+  friends: Array<{ peerUserId: string; remark: string; user: { id: string; account: string; displayName: string; avatarUrl: string; mobilePhone: string } | null }>;
+  blacklist: Array<{ peerUserId: string; remark: string; user: { id: string; account: string; displayName: string; avatarUrl: string } | null }>;
+  groups: Array<{ id: string; name: string; avatarUrl: string; memberCount: number; createdAtUtc: string; isDissolved: boolean }>;
 };
 type ModuleRecord = {
   id: string;
@@ -1066,6 +1077,7 @@ function UsersPanel({
     user: AdminUser;
     kind: UserOperationKind;
   }>();
+  const [detailUser, setDetailUser] = useState<AdminUser>();
   const [createMode, setCreateMode] = useState<"single" | "batch">();
   const [verification, setVerification] = useState<{
     user: AdminUser;
@@ -1429,7 +1441,7 @@ function UsersPanel({
                   <th colSpan={10} className="border-l border-slate-300 p-2">
                     状态信息
                   </th>
-                  <th colSpan={12} className="border-l border-slate-300 p-2">
+                  <th colSpan={17} className="border-l border-slate-300 p-2">
                     其他信息
                   </th>
                 </tr>
@@ -1465,6 +1477,11 @@ function UsersPanel({
                     "设备数",
                     "登录IP限制",
                     "账户状态",
+                    "头像",
+                    "性别",
+                    "通讯号",
+                    "最后登录IP",
+                    "最后离线时间",
                   ].map(label => (
                     <th
                       key={label}
@@ -1501,6 +1518,15 @@ function UsersPanel({
                             role="menu"
                             data-user-menu-root
                           >
+                            <button
+                              onClick={() => {
+                                setDetailUser(user);
+                                setMenuId(undefined);
+                              }}
+                            >
+                              <CircleUserRound size={14} />
+                              用户详情
+                            </button>
                             <button
                               onClick={() => openOperation(user, "sameIp")}
                             >
@@ -1717,6 +1743,13 @@ function UsersPanel({
                     <td className="px-2">
                       <Status value={user.status} />
                     </td>
+                    <td className="px-2">
+                      {user.avatarUrl ? <img src={user.avatarUrl} alt="头像" className="h-8 w-8 rounded-full object-cover" /> : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-2">{user.gender || "—"}</td>
+                    <td className="px-2">{user.communicationId || "—"}</td>
+                    <td className="px-2">{user.lastLoginIp || "—"}</td>
+                    <td className="px-2 whitespace-nowrap">{formatTime(user.lastOfflineAtUtc)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1802,6 +1835,16 @@ function UsersPanel({
           onClose={() => setOperation(undefined)}
           onSaved={() => {
             setOperation(undefined);
+            reload();
+          }}
+        />
+      )}
+      {detailUser && (
+        <UserDetailDialog
+          user={detailUser}
+          onClose={() => setDetailUser(undefined)}
+          onSaved={() => {
+            setDetailUser(undefined);
             reload();
           }}
         />
@@ -2137,6 +2180,77 @@ function UserOperationDialog({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function UserDetailDialog({
+  user,
+  onClose,
+  onSaved,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const fallback: AdminUserDetail = { user, friends: [], blacklist: [], groups: [] };
+  const { data, loading, reload } = useData<AdminUserDetail>(
+    `/api/admin/users/${encodeURIComponent(user.account)}/detail`,
+    0,
+    fallback
+  );
+  const [message, setMessage] = useState("");
+  const [friendAccount, setFriendAccount] = useState("");
+  const [password, setPassword] = useState("");
+  const [allowList, setAllowList] = useState(user.loginIpAllowList || "");
+  const [canAddFriend, setCanAddFriend] = useState(user.canAddFriend);
+  const [canCreateGroup, setCanCreateGroup] = useState(user.canCreateGroup);
+  const [busy, setBusy] = useState(false);
+  const current = data.user;
+  async function run(action: () => Promise<unknown>, success: string) {
+    setBusy(true);
+    try {
+      await action();
+      toast.success(success);
+      await reload();
+      onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-[95] grid place-items-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            {current.avatarUrl ? <img src={current.avatarUrl} className="h-12 w-12 rounded-full object-cover" alt="头像" /> : <div className="grid h-12 w-12 place-items-center rounded-full bg-teal-100 text-lg font-semibold text-teal-700">{(current.displayName || current.account).slice(0, 1)}</div>}
+            <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-600">用户个人详细信息</p><h3 className="mt-1 text-xl font-semibold">{current.displayName || "未设置昵称"} <span className="text-sm font-normal text-slate-500">@{current.account}</span></h3><p className="text-xs text-slate-500">UID：{current.id}</p></div>
+          </div>
+          <button onClick={onClose} aria-label="关闭"><X /></button>
+        </div>
+        {loading ? <Loading /> : <div className="mt-5 space-y-5">
+          <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3">
+            {[["手机号", current.mobilePhone], ["昵称", current.displayName], ["性别", current.gender || "未填写"], ["通讯号", current.communicationId || "未填写"], ["最后登录IP", current.lastLoginIp], ["登录地址", current.lastLoginAddress], ["邀请码", current.inviteSource], ["用户状态", current.status], ["在线状态", current.online ? "在线" : "离线"], ["注册时间", formatTime(current.createdAtUtc)], ["最后离线时间", formatTime(current.lastOfflineAtUtc)], ["最后上线时间", formatTime(current.lastSeenAtUtc)]].map(([label, value]) => <div key={label}><span className="text-slate-500">{label}：</span><b className="break-all">{value || "—"}</b></div>)}
+          </div>
+          <div className="grid gap-5 lg:grid-cols-3">
+            <section className="rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">好友列表（{data.friends.length}）</h4><div className="mt-3 max-h-40 space-y-2 overflow-auto text-sm">{data.friends.length ? data.friends.map(item => <div key={item.peerUserId} className="flex items-center justify-between border-b border-slate-100 pb-2"><span>{item.user?.displayName || item.user?.account || item.peerUserId}</span><span className="text-xs text-slate-500">{item.user?.mobilePhone || ""}</span></div>) : <p className="text-slate-500">暂无好友</p>}</div></section>
+            <section className="rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">群列表（{data.groups.length}）</h4><div className="mt-3 max-h-40 space-y-2 overflow-auto text-sm">{data.groups.length ? data.groups.map(group => <div key={group.id} className="flex justify-between border-b border-slate-100 pb-2"><span>{group.name || "未命名群"}</span><span className="text-xs text-slate-500">{group.memberCount} 人</span></div>) : <p className="text-slate-500">暂无群聊</p>}</div></section>
+            <section className="rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">黑名单列表（{data.blacklist.length}）</h4><div className="mt-3 max-h-40 space-y-2 overflow-auto text-sm">{data.blacklist.length ? data.blacklist.map(item => <div key={item.peerUserId} className="border-b border-slate-100 pb-2">{item.user?.displayName || item.user?.account || item.peerUserId}</div>) : <p className="text-slate-500">暂无黑名单</p>}</div></section>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section className="space-y-3 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">权限和登录控制</h4><label className="flex items-center justify-between text-sm"><span>能否加好友</span><input type="checkbox" checked={canAddFriend} onChange={e => setCanAddFriend(e.target.checked)} /></label><label className="flex items-center justify-between text-sm"><span>能否建群</span><input type="checkbox" checked={canCreateGroup} onChange={e => setCanCreateGroup(e.target.checked)} /></label><label className="block text-sm"><span>个人白名单 IP（每行一个，留空不限）</span><textarea value={allowList} onChange={e => setAllowList(e.target.value)} rows={3} className="admin-input mt-1 w-full" /></label><button disabled={busy} onClick={() => void run(() => api(`/api/admin/users/${current.account}/permissions`, { method: "PUT", body: JSON.stringify({ canAddFriend, canCreateGroup, loginIpAllowList: allowList, reason: "管理员详情页修改" }) }), "权限和白名单已保存")} className="admin-primary !w-auto">保存权限</button></section>
+            <section className="space-y-3 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">后台发送消息</h4><textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} className="admin-input w-full" placeholder="输入要发送给该用户的消息" /><button disabled={busy || !message.trim()} onClick={() => void run(() => api(`/api/admin/users/${current.account}/messages`, { method: "POST", body: JSON.stringify({ content: message }) }), "消息已发送")} className="admin-primary !w-auto"><Send size={15} />发送消息</button></section>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-3">
+            <section className="space-y-2 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">好友操作</h4><input value={friendAccount} onChange={e => setFriendAccount(e.target.value)} className="admin-input w-full" placeholder="目标用户账号" /><button disabled={busy || !friendAccount.trim()} onClick={() => void run(() => api(`/api/admin/users/${current.account}/force-friend`, { method: "POST", body: JSON.stringify({ peerAccount: friendAccount }) }), "已强制添加好友")} className="admin-secondary">强制加好友</button></section>
+            <section className="space-y-2 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">账号治理</h4><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={() => void run(() => api(`/api/admin/users/${current.account}/sessions/revoke`, { method: "POST" }), "已踢下线")} className="admin-secondary">踢下线</button><button disabled={busy} onClick={() => void run(() => api(`/api/admin/users/${current.account}/status`, { method: "POST", body: JSON.stringify({ status: "Disabled", reason: "管理员封禁" }) }), "账号已封禁")} className="admin-danger">封禁</button></div></section>
+            <section className="space-y-2 rounded-xl border border-slate-200 p-4"><h4 className="font-semibold">修改登录密码</h4><input value={password} onChange={e => setPassword(e.target.value)} type="password" className="admin-input w-full" placeholder="至少 6 位字母或数字" /><button disabled={busy || password.length < 6} onClick={() => void run(() => api(`/api/admin/users/${current.account}/password`, { method: "PUT", body: JSON.stringify({ password }) }), "登录密码已修改")} className="admin-secondary">修改密码</button></section>
+          </div>
+        </div>}
+        <div className="mt-5 flex justify-end"><button onClick={onClose} className="admin-secondary">关闭</button></div>
       </div>
     </div>
   );
