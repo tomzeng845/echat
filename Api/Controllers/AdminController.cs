@@ -55,6 +55,31 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     [HttpGet("users")]
     public async Task<ActionResult<AdminUserPage>> Users([FromQuery] AdminUserQuery query, CancellationToken ct) => Ok(await SearchUsersAsync(query, ct));
 
+    [HttpGet("locked-ip-users")]
+    public async Task<ActionResult<AdminLockedIpPage>> LockedIpUsers([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 10, 100);
+        var total = await repository.CountLockedIpUsersAsync(search, ct);
+        var users = await repository.GetLockedIpUsersAsync(search, (safePage - 1) * safePageSize, safePageSize, ct);
+        var sessions = (await repository.GetAllSessionsAsync(20000, ct)).Where(x => x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow).GroupBy(x => x.UserId).ToDictionary(x => x.Key, x => (IReadOnlyList<RefreshSession>)x.ToList());
+        var items = users.Select(user => ToView(user, sessions.GetValueOrDefault(user.Id) ?? [])).ToList();
+        return Ok(new AdminLockedIpPage(items, total, safePage, safePageSize, Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize))));
+    }
+
+    [HttpPost("locked-ip-users/{account}/unlock")]
+    public async Task<ActionResult> UnlockIpUser(string account, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null) return NotFound(new { error = "用户不存在" });
+        user.LoginLocked = false;
+        user.LoginIpRestriction = "";
+        user.LoginIpLockedAtUtc = null;
+        await repository.UpdateUserAsync(user, ct);
+        await AuditAsync("user.login-ip-unlock", "user", user.Id, "解除登录IP锁定", ct);
+        return Ok(new { user.Account, unlocked = true });
+    }
+
     [HttpGet("users/{account}")]
     public async Task<ActionResult> UserByAccount(string account, CancellationToken ct)
     {
@@ -194,7 +219,12 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (request.DisplayName is not null) user.DisplayName = Trim(request.DisplayName, 60);
         if (request.MobilePhone is not null) user.MobilePhone = Trim(request.MobilePhone, 30);
         if (request.InviteSource is not null) user.InviteSource = Trim(request.InviteSource, 60);
-        if (request.LoginIpRestriction is not null) user.LoginIpRestriction = Trim(request.LoginIpRestriction, 500);
+        if (request.LoginIpRestriction is not null)
+        {
+            user.LoginIpRestriction = Trim(request.LoginIpRestriction, 500);
+            user.LoginLocked = !string.IsNullOrWhiteSpace(user.LoginIpRestriction);
+            user.LoginIpLockedAtUtc = user.LoginLocked ? DateTime.UtcNow : null;
+        }
         if (request.LoginIpAllowList is not null) user.LoginIpAllowList = Trim(request.LoginIpAllowList, 2000);
         if (request.Gender is not null) user.Gender = Trim(request.Gender, 20);
         if (request.CommunicationId is not null) user.CommunicationId = Trim(request.CommunicationId, 60);
@@ -210,7 +240,11 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
         if (user.Id == User.UserId() && (request.AccountLocked == true || request.LoginLocked == true || request.CancellationEnabled == true)) return BadRequest(new { error = "不能锁定或注销当前管理账号" });
         if (request.AccountLocked.HasValue) user.AccountLocked = request.AccountLocked.Value;
-        if (request.LoginLocked.HasValue) user.LoginLocked = request.LoginLocked.Value;
+        if (request.LoginLocked.HasValue)
+        {
+            user.LoginLocked = request.LoginLocked.Value;
+            user.LoginIpLockedAtUtc = request.LoginLocked.Value ? DateTime.UtcNow : null;
+        }
         if (request.BankCardLocked.HasValue) user.BankCardLocked = request.BankCardLocked.Value;
         if (request.CancellationEnabled.HasValue)
         {
@@ -525,6 +559,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         RealNameVerified = user.RealNameVerified, EnterpriseVerified = user.EnterpriseVerified, RedFlagged = user.RedFlagged,
         RegistrationSource = user.RegistrationSource, InviteSource = user.InviteSource, LoginIpRestriction = user.LoginIpRestriction,
         LoginIpAllowList = user.LoginIpAllowList, LastOfflineAtUtc = user.LastOfflineAtUtc,
+        LoginIpLockedAtUtc = user.LoginIpLockedAtUtc,
         CreatedAtUtc = user.CreatedAtUtc, LastSeenAtUtc = user.LastSeenAtUtc, LastLoginAtUtc = user.LastLoginAtUtc,
         LoginPasswordChangedAtUtc = user.LoginPasswordChangedAtUtc, LockoutUntilUtc = user.LockoutUntilUtc,
         FailedLoginAttempts = user.FailedLoginAttempts, LastLoginAddress = user.LastLoginAddress,

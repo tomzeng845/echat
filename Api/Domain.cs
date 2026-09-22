@@ -64,6 +64,7 @@ public sealed class UserAccount
     public string LastNodeIp { get; set; } = "";
     public DateTime? LastOfflineAtUtc { get; set; }
     public string LoginIpAllowList { get; set; } = "";
+    public DateTime? LoginIpLockedAtUtc { get; set; }
     public string AgreementVersion { get; set; } = "2026-09";
     public DateTime AgreementAcceptedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -407,8 +408,10 @@ public sealed class AdminUserView
     public string LastNodeIp { get; set; } = "";
     public DateTime? LastOfflineAtUtc { get; set; }
     public string LoginIpAllowList { get; set; } = "";
+    public DateTime? LoginIpLockedAtUtc { get; set; }
 }
 public sealed record AdminUserPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
+public sealed record AdminLockedIpPage(IReadOnlyList<AdminUserView> Items, long Total, int Page, int PageSize, int TotalPages);
 public sealed class AdminUserQuery
 {
     public int Page { get; set; } = 1;

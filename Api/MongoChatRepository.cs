@@ -149,6 +149,32 @@ public sealed class MongoChatRepository : IChatRepository
         if (status.HasValue) filter &= Builders<UserAccount>.Filter.Eq(x => x.Status, status.Value);
         return await _users.Find(filter).SortByDescending(x => x.CreatedAtUtc).Limit(limit).ToListAsync(ct);
     }
+    public async Task<IReadOnlyList<UserAccount>> GetLockedIpUsersAsync(string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var filter = Builders<UserAccount>.Filter.Ne(x => x.Account, "") & (Builders<UserAccount>.Filter.Eq(x => x.LoginLocked, true) | Builders<UserAccount>.Filter.Ne(x => x.LoginIpRestriction, ""));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
+            filter &= Builders<UserAccount>.Filter.Regex(x => x.Account, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.DisplayName, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.MobilePhone, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.CommunicationId, pattern);
+        }
+        return await _users.Find(filter).SortByDescending(x => x.LoginIpLockedAtUtc).ThenByDescending(x => x.CreatedAtUtc).Skip(skip).Limit(limit).ToListAsync(ct);
+    }
+    public Task<long> CountLockedIpUsersAsync(string? search, CancellationToken ct = default)
+    {
+        var filter = Builders<UserAccount>.Filter.Ne(x => x.Account, "") & (Builders<UserAccount>.Filter.Eq(x => x.LoginLocked, true) | Builders<UserAccount>.Filter.Ne(x => x.LoginIpRestriction, ""));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(search.Trim()), "i");
+            filter &= Builders<UserAccount>.Filter.Regex(x => x.Account, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.DisplayName, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.MobilePhone, pattern)
+                | Builders<UserAccount>.Filter.Regex(x => x.CommunicationId, pattern);
+        }
+        return _users.CountDocumentsAsync(filter, cancellationToken: ct);
+    }
     public Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default) => _users.CountDocumentsAsync(status.HasValue ? Builders<UserAccount>.Filter.Eq(x => x.Status, status.Value) : FilterDefinition<UserAccount>.Empty, cancellationToken: ct);
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) => _sessions.InsertOneAsync(session, cancellationToken: ct);
     public async Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => await _sessions.Find(x => x.TokenHash == hash && x.RevokedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).FirstOrDefaultAsync(ct);

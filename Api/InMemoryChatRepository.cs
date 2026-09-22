@@ -78,6 +78,18 @@ public sealed class InMemoryChatRepository : IChatRepository
         if (status.HasValue) query = query.Where(x => x.Status == status.Value);
         return Task.FromResult<IReadOnlyList<UserAccount>>(query.OrderByDescending(x => x.CreatedAtUtc).Take(limit).ToList());
     }
+    public Task<IReadOnlyList<UserAccount>> GetLockedIpUsersAsync(string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var query = _users.Values.Where(x => x.LoginLocked || !string.IsNullOrWhiteSpace(x.LoginIpRestriction));
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Account.Contains(search, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase) || x.MobilePhone.Contains(search, StringComparison.OrdinalIgnoreCase) || x.CommunicationId.Contains(search, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult<IReadOnlyList<UserAccount>>(query.OrderByDescending(x => x.LoginIpLockedAtUtc).ThenByDescending(x => x.CreatedAtUtc).Skip(skip).Take(limit).ToList());
+    }
+    public Task<long> CountLockedIpUsersAsync(string? search, CancellationToken ct = default)
+    {
+        var query = _users.Values.Where(x => x.LoginLocked || !string.IsNullOrWhiteSpace(x.LoginIpRestriction));
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Account.Contains(search, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase) || x.MobilePhone.Contains(search, StringComparison.OrdinalIgnoreCase) || x.CommunicationId.Contains(search, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult((long)query.Count());
+    }
     public Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default) => Task.FromResult((long)_users.Values.Count(x => !status.HasValue || x.Status == status.Value));
     public Task AddSessionAsync(RefreshSession session, CancellationToken ct = default) { _sessions[session.Id] = session; return Task.CompletedTask; }
     public Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default) => Task.FromResult(_sessions.Values.FirstOrDefault(x => x.TokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow));

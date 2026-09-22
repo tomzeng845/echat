@@ -11,6 +11,8 @@ public interface IChatRepository
     Task AddUserAsync(UserAccount user, CancellationToken ct = default);
     Task UpdateUserAsync(UserAccount user, CancellationToken ct = default);
     Task<IReadOnlyList<UserAccount>> GetUsersAsync(string? search, UserStatus? status, int limit, CancellationToken ct = default);
+    Task<IReadOnlyList<UserAccount>> GetLockedIpUsersAsync(string? search, int skip, int limit, CancellationToken ct = default);
+    Task<long> CountLockedIpUsersAsync(string? search, CancellationToken ct = default);
     Task<long> CountUsersAsync(UserStatus? status = null, CancellationToken ct = default);
     Task AddSessionAsync(RefreshSession session, CancellationToken ct = default);
     Task<RefreshSession?> GetSessionByHashAsync(string hash, CancellationToken ct = default);
