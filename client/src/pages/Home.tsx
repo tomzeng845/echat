@@ -514,6 +514,7 @@ function Messenger({
   const [showGroup, setShowGroup] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
+  const [showContactAddPanel, setShowContactAddPanel] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [serviceGroupTemplates, setServiceGroupTemplates] = useState<
     Array<{ id: string; name: string; namePattern: string; memberAccounts?: string[] }>
@@ -1825,7 +1826,7 @@ function Messenger({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowQuickActions(false); setNav("contacts"); setTimeout(() => document.getElementById("add-account")?.focus(), 0); }}
+                      onClick={() => { setShowQuickActions(false); setNav("contacts"); setShowContactAddPanel(true); setTimeout(() => document.getElementById("add-account")?.focus(), 0); }}
                       className="relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition hover:bg-white/10"
                     >
                       <UserPlus size={19} className="text-teal-300" />
@@ -1935,7 +1936,25 @@ function Messenger({
 
             {nav === "contacts" && (
               <div className="space-y-5 px-1">
-                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContactAddPanel(value => !value);
+                    window.setTimeout(() => document.getElementById("add-account")?.focus(), 0);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl bg-white p-3.5 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:bg-amber-50/60 active:scale-[.99]"
+                >
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400 text-white shadow-sm">
+                    <UserPlus size={22} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-slate-800">新的朋友</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">查看好友申请或添加新的好友</span>
+                  </span>
+                  {pendingRequestCount > 0 && <span className="grid h-6 min-w-6 place-items-center rounded-full bg-rose-500 px-1.5 text-xs font-semibold text-white">{pendingRequestCount}</span>}
+                  <ChevronRight size={18} className="text-slate-300" />
+                </button>
+                {showContactAddPanel && <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                     <UserPlus size={17} className="text-teal-600" />
                     添加好友
@@ -1973,12 +1992,10 @@ function Messenger({
                       我的二维码
                     </button>
                   </div>
-                </div>
+                </div>}
                 {pendingRequestCount > 0 && (
                   <div>
-                    <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      新的朋友 · {pendingRequestCount}
-                    </p>
+                    <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">待处理的好友申请</p>
                     {requests
                       .filter(x => x.status === "Pending")
                       .map(item => (
@@ -2022,9 +2039,8 @@ function Messenger({
                     .filter(
                       x =>
                         x.status === "Friend" &&
-                        x.user.displayName
-                          .toLowerCase()
-                          .includes(search.toLowerCase())
+                        [x.user.displayName, x.user.account, x.remark || ""]
+                          .some(value => value.toLowerCase().includes(search.trim().toLowerCase()))
                     )
                     .map(contact => (
                       <button
