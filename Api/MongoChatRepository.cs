@@ -31,6 +31,8 @@ public sealed class MongoChatRepository : IChatRepository
         var directConnectionSetting = Environment.GetEnvironmentVariable("MONGODB_DIRECT_CONNECTION");
         if (bool.TryParse(directConnectionSetting, out var directConnection))
             mongoUrl.DirectConnection = directConnection;
+        else
+            mongoUrl.DirectConnection = true;
         logger.LogInformation("MongoDB connection configured. Host={Host}, Port={Port}, Database={Database}, DirectConnection={DirectConnection}, Source={Source}",
             mongoUrl.Server.Host,
             mongoUrl.Server.Port,
