@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace EChat.Api;
 
 [Authorize(Policy = "AppOrCallListener")]
-public sealed class ChatHub(IChatRepository repository, IConfiguration configuration, PushNotificationService push) : Hub
+public sealed class ChatHub(IChatRepository repository, IConfiguration configuration, PushNotificationService push, ILogger<ChatHub> logger) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -48,8 +48,15 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
     public async Task JoinConversation(string conversationId)
     {
         RequireInteractiveScope();
+        logger.LogInformation("JoinConversation requested. ConnectionId={ConnectionId}, UserId={UserId}, Scope={Scope}, ConversationId={ConversationId}",
+            Context.ConnectionId,
+            Context.User?.UserId(),
+            Context.User?.FindFirst("scope")?.Value,
+            conversationId);
         var conversation = await RequireConversationMemberAsync(conversationId);
         await Groups.AddToGroupAsync(Context.ConnectionId, $"conversation:{conversation.Id}");
+        logger.LogInformation("JoinConversation succeeded. ConnectionId={ConnectionId}, UserId={UserId}, ConversationId={ConversationId}",
+            Context.ConnectionId, Context.User?.UserId(), conversation.Id);
     }
 
     public async Task MarkRead(string conversationId, long sequence)
@@ -184,8 +191,22 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
 
     private async Task<Conversation> RequireConversationMemberAsync(string conversationId)
     {
-        var conversation = await repository.GetConversationAsync(conversationId) ?? throw new HubException("CONVERSATION_NOT_FOUND");
-        if (!conversation.Members.Any(x => x.UserId == Context.User!.UserId() && x.LeftAtSequence is null)) throw new HubException("FORBIDDEN");
+        var userId = Context.User!.UserId();
+        var conversation = await repository.GetConversationAsync(conversationId);
+        if (conversation is null)
+        {
+            logger.LogWarning("Conversation membership rejected: conversation not found. UserId={UserId}, ConversationId={ConversationId}", userId, conversationId);
+            throw new HubException("CONVERSATION_NOT_FOUND");
+        }
+
+        var member = conversation.Members.FirstOrDefault(x => x.UserId == userId);
+        if (member is null || member.LeftAtSequence is not null)
+        {
+            logger.LogWarning("Conversation membership rejected: user is not an active member. UserId={UserId}, ConversationId={ConversationId}, MemberCount={MemberCount}, MemberFound={MemberFound}, LeftAtSequence={LeftAtSequence}",
+                userId, conversationId, conversation.Members.Count, member is not null, member?.LeftAtSequence);
+            throw new HubException("FORBIDDEN");
+        }
+
         return conversation;
     }
 
