@@ -24,15 +24,19 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<AdminAuditLog> _adminAudits;
     private readonly IMongoCollection<AdminModuleRecord> _adminRecords;
 
-    public MongoChatRepository(IConfiguration configuration)
+    public MongoChatRepository(IConfiguration configuration, ILogger<MongoChatRepository> logger)
     {
         var connection = Environment.GetEnvironmentVariable("MONGODB_URI") ?? configuration["Mongo:ConnectionString"] ?? throw new InvalidOperationException("Mongo connection string missing");
         var mongoUrl = new MongoUrlBuilder(connection);
         var directConnectionSetting = Environment.GetEnvironmentVariable("MONGODB_DIRECT_CONNECTION");
-        if (string.IsNullOrWhiteSpace(directConnectionSetting))
-            mongoUrl.DirectConnection = true;
-        else if (bool.TryParse(directConnectionSetting, out var directConnection))
+        if (bool.TryParse(directConnectionSetting, out var directConnection))
             mongoUrl.DirectConnection = directConnection;
+        logger.LogInformation("MongoDB connection configured. Host={Host}, Port={Port}, Database={Database}, DirectConnection={DirectConnection}, Source={Source}",
+            mongoUrl.Server.Host,
+            mongoUrl.Server.Port,
+            Environment.GetEnvironmentVariable("MONGODB_DATABASE") ?? configuration["Mongo:Database"] ?? "echat",
+            mongoUrl.DirectConnection,
+            Environment.GetEnvironmentVariable("MONGODB_URI") is null ? "appsettings.json" : "MONGODB_URI");
         var databaseName = Environment.GetEnvironmentVariable("MONGODB_DATABASE") ?? configuration["Mongo:Database"] ?? "echat";
         var db = new MongoClient(mongoUrl.ToMongoUrl()).GetDatabase(databaseName);
         _users = db.GetCollection<UserAccount>("users");
