@@ -80,6 +80,7 @@ export type FriendRequest = {
   status: string;
   createdAtUtc: string;
   sender?: User;
+  receiver?: User;
 };
 export type ContactRealtimeEvent = {
   status?: string;

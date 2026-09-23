@@ -118,6 +118,17 @@ function formatCallDuration(totalSeconds: number) {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
+function formatFriendRequestDay(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((startOfToday - startOfDate) / 86400000);
+  if (days === 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days === 2) return "前天";
+  return date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
+}
 
 async function sealKeyForDevices(
   key: CryptoKey,
@@ -515,6 +526,7 @@ function Messenger({
   const [showScanner, setShowScanner] = useState(false);
   const [showMyQr, setShowMyQr] = useState(false);
   const [showContactAddPanel, setShowContactAddPanel] = useState(false);
+  const [showFriendHistory, setShowFriendHistory] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [serviceGroupTemplates, setServiceGroupTemplates] = useState<
     Array<{ id: string; name: string; namePattern: string; memberAccounts?: string[] }>
@@ -616,6 +628,15 @@ function Messenger({
   const pendingRequestCount = requests.filter(
     item => item.status === "Pending"
   ).length;
+  const friendHistory = [...requests.map(item => ({ ...item, direction: "incoming" as const, person: item.sender })), ...sentRequests.map(item => ({ ...item, direction: "outgoing" as const, person: item.receiver }))]
+    .sort((a, b) => new Date(b.createdAtUtc).getTime() - new Date(a.createdAtUtc).getTime())
+    .filter(item => {
+      const query = search.trim().toLowerCase();
+      if (!query) return true;
+      return [item.person?.displayName, item.person?.account, item.note]
+        .filter(Boolean)
+        .some(value => value!.toLowerCase().includes(query));
+    });
 
   const resolveConversationKey = useCallback(
     async (conversationId: string, version: number, forceRefresh = false) => {
@@ -1744,6 +1765,7 @@ function Messenger({
                 key={item.id}
                 onClick={() => {
                   setNav(item.id);
+                  if (item.id !== "contacts") setShowFriendHistory(false);
                   if (item.id !== "chats") setMobileDetail(false);
                 }}
                 className={`group relative grid h-12 w-12 place-items-center rounded-2xl transition active:scale-95 ${nav === item.id ? "bg-teal-400 text-[#06211e]" : "hover:bg-white/10 hover:text-white"}`}
@@ -1784,12 +1806,28 @@ function Messenger({
         >
           <header className="px-5 pb-4 pt-5">
             <div className="flex items-center justify-between">
+              <div className="flex min-w-0 items-center gap-2">
+                {nav === "contacts" && showFriendHistory && (
+                  <button
+                    type="button"
+                    aria-label="返回联系人"
+                    onClick={() => {
+                      setShowFriendHistory(false);
+                      setSearch("");
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-600 transition hover:bg-white active:scale-95"
+                  >
+                    <ChevronLeft size={23} />
+                  </button>
+                )}
               <div>
                 <p className="text-xs font-medium tracking-[.16em] text-teal-600">
                   E聊
                 </p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-                  {nav === "chats"
+                  {showFriendHistory && nav === "contacts"
+                    ? "新的朋友"
+                    : nav === "chats"
                     ? "消息"
                     : nav === "contacts"
                       ? "联系人"
@@ -1800,20 +1838,23 @@ function Messenger({
                           : "我的"}
                 </h1>
               </div>
+              </div>
               <div className="relative" data-quick-actions>
                 <button
                   aria-label="更多操作"
                   aria-expanded={showQuickActions}
                   onClick={() =>
-                    nav === "chats" || nav === "contacts"
+                    !showFriendHistory && (nav === "chats" || nav === "contacts")
                       ? setShowQuickActions(value => !value)
-                      : toast.info("请先返回消息或联系人页面")
+                      : showFriendHistory
+                        ? toast.info("点击左上角返回联系人")
+                        : toast.info("请先返回消息或联系人页面")
                   }
                   className={`grid h-10 w-10 place-items-center rounded-xl bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:text-teal-600 active:scale-95 ${showQuickActions ? "text-teal-600 ring-teal-300" : ""}`}
                 >
-                  <Plus size={19} className={showQuickActions ? "rotate-45 transition-transform" : "transition-transform"} />
+                  {showFriendHistory ? <MoreHorizontal size={19} /> : <Plus size={19} className={showQuickActions ? "rotate-45 transition-transform" : "transition-transform"} />}
                 </button>
-                {showQuickActions && (nav === "chats" || nav === "contacts") && (
+                {showQuickActions && !showFriendHistory && (nav === "chats" || nav === "contacts") && (
                   <div className="absolute right-0 top-12 z-40 w-52 overflow-hidden rounded-2xl bg-slate-800 p-1.5 text-white shadow-2xl ring-1 ring-slate-700/70">
                     <span className="absolute -top-1 right-4 h-3 w-3 rotate-45 bg-slate-800" />
                     <button
@@ -1850,7 +1891,7 @@ function Messenger({
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder={nav === "chats" ? "搜索会话" : "搜索联系人"}
+                  placeholder={showFriendHistory ? "账号 / 手机号" : nav === "chats" ? "搜索会话" : "搜索联系人"}
                   className="w-full rounded-xl border-0 bg-slate-200/70 py-2.5 pl-9 pr-3 text-sm outline-none ring-teal-400/40 transition placeholder:text-slate-400 focus:ring-2"
                 />
               </div>
@@ -1934,13 +1975,91 @@ function Messenger({
                 />
               ))}
 
-            {nav === "contacts" && (
+            {nav === "contacts" && showFriendHistory && (
+              <div className="space-y-4 px-1">
+                <div className="rounded-2xl bg-white px-4 py-3 text-xs text-slate-500 shadow-sm ring-1 ring-slate-200/70">
+                  好友申请历史记录会保留在这里，点击左上角返回联系人列表。
+                </div>
+                {friendHistory.length ? (
+                  <div className="space-y-4">
+                    {friendHistory.map(item => {
+                      const person = item.person;
+                      const isIncoming = item.direction === "incoming";
+                      const status = item.status;
+                      const statusLabel =
+                        status === "Pending"
+                          ? isIncoming
+                            ? "待通过"
+                            : "等待确认"
+                          : status === "Accepted"
+                            ? "已添加"
+                            : status === "Rejected"
+                              ? "已拒绝"
+                              : status === "Revoked"
+                                ? "已撤销"
+                                : "已过期";
+                      return (
+                        <div key={`${item.direction}-${item.id}`}>
+                          <p className="mb-2 px-2 text-xs font-semibold text-slate-400">
+                            {formatFriendRequestDay(item.createdAtUtc)}
+                          </p>
+                          <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
+                            <Avatar
+                              name={person?.displayName || (isIncoming ? "新朋友" : "好友申请")}
+                              src={person?.avatarUrl}
+                              size="lg"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-[15px] font-semibold text-slate-800">
+                                  {person?.displayName || (isIncoming ? "新朋友" : item.receiverId)}
+                                </p>
+                                <span className={`shrink-0 text-xs ${status === "Pending" ? "text-amber-600" : status === "Accepted" ? "text-emerald-600" : "text-slate-400"}`}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 truncate text-xs text-slate-500">
+                                {isIncoming ? "对方：" : "我："}{item.note || (isIncoming ? "请求添加你为好友" : "请求添加对方为好友")}
+                              </p>
+                              {person?.account && <p className="mt-0.5 truncate text-[11px] text-slate-400">账号：{person.account}</p>}
+                            </div>
+                            {status === "Pending" && isIncoming && (
+                              <button
+                                type="button"
+                                onClick={() => void acceptRequest(item.id)}
+                                className="shrink-0 rounded-xl bg-teal-500 px-3 py-2 text-xs font-medium text-white transition hover:bg-teal-600 active:scale-95"
+                              >
+                                接受
+                              </button>
+                            )}
+                            {status === "Pending" && !isIncoming && (
+                              <button
+                                type="button"
+                                onClick={() => void revokeFriendRequest(item.id)}
+                                className="shrink-0 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-100 active:scale-95"
+                              >
+                                撤销
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState icon={UserPlus} title="暂无好友申请记录" text="通过右上角加号添加好友后，申请记录会显示在这里。" compact />
+                )}
+              </div>
+            )}
+
+            {nav === "contacts" && !showFriendHistory && (
               <div className="space-y-5 px-1">
                 <button
                   type="button"
                   onClick={() => {
-                    setShowContactAddPanel(value => !value);
-                    window.setTimeout(() => document.getElementById("add-account")?.focus(), 0);
+                    setShowFriendHistory(true);
+                    setShowContactAddPanel(false);
+                    setSearch("");
                   }}
                   className="flex w-full items-center gap-3 rounded-2xl bg-white p-3.5 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:bg-amber-50/60 active:scale-[.99]"
                 >
@@ -1949,7 +2068,7 @@ function Messenger({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-slate-800">新的朋友</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">查看好友申请或添加新的好友</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">查看好友申请历史记录</span>
                   </span>
                   {pendingRequestCount > 0 && <span className="grid h-6 min-w-6 place-items-center rounded-full bg-rose-500 px-1.5 text-xs font-semibold text-white">{pendingRequestCount}</span>}
                   <ChevronRight size={18} className="text-slate-300" />

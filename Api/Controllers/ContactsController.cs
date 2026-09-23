@@ -53,7 +53,23 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
     public async Task<ActionResult> SentRequests(CancellationToken ct)
     {
         var items = await repository.GetSentFriendRequestsAsync(User.UserId(), ct);
-        return Ok(items.Select(item => new { item.Id, item.ReceiverId, item.Status, item.Note, item.CreatedAtUtc }));
+        var result = new List<object>();
+        foreach (var item in items)
+        {
+            var receiver = await repository.GetUserByIdAsync(item.ReceiverId, ct);
+            result.Add(new
+            {
+                item.Id,
+                item.SenderId,
+                item.ReceiverId,
+                item.Status,
+                item.Note,
+                item.Source,
+                item.CreatedAtUtc,
+                receiver = receiver is null ? null : View(receiver)
+            });
+        }
+        return Ok(result);
     }
 
     [HttpDelete("requests/{id}")]
