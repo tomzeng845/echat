@@ -203,6 +203,29 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return Ok(new { user.Account, unbanned = true });
     }
 
+    [HttpGet("account-locked-users")]
+    public async Task<ActionResult<AdminAccountLockedPage>> AccountLockedUsers([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 10, 100);
+        var total = await repository.CountAccountLockedUsersAsync(search, ct);
+        var users = await repository.GetAccountLockedUsersAsync(search, (safePage - 1) * safePageSize, safePageSize, ct);
+        var sessions = (await repository.GetAllSessionsAsync(20000, ct)).Where(x => x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTime.UtcNow).GroupBy(x => x.UserId).ToDictionary(x => x.Key, x => (IReadOnlyList<RefreshSession>)x.ToList());
+        var items = users.Select(user => ToView(user, sessions.GetValueOrDefault(user.Id) ?? [])).ToList();
+        return Ok(new AdminAccountLockedPage(items, total, safePage, safePageSize, Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize))));
+    }
+
+    [HttpPost("account-locked-users/{account}/unlock")]
+    public async Task<ActionResult> UnlockAccount(string account, CancellationToken ct)
+    {
+        var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
+        if (user is null) return NotFound(new { error = "用户不存在" });
+        user.AccountLocked = false;
+        await repository.UpdateUserAsync(user, ct);
+        await AuditAsync("user.account-unlock", "user", user.Id, "解除账户锁定", ct);
+        return Ok(new { user.Account, unlocked = true });
+    }
+
     [HttpGet("users/{account}")]
     public async Task<ActionResult> UserByAccount(string account, CancellationToken ct)
     {

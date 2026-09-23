@@ -67,6 +67,7 @@ import {
   GroupInvitesPanel as DocGroupInvitesPanel,
   LockedIpPanel as DocLockedIpPanel,
   BannedUsersPanel as DocBannedUsersPanel,
+  AccountLockedUsersPanel as DocAccountLockedUsersPanel,
   SmsRecordsPanel as DocSmsRecordsPanel,
   ForbiddenWordsPanel as DocForbiddenWordsPanel,
   CurfewPanel as DocCurfewPanel,
@@ -87,6 +88,8 @@ type UserOperationKind =
   | "displayName"
   | "loginIpRestriction"
   | "forceOffline"
+  | "ban"
+  | "sendMessage"
   | "accountLocked"
   | "loginLocked"
   | "bankCardLocked"
@@ -101,6 +104,7 @@ type PageId =
   | "account-failures"
   | "account-locked-ips"
   | "account-banned-users"
+  | "account-locked-users"
   | "account-sms-records"
   | "account-forbidden-words"
   | "account-curfew"
@@ -185,6 +189,15 @@ type AdminUser = {
   lastOfflineAtUtc?: string;
   loginIpAllowList: string;
 };
+const adminUserColumns = [
+  ["id", "用户ID"], ["risk1", "风险1"], ["risk2", "风险2"], ["account", "用户账号"], ["displayName", "昵称"], ["mobilePhone", "手机号码"],
+  ["balance", "账户余额"], ["frozenBalance", "冻结金额"], ["online", "在线状态"], ["accountLocked", "账号锁定"], ["loginLocked", "登录锁定"], ["bankCardLocked", "银行卡锁定"],
+  ["cancellationEnabled", "注销状态"], ["realName", "实名认证"], ["enterprise", "企业认证"], ["todayOnline", "今日上线"], ["redFlagged", "红号"], ["role", "角色"],
+  ["registrationSource", "注册来源"], ["inviteSource", "邀请码来源"], ["createdAt", "注册时间"], ["passwordChanged", "登录密码修改时间"], ["lastSeen", "最后上线时间"], ["lastLoginAddress", "最后登录地址"],
+  ["lastOnlineIp", "最后在线IP"], ["lastNodeIp", "最后节点IP"], ["failedLogin", "登录失败次数"], ["activeSessions", "设备数"], ["loginIpRestriction", "登录IP限制"], ["status", "账户状态"],
+  ["avatar", "头像"], ["gender", "性别"], ["communicationId", "通讯号"], ["lastLoginIp", "最后登录IP"], ["lastOfflineAt", "最后离线时间"],
+] as const;
+type AdminUserColumnKey = (typeof adminUserColumns)[number][0];
 type AdminUserPage = {
   items: AdminUser[];
   total: number;
@@ -275,6 +288,7 @@ const groups: MenuGroup[] = [
       { id: "account-failures", label: "登录失败IP统计" },
       { id: "account-locked-ips", label: "锁定IP列表" },
       { id: "account-banned-users", label: "封禁用户列表" },
+      { id: "account-locked-users", label: "账户锁定用户列表" },
       { id: "account-sms-records", label: "用户短信发送记录" },
       { id: "account-forbidden-words", label: "违禁词列表" },
       { id: "account-curfew", label: "宵禁功能" },
@@ -832,6 +846,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
     return <DocLockedIpPanel refresh={refresh} />;
   if (page === "account-banned-users")
     return <DocBannedUsersPanel refresh={refresh} />;
+  if (page === "account-locked-users")
+    return <DocAccountLockedUsersPanel refresh={refresh} />;
   if (page === "account-sms-records")
     return <DocSmsRecordsPanel refresh={refresh} />;
   if (page === "account-forbidden-words")
@@ -1126,6 +1142,13 @@ function UsersPanel({
   const [menuId, setMenuId] = useState<string>();
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [statusMenuId, setStatusMenuId] = useState<string>();
+  const [visibleColumns, setVisibleColumns] = useState<Record<AdminUserColumnKey, boolean>>(() => {
+    const defaults = Object.fromEntries(adminUserColumns.map(([key]) => [key, true])) as Record<AdminUserColumnKey, boolean>;
+    try {
+      const saved = JSON.parse(localStorage.getItem("echat-admin-user-columns") || "{}");
+      return { ...defaults, ...saved };
+    } catch { return defaults; }
+  });
   const [operation, setOperation] = useState<{
     user: AdminUser;
     kind: UserOperationKind;
@@ -1159,6 +1182,10 @@ function UsersPanel({
     pageSize: 20,
     totalPages: 1,
   });
+  useEffect(() => {
+    localStorage.setItem("echat-admin-user-columns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+  const columnStyle = (key: AdminUserColumnKey): React.CSSProperties => ({ display: visibleColumns[key] ? undefined : "none" });
 
   useEffect(() => {
     if (!menuId) return;
@@ -1471,12 +1498,25 @@ function UsersPanel({
           </button>
         </div>
       </Card>
+      <Card className="mb-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-semibold">用户列表显示列</h3>
+            <p className="text-xs text-slate-500">勾选显示，取消勾选隐藏；设置会保存在当前浏览器。</p>
+          </div>
+          <button onClick={() => setVisibleColumns(Object.fromEntries(adminUserColumns.map(([key]) => [key, true])) as Record<AdminUserColumnKey, boolean>)} className="admin-filter-button">全部显示</button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {adminUserColumns.map(([key, label]) => <label key={key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={visibleColumns[key]} onChange={event => setVisibleColumns(current => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}
+        </div>
+      </Card>
       {loading ? (
         <Loading />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="max-h-[640px] overflow-auto">
             <table className="w-full min-w-[3600px] border-collapse text-left text-xs">
+              <colgroup><col />{adminUserColumns.map(([key]) => <col key={key} style={columnStyle(key)} />)}<col /></colgroup>
               <thead className="sticky top-0 z-20 bg-slate-100 text-slate-600">
                 <tr className="border-b border-slate-300 text-center">
                   <th
@@ -1535,6 +1575,7 @@ function UsersPanel({
                     "通讯号",
                     "最后登录IP",
                     "最后离线时间",
+                    "发送消息",
                   ].map(label => (
                     <th
                       key={label}
@@ -1687,6 +1728,12 @@ function UsersPanel({
                                   >
                                     {user.redFlagged ? "取消红号" : "设置红号"}
                                   </button>
+                                  <button
+                                    disabled={user.id === currentUserId}
+                                    onClick={() => openOperation(user, "ban")}
+                                  >
+                                    {user.status === "Disabled" ? "解除封禁" : "封禁用户"}
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -1695,6 +1742,12 @@ function UsersPanel({
                             >
                               <KeyRound size={14} />
                               登录密码
+                            </button>
+                            <button
+                              onClick={() => openOperation(user, "sendMessage")}
+                            >
+                              <Send size={14} />
+                              发送消息
                             </button>
                           </div>
                         )}
@@ -1803,6 +1856,7 @@ function UsersPanel({
                     <td className="px-2">{user.communicationId || "—"}</td>
                     <td className="px-2">{user.lastLoginIp || "—"}</td>
                     <td className="px-2 whitespace-nowrap">{formatTime(user.lastOfflineAtUtc)}</td>
+                    <td className="px-2 text-center"><button onClick={() => openOperation(user, "sendMessage")} className="inline-flex items-center gap-1 bg-pink-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-pink-500"><Send size={13} />发送</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1978,6 +2032,8 @@ function UserOperationDialog({
     displayName: "修改用户昵称",
     loginIpRestriction: "限制登录IP",
     forceOffline: "强制下线",
+    ban: user.status === "Disabled" ? "解除封禁" : "封禁用户",
+    sendMessage: "发送消息",
     accountLocked: user.accountLocked ? "解除账户锁定" : "账户锁定",
     loginLocked: user.loginLocked ? "解除登录锁定" : "登录锁定",
     bankCardLocked: user.bankCardLocked ? "解除银行卡锁定" : "银行卡锁定",
@@ -1999,6 +2055,7 @@ function UserOperationDialog({
   ];
   const destructive = [
     "forceOffline",
+    "ban",
     "accountLocked",
     "loginLocked",
     "cancellationEnabled",
@@ -2035,6 +2092,20 @@ function UserOperationDialog({
           method: "PUT",
           body: JSON.stringify({ password: value }),
         });
+      } else if (kind === "sendMessage") {
+        if (!value.trim()) throw new Error("请输入消息内容");
+        await api(`/api/admin/users/${user.account}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ content: value.trim() }),
+        });
+      } else if (kind === "ban") {
+        await api(`/api/admin/users/${user.account}/status`, {
+          method: "POST",
+          body: JSON.stringify({
+            status: user.status === "Disabled" ? "Active" : "Disabled",
+            reason: user.status === "Disabled" ? "管理员解除封禁" : "管理员封禁",
+          }),
+        });
       } else if (kind === "forceOffline") {
         await api(`/api/admin/users/${user.account}/sessions/revoke`, {
           method: "POST",
@@ -2054,6 +2125,8 @@ function UserOperationDialog({
             | "displayName"
             | "loginIpRestriction"
             | "forceOffline"
+            | "ban"
+            | "sendMessage"
             | "password"
           >
         ];
@@ -2174,6 +2247,19 @@ function UserOperationDialog({
               />
             )}
           </div>
+        ) : kind === "sendMessage" ? (
+          <div className="mt-5 space-y-3">
+            <textarea
+              value={value}
+              onChange={event => setValue(event.target.value)}
+              rows={6}
+              maxLength={50000}
+              className="admin-input"
+              placeholder={`输入要发送给 @${user.account} 的消息`}
+              autoFocus
+            />
+            <p className="text-xs text-slate-500">消息会以管理员账号身份发送，并写入审计日志。</p>
+          </div>
         ) : kind === "password" ? (
           <div className="mt-5 space-y-3">
             <input
@@ -2203,19 +2289,20 @@ function UserOperationDialog({
             >
               即将对 <b>@{user.account}</b> 执行“{labels[kind]}”。
               {kind === "forceOffline" ||
+              kind === "ban" ||
               kind === "accountLocked" ||
               kind === "loginLocked" ||
               kind === "cancellationEnabled"
                 ? " 此操作可能使现有设备立即离线。"
                 : ""}
             </div>
-            <textarea
+            {kind !== "ban" && <textarea
               value={reason}
               onChange={event => setReason(event.target.value)}
               rows={3}
               className="admin-input"
               placeholder="操作原因（将写入审计日志）"
-            />
+            />}
           </div>
         )}
 

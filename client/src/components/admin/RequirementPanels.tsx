@@ -803,6 +803,28 @@ export function BannedUsersPanel({ refresh }: { refresh: number }) {
   );
 }
 
+export function AccountLockedUsersPanel({ refresh }: { refresh: number }) {
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const { data, loading, reload } = useLoad<{
+    items: Array<{ id: string; account: string; displayName: string; mobilePhone: string; avatarUrl: string; communicationId: string; gender: string; createdAtUtc: string; lastOfflineAtUtc?: string; status: string; accountLocked: boolean }>;
+    total: number; page: number; pageSize: number; totalPages: number;
+  }>(`/api/admin/account-locked-users?page=${page}&pageSize=20&search=${encodeURIComponent(query)}`, { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }, refresh);
+  async function unlock(account: string) {
+    try { await api(`/api/admin/account-locked-users/${encodeURIComponent(account)}/unlock`, { method: "POST" }); toast.success("账户已解锁"); reload(); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : "解锁失败"); }
+  }
+  return (
+    <div>
+      <Title title="账户锁定用户列表" description="所有被管理员设置为账户锁定的用户都会显示在这里。账户锁定不改变封禁状态，可单独解除。" />
+      <Box className="mb-4"><div className="flex justify-end gap-2"><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { setPage(1); setQuery(search.trim()); } }} placeholder="UID/手机号/用户名" className="admin-filter-input max-w-xs" /><button onClick={() => { setPage(1); setQuery(search.trim()); }} className="bg-pink-400 px-5 py-2 text-sm font-medium text-white hover:bg-pink-500"><Search size={15} />查询</button></div></Box>
+      <Box className="overflow-x-auto p-0">{loading ? <div className="p-6"><RefreshCw className="animate-spin text-teal-600" /></div> : <table className="w-full min-w-[1180px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-600"><tr><th className="w-10 p-3">序号</th><th className="p-3">用户名</th><th>手机号</th><th>头像</th><th>用户ID</th><th>通讯号</th><th>性别</th><th>注册时间</th><th>最后离线时间</th><th>账户状态</th><th className="text-center">操作</th></tr></thead><tbody>{data.items.map((item, index) => <tr key={item.id} className="border-t border-slate-100 hover:bg-pink-50/30"><td className="p-3 text-slate-500">{(data.page - 1) * data.pageSize + index + 1}</td><td className="p-3 font-medium">{item.displayName || item.account}<div className="text-xs text-slate-400">@{item.account}</div></td><td>{item.mobilePhone || "—"}</td><td>{item.avatarUrl ? <img src={item.avatarUrl} alt="头像" className="h-9 w-9 rounded-full object-cover" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-slate-200 text-xs text-slate-500">{(item.displayName || item.account).slice(0, 2)}</span>}</td><td className="max-w-64 truncate font-mono text-xs" title={item.id}>{item.id}</td><td>{item.communicationId || "—"}</td><td>{item.gender || "—"}</td><td className="whitespace-nowrap">{time(item.createdAtUtc)}</td><td className="whitespace-nowrap">{time(item.lastOfflineAtUtc)}</td><td>{badge("已锁定")}</td><td className="text-center"><button onClick={() => void unlock(item.account)} className="bg-pink-400 px-4 py-1.5 text-xs font-medium text-white hover:bg-pink-500">解锁</button></td></tr>)}</tbody></table>}{!loading && !data.items.length && <Empty text="暂无账户锁定用户" />}</Box>
+      <Box className="mt-3"><div className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>共 {data.total.toLocaleString()} 条记录</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(v => v - 1)} className="admin-filter-button">上一页</button><span className="px-2 py-2">第 {data.page} / {data.totalPages} 页</span><button disabled={page >= data.totalPages} onClick={() => setPage(v => v + 1)} className="admin-filter-button">下一页</button></div></div></Box>
+    </div>
+  );
+}
+
 export function SmsRecordsPanel({ refresh }: { refresh: number }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
