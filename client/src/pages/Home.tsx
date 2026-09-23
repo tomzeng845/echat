@@ -521,6 +521,7 @@ function Messenger({
   const [serviceGroupCustomer, setServiceGroupCustomer] = useState<User | null>(null);
   const [showServiceGroupDialog, setShowServiceGroupDialog] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
@@ -551,6 +552,24 @@ function Messenger({
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
   selectedRef.current = chatVisible ? selectedId : null;
   conversationsRef.current = conversations;
+
+  useEffect(() => {
+    if (!showQuickActions) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-quick-actions]")) return;
+      setShowQuickActions(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowQuickActions(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showQuickActions]);
 
   useEffect(() => {
     stopAllHtmlVideos(
@@ -1780,20 +1799,50 @@ function Messenger({
                           : "我的"}
                 </h1>
               </div>
-              <button
-                onClick={() =>
-                  nav === "contacts"
-                    ? document.getElementById("add-account")?.focus()
-                    : nav === "chats"
-                      ? setShowGroup(true)
+              <div className="relative" data-quick-actions>
+                <button
+                  aria-label="更多操作"
+                  aria-expanded={showQuickActions}
+                  onClick={() =>
+                    nav === "chats" || nav === "contacts"
+                      ? setShowQuickActions(value => !value)
                       : toast.info("请先返回消息或联系人页面")
-                }
-                className="grid h-10 w-10 place-items-center rounded-xl bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:text-teal-600 active:scale-95"
-              >
-                <Plus size={19} />
-              </button>
+                  }
+                  className={`grid h-10 w-10 place-items-center rounded-xl bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:text-teal-600 active:scale-95 ${showQuickActions ? "text-teal-600 ring-teal-300" : ""}`}
+                >
+                  <Plus size={19} className={showQuickActions ? "rotate-45 transition-transform" : "transition-transform"} />
+                </button>
+                {showQuickActions && (nav === "chats" || nav === "contacts") && (
+                  <div className="absolute right-0 top-12 z-40 w-52 overflow-hidden rounded-2xl bg-slate-800 p-1.5 text-white shadow-2xl ring-1 ring-slate-700/70">
+                    <span className="absolute -top-1 right-4 h-3 w-3 rotate-45 bg-slate-800" />
+                    <button
+                      type="button"
+                      onClick={() => { setShowQuickActions(false); setShowGroup(true); }}
+                      className="relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition hover:bg-white/10"
+                    >
+                      <Users size={19} className="text-teal-300" />
+                      <span>发起群聊</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowQuickActions(false); setNav("contacts"); setTimeout(() => document.getElementById("add-account")?.focus(), 0); }}
+                      className="relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition hover:bg-white/10"
+                    >
+                      <UserPlus size={19} className="text-teal-300" />
+                      <span>添加好友</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowQuickActions(false); setShowScanner(true); }}
+                      className="relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition hover:bg-white/10"
+                    >
+                      <ScanLine size={19} className="text-teal-300" />
+                      <span>扫一扫</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-            {nav === "chats" && <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => { setNav("contacts"); setTimeout(() => document.getElementById("add-account")?.focus(), 0); }} className="flex items-center justify-center gap-2 rounded-xl bg-teal-50 py-2.5 text-xs font-semibold text-teal-700"><UserPlus size={15} /> 添加好友</button><button type="button" onClick={() => setShowGroup(true)} className="flex items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200"><Users size={15} /> 创建群组</button></div>}
             {(nav === "chats" || nav === "contacts") && (
               <div className="relative mt-5">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
