@@ -247,7 +247,8 @@ const DEVICE_KEY = "echat.device.v1";
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    public readonly retryAfterSeconds = 0
   ) {
     super(message);
     this.name = "ApiError";
@@ -386,7 +387,8 @@ export async function api<T>(
         };
     throw new ApiError(
       problem.error || problem.title || `请求失败 (${response.status})`,
-      response.status
+      response.status,
+      Number(response.headers.get("Retry-After") || 0)
     );
   }
   if (response.status === 204) return undefined as T;

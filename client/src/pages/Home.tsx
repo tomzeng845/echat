@@ -519,6 +519,7 @@ function Messenger({
   const [busy, setBusy] = useState(false);
   const [busyKind, setBusyKind] = useState<"message" | "upload" | "other">("other");
   const [textSending, setTextSending] = useState(false);
+  const [groupCooldownSeconds, setGroupCooldownSeconds] = useState(0);
   const [mobileDetail, setMobileDetail] = useState(false);
   const [adminOverview, setAdminOverview] = useState<Record<
     string,
@@ -545,6 +546,15 @@ function Messenger({
   >([]);
   const [groupAnnouncement, setGroupAnnouncement] = useState("");
   const [mentionQuery, setMentionQuery] = useState("");
+
+  useEffect(() => {
+    if (groupCooldownSeconds <= 0) return;
+    const timer = window.setTimeout(
+      () => setGroupCooldownSeconds(current => Math.max(0, current - 1)),
+      1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [groupCooldownSeconds]);
   const [showMentionList, setShowMentionList] = useState(false);
   const [mentionMap, setMentionMap] = useState<
     Record<string, { userId: string; displayName: string }>
@@ -1353,10 +1363,21 @@ function Messenger({
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || !selectedId || !selected || textSending || blockedConversation) {
+    const isGroup = selected?.type === "Group";
+    if (
+      !text ||
+      !selectedId ||
+      !selected ||
+      textSending ||
+      blockedConversation ||
+      (isGroup && groupCooldownSeconds > 0)
+    ) {
       if (blockedConversation) toast.warning("该会话已被拉黑，无法发送消息");
+      else if (isGroup && groupCooldownSeconds > 0)
+        toast.warning(`群消息请再等待 ${groupCooldownSeconds} 秒`);
       return;
     }
+    const conversationType = selected.type;
     setTextSending(true);
     setDraft("");
     const sendController = new AbortController();
@@ -1396,15 +1417,22 @@ function Messenger({
         { method: "POST" }
       ).catch(() => undefined);
       void loadData().catch(() => undefined);
+      if (conversationType === "Group") setGroupCooldownSeconds(5);
     } catch (cause) {
       setDraft(text);
-      toast.error(
-        sendController.signal.aborted
-          ? "文本消息发送超时，请检查 API 服务和网络连接"
-          : cause instanceof Error
-            ? cause.message
-            : "发送失败"
-      );
+      if (cause instanceof ApiError && cause.status === 429) {
+        const seconds = cause.retryAfterSeconds || 5;
+        if (conversationType === "Group") setGroupCooldownSeconds(seconds);
+        toast.warning(`群消息发送过于频繁，请 ${seconds} 秒后再发`);
+      } else {
+        toast.error(
+          sendController.signal.aborted
+            ? "文本消息发送超时，请检查 API 服务和网络连接"
+            : cause instanceof Error
+              ? cause.message
+              : "发送失败"
+        );
+      }
     } finally {
       window.clearTimeout(sendTimer);
       setTextSending(false);
@@ -2538,6 +2566,11 @@ function Messenger({
                         正在上传…
                       </span>
                     )}
+                    {selected.type === "Group" && groupCooldownSeconds > 0 && (
+                      <span className="ml-2 text-[10px] text-amber-600">
+                        群消息请等待 {groupCooldownSeconds} 秒
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-end gap-2">
                     <textarea
@@ -2604,7 +2637,11 @@ function Messenger({
                     )}
                     <button
                       aria-label="发送消息"
-                      disabled={!draft.trim() || textSending}
+                      disabled={
+                        !draft.trim() ||
+                        textSending ||
+                        (selected.type === "Group" && groupCooldownSeconds > 0)
+                      }
                       onClick={sendMessage}
                       className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"
                     >

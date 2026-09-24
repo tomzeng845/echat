@@ -176,7 +176,10 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             if (conversation.BlacklistedUserIds.Contains(User.UserId()) || (conversation.MuteAll && member.Role == MemberRole.Member) || member.Muted)
                 return StatusCode(403, new { error = "你当前不能在本群发送消息" });
             if (member.LastMessageAtUtc is { } last && DateTime.UtcNow - last < TimeSpan.FromSeconds(5))
+            {
+                Response.Headers.RetryAfter = "5";
                 return StatusCode(429, new { error = "群消息发送过于频繁，请至少间隔5秒" });
+            }
         }
         if (conversation.Type == ConversationType.Direct)
         {
