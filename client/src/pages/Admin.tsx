@@ -197,7 +197,7 @@ const adminUserColumns = [
   ["avatar", "头像"], ["gender", "性别"], ["communicationId", "通讯号"], ["lastLoginIp", "最后登录IP"], ["lastOfflineAt", "最后离线时间"],
 ] as const;
 type AdminUserColumnKey = (typeof adminUserColumns)[number][0];
-const hiddenAdminUserColumnKeys = new Set<AdminUserColumnKey>([
+const defaultHiddenAdminUserColumnKeys = new Set<AdminUserColumnKey>([
   "balance",
   "frozenBalance",
   "bankCardLocked",
@@ -1140,9 +1140,9 @@ function UsersPanel({
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [statusMenuId, setStatusMenuId] = useState<string>();
   const [visibleColumns, setVisibleColumns] = useState<Record<AdminUserColumnKey, boolean>>(() => {
-    const defaults = Object.fromEntries(adminUserColumns.map(([key]) => [key, true])) as Record<AdminUserColumnKey, boolean>;
+    const defaults = Object.fromEntries(adminUserColumns.map(([key]) => [key, !defaultHiddenAdminUserColumnKeys.has(key)])) as Record<AdminUserColumnKey, boolean>;
     try {
-      const saved = JSON.parse(localStorage.getItem("echat-admin-user-columns") || "{}");
+      const saved = JSON.parse(localStorage.getItem("echat-admin-user-columns-v2") || "{}");
       return { ...defaults, ...saved };
     } catch { return defaults; }
   });
@@ -1180,13 +1180,10 @@ function UsersPanel({
     totalPages: 1,
   });
   useEffect(() => {
-    localStorage.setItem("echat-admin-user-columns", JSON.stringify(visibleColumns));
+    localStorage.setItem("echat-admin-user-columns-v2", JSON.stringify(visibleColumns));
   }, [visibleColumns]);
   const columnStyle = (key: AdminUserColumnKey): React.CSSProperties => ({
-    display:
-      hiddenAdminUserColumnKeys.has(key) || !visibleColumns[key]
-        ? "none"
-        : undefined,
+    display: visibleColumns[key] ? undefined : "none",
   });
 
   useEffect(() => {
@@ -1506,10 +1503,10 @@ function UsersPanel({
             <h3 className="font-semibold">用户列表显示列</h3>
             <p className="text-xs text-slate-500">勾选显示，取消勾选隐藏；设置会保存在当前浏览器。</p>
           </div>
-          <button onClick={() => setVisibleColumns(Object.fromEntries(adminUserColumns.map(([key]) => [key, !hiddenAdminUserColumnKeys.has(key)])) as Record<AdminUserColumnKey, boolean>)} className="admin-filter-button">全部显示</button>
+          <button onClick={() => setVisibleColumns(Object.fromEntries(adminUserColumns.map(([key]) => [key, true])) as Record<AdminUserColumnKey, boolean>)} className="admin-filter-button">全部显示</button>
         </div>
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {adminUserColumns.filter(([key]) => !hiddenAdminUserColumnKeys.has(key)).map(([key, label]) => <label key={key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={visibleColumns[key]} onChange={event => setVisibleColumns(current => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}
+          {adminUserColumns.map(([key, label]) => <label key={key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={visibleColumns[key]} onChange={event => setVisibleColumns(current => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}
         </div>
       </Card>
       {loading ? (
