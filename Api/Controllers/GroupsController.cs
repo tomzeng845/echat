@@ -52,7 +52,7 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     [HttpPost("{id}/members")]
     public async Task<ActionResult> AddMember(string id, GroupMemberRequest request, CancellationToken ct)
     {
-        var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        var group = await RequireMember(id, ct); if (group is null || group.Type != ConversationType.Group) return Forbid();
         if (await repository.CountGroupMembersAsync(id, null, ct) >= GroupLimits.MaxMembers) return Conflict(new { error = "群成员已达到5000人上限" });
         if (group.Members.Any(x => x.UserId == request.UserId && x.LeftAtSequence is null)) return Conflict(new { error = "用户已经在群内" });
         if (await repository.GetUserByIdAsync(request.UserId, ct) is null) return NotFound(new { error = "用户不存在" });
