@@ -50,10 +50,37 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     public async Task<ActionResult> AddMember(string id, GroupMemberRequest request, CancellationToken ct)
     {
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
+        if (await repository.CountGroupMembersAsync(id, null, ct) >= GroupLimits.MaxMembers) return Conflict(new { error = "群成员已达到5000人上限" });
         if (group.Members.Any(x => x.UserId == request.UserId && x.LeftAtSequence is null)) return Conflict(new { error = "用户已经在群内" });
         if (await repository.GetUserByIdAsync(request.UserId, ct) is null) return NotFound(new { error = "用户不存在" });
         group.Members.Add(new ConversationMember { UserId = request.UserId, Role = MemberRole.Member });
+        await repository.UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = id, UserId = request.UserId, Role = MemberRole.Member }, ct);
         await repository.UpdateConversationAsync(group, ct); await Notify(group, "member-added", ct); return NoContent();
+    }
+
+    [HttpGet("{id}/members/page")]
+    public async Task<ActionResult<GroupMemberPage>> MembersPage(string id, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null, CancellationToken ct = default)
+    {
+        var group = await RequireMember(id, ct); if (group is null || group.Type != ConversationType.Group) return Forbid();
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, GroupLimits.MaxPageSize);
+        var total = await repository.CountGroupMembersAsync(id, search, ct);
+        var records = await repository.GetGroupMembersAsync(id, search, (page - 1) * pageSize, pageSize, ct);
+        // Legacy groups are lazily backfilled once, without returning all members.
+        if (total == 0 && group.Members.Count > 0)
+        {
+            foreach (var member in group.Members.Where(x => x.LeftAtSequence is null))
+                await repository.UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = id, UserId = member.UserId, Role = member.Role, JoinedAtSequence = member.JoinedAtSequence, LeftAtSequence = member.LeftAtSequence, Muted = member.Muted, Pinned = member.Pinned }, ct);
+            total = await repository.CountGroupMembersAsync(id, search, ct);
+            records = await repository.GetGroupMembersAsync(id, search, (page - 1) * pageSize, pageSize, ct);
+        }
+        var items = new List<ConversationMemberView>();
+        foreach (var member in records)
+        {
+            var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is null) continue;
+            var devices = (user.DevicePublicKeys ?? []).Where(x => !string.IsNullOrWhiteSpace(x.Value)).Select(x => new EncryptionDeviceView(x.Key, x.Value)).ToList();
+            items.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, member.Muted, devices));
+        }
+        return Ok(new GroupMemberPage(items, total, page, pageSize, (int)Math.Ceiling(total / (double)pageSize)));
     }
 
     [HttpPut("{id}/members/role")]
@@ -61,7 +88,9 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireOwner(id, ct); if (group is null || request.Role == MemberRole.Owner) return Forbid();
         var member = group.Members.FirstOrDefault(x => x.UserId == request.UserId && x.LeftAtSequence is null); if (member is null) return NotFound();
-        member.Role = request.Role; await repository.UpdateConversationAsync(group, ct); await Notify(group, "role-updated", ct); return NoContent();
+        member.Role = request.Role;
+        if (await repository.GetGroupMemberAsync(id, request.UserId, ct) is { } record) { record.Role = request.Role; await repository.UpsertGroupMemberAsync(record, ct); }
+        await repository.UpdateConversationAsync(group, ct); await Notify(group, "role-updated", ct); return NoContent();
     }
 
     [HttpPut("{id}/members/mute")]
@@ -70,11 +99,13 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
         var actor = group.Members.First(x => x.UserId == User.UserId());
         var ids = request.UserIds.Distinct(StringComparer.Ordinal).ToList();
-        if (ids.Count is 0 or > 499) return BadRequest(new { error = "禁言成员数量无效" });
+        if (ids.Count is 0 or > GroupLimits.MaxBatchInvite) return BadRequest(new { error = $"禁言成员数量必须为1-{GroupLimits.MaxBatchInvite}" });
         var targets = group.Members.Where(x => ids.Contains(x.UserId) && x.LeftAtSequence is null).ToList();
         if (targets.Count != ids.Count || targets.Any(x => x.Role == MemberRole.Owner || (x.Role == MemberRole.Admin && actor.Role != MemberRole.Owner)))
             return Forbid();
         foreach (var target in targets) target.Muted = request.Muted;
+        foreach (var target in targets)
+            if (await repository.GetGroupMemberAsync(id, target.UserId, ct) is { } record) { record.Muted = request.Muted; await repository.UpsertGroupMemberAsync(record, ct); }
         await repository.UpdateConversationAsync(group, ct);
         await Notify(group, request.Muted ? "members-muted" : "members-unmuted", ct);
         return NoContent();
@@ -116,7 +147,9 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
         var actor = group.Members.First(x => x.UserId == User.UserId()); var target = group.Members.FirstOrDefault(x => x.UserId == userId && x.LeftAtSequence is null);
         if (target is null || target.Role == MemberRole.Owner || (target.Role == MemberRole.Admin && actor.Role != MemberRole.Owner)) return Forbid();
-        target.LeftAtSequence = group.LastSequence + 1; await repository.UpdateConversationAsync(group, ct); await Notify(group, "member-removed", ct); return NoContent();
+        target.LeftAtSequence = group.LastSequence + 1;
+        await repository.RemoveGroupMemberAsync(id, userId, target.LeftAtSequence.Value, ct);
+        await repository.UpdateConversationAsync(group, ct); await Notify(group, "member-removed", ct); return NoContent();
     }
 
     [HttpPost("{id}/leave")]
@@ -124,7 +157,9 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireMember(id, ct); if (group is null || group.Type != ConversationType.Group) return Forbid();
         var member = group.Members.First(x => x.UserId == User.UserId()); if (member.Role == MemberRole.Owner) return BadRequest(new { error = "群主请先转让群主后再退出群聊" });
-        member.LeftAtSequence = group.LastSequence + 1; await repository.UpdateConversationAsync(group, ct); return NoContent();
+        member.LeftAtSequence = group.LastSequence + 1;
+        await repository.RemoveGroupMemberAsync(id, User.UserId(), member.LeftAtSequence.Value, ct);
+        await repository.UpdateConversationAsync(group, ct); return NoContent();
     }
 
     [HttpPost("{id}/dissolve")]
@@ -160,7 +195,12 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireManager(id, ct); if (group is null) return Forbid();
         if (!group.JoinRequests.Remove(userId)) return NotFound(new { error = "入群申请不存在" });
-        if (request.Approve && !group.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null)) group.Members.Add(new ConversationMember { UserId = userId, Role = MemberRole.Member });
+        if (request.Approve && !group.Members.Any(x => x.UserId == userId && x.LeftAtSequence is null))
+        {
+            if (await repository.CountGroupMembersAsync(id, null, ct) >= GroupLimits.MaxMembers) return Conflict(new { error = "群成员已达到5000人上限" });
+            group.Members.Add(new ConversationMember { UserId = userId, Role = MemberRole.Member });
+            await repository.UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = id, UserId = userId, Role = MemberRole.Member }, ct);
+        }
         await repository.UpdateConversationAsync(group, ct); await Notify(group, request.Approve ? "join-approved" : "join-rejected", ct); return NoContent();
     }
 

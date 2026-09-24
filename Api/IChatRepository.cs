@@ -45,6 +45,11 @@ public interface IChatRepository
     Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default);
     Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default);
     Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default);
+    Task UpsertGroupMemberAsync(GroupMemberRecord member, CancellationToken ct = default);
+    Task<GroupMemberRecord?> GetGroupMemberAsync(string conversationId, string userId, CancellationToken ct = default);
+    Task<IReadOnlyList<GroupMemberRecord>> GetGroupMembersAsync(string conversationId, string? search, int skip, int limit, CancellationToken ct = default);
+    Task<long> CountGroupMembersAsync(string conversationId, string? search, CancellationToken ct = default);
+    Task RemoveGroupMemberAsync(string conversationId, string userId, long leftAtSequence, CancellationToken ct = default);
     Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default);
     Task<IReadOnlyDictionary<string, string>?> GetConversationKeyEnvelopesAsync(string conversationId, int keyVersion, CancellationToken ct = default);
     Task<Conversation?> FindDirectConversationAsync(string userA, string userB, CancellationToken ct = default);

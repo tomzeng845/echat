@@ -13,7 +13,9 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, FriendRequest> _friendRequests = new();
     private readonly ConcurrentDictionary<string, ContactRelation> _relations = new();
     private readonly ConcurrentDictionary<string, Conversation> _conversations = new();
+    private readonly ConcurrentDictionary<string, GroupMemberRecord> _groupMembers = new();
     private readonly ConcurrentDictionary<string, ConversationKeyEnvelopeRecord> _conversationKeys = new();
+    private readonly ConcurrentDictionary<string, ConversationKeyEnvelopeEntry> _conversationKeyEntries = new();
     private readonly ConcurrentDictionary<string, ChatMessage> _messages = new();
     private readonly ConcurrentDictionary<string, MediaAsset> _mediaAssets = new();
     private readonly ConcurrentDictionary<string, MomentPost> _moments = new();
@@ -197,11 +199,41 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default)
     {
         _conversations[conversation.Id] = conversation;
+        if (conversation.Type == ConversationType.Group)
+            foreach (var member in conversation.Members)
+                _groupMembers[$"{conversation.Id}:{member.UserId}"] = new GroupMemberRecord { ConversationId = conversation.Id, UserId = member.UserId, Role = member.Role, JoinedAtSequence = member.JoinedAtSequence, LeftAtSequence = member.LeftAtSequence, Muted = member.Muted, Pinned = member.Pinned };
         StoreConversationKeyEnvelopes(conversation.Id, Math.Max(1, conversation.KeyVersion), conversation.KeyEnvelopes);
         return Task.FromResult(conversation);
     }
     public Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default) { _conversations[conversation.Id] = conversation; return Task.CompletedTask; }
     public Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default) => Task.FromResult(_conversations.TryGetValue(id, out var item) ? item : null);
+    public Task UpsertGroupMemberAsync(GroupMemberRecord member, CancellationToken ct = default) { _groupMembers[$"{member.ConversationId}:{member.UserId}"] = member; return Task.CompletedTask; }
+    public Task<GroupMemberRecord?> GetGroupMemberAsync(string conversationId, string userId, CancellationToken ct = default) => Task.FromResult(_groupMembers.TryGetValue($"{conversationId}:{userId}", out var item) ? item : null);
+    public Task<IReadOnlyList<GroupMemberRecord>> GetGroupMembersAsync(string conversationId, string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var query = _groupMembers.Values.Where(x => x.ConversationId == conversationId && x.LeftAtSequence is null);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var ids = _users.Values.Where(x => x.Account.Contains(search, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)).Select(x => x.Id).ToHashSet();
+            query = query.Where(x => ids.Contains(x.UserId));
+        }
+        return Task.FromResult<IReadOnlyList<GroupMemberRecord>>(query.OrderBy(x => x.CreatedAtUtc).Skip(Math.Max(0, skip)).Take(Math.Clamp(limit, 1, GroupLimits.MaxPageSize)).ToList());
+    }
+    public Task<long> CountGroupMembersAsync(string conversationId, string? search, CancellationToken ct = default)
+    {
+        var query = _groupMembers.Values.Where(x => x.ConversationId == conversationId && x.LeftAtSequence is null);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var ids = _users.Values.Where(x => x.Account.Contains(search, StringComparison.OrdinalIgnoreCase) || x.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)).Select(x => x.Id).ToHashSet();
+            query = query.Where(x => ids.Contains(x.UserId));
+        }
+        return Task.FromResult((long)query.Count());
+    }
+    public Task RemoveGroupMemberAsync(string conversationId, string userId, long leftAtSequence, CancellationToken ct = default)
+    {
+        if (_groupMembers.TryGetValue($"{conversationId}:{userId}", out var item)) item.LeftAtSequence = leftAtSequence;
+        return Task.CompletedTask;
+    }
     public Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default)
     {
         StoreConversationKeyEnvelopes(conversationId, keyVersion, keyEnvelopes);
@@ -210,14 +242,19 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<IReadOnlyDictionary<string, string>?> GetConversationKeyEnvelopesAsync(string conversationId, int keyVersion, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<string, string>?>(_conversationKeys.TryGetValue($"{conversationId}:{keyVersion}", out var item) ? new Dictionary<string, string>(item.KeyEnvelopes) : null);
 
-    private void StoreConversationKeyEnvelopes(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes) =>
+    private void StoreConversationKeyEnvelopes(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes)
+    {
         _conversationKeys[$"{conversationId}:{keyVersion}"] = new ConversationKeyEnvelopeRecord
         {
-            Id = $"{conversationId}:{keyVersion}",
-            ConversationId = conversationId,
-            KeyVersion = keyVersion,
+            Id = $"{conversationId}:{keyVersion}", ConversationId = conversationId, KeyVersion = keyVersion,
             KeyEnvelopes = new Dictionary<string, string>(keyEnvelopes)
         };
+        foreach (var item in keyEnvelopes)
+        {
+            var parts = item.Key.Split(':', 2);
+            _conversationKeyEntries[$"{conversationId}:{keyVersion}:{item.Key}"] = new ConversationKeyEnvelopeEntry { Id = $"{conversationId}:{keyVersion}:{item.Key}", ConversationId = conversationId, KeyVersion = keyVersion, UserId = parts[0], DeviceId = parts.Length == 2 ? parts[1] : "legacy-primary", Envelope = item.Value };
+        }
+    }
 
     public Task<Conversation?> FindDirectConversationAsync(string userA, string userB, CancellationToken ct = default) =>
         Task.FromResult(_conversations.Values.FirstOrDefault(x => x.Type == ConversationType.Direct && x.Members.Count == 2 && x.Members.Any(m => m.UserId == userA) && x.Members.Any(m => m.UserId == userB)));

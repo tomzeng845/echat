@@ -200,10 +200,13 @@ public sealed class ChatHub(IChatRepository repository, IConfiguration configura
         }
 
         var member = conversation.Members.FirstOrDefault(x => x.UserId == userId);
-        if (member is null || member.LeftAtSequence is not null)
+        var externalMember = conversation.Type == ConversationType.Group
+            ? await repository.GetGroupMemberAsync(conversationId, userId)
+            : null;
+        if ((externalMember is null && (member is null || member.LeftAtSequence is not null)) || (externalMember is not null && externalMember.LeftAtSequence is not null))
         {
             logger.LogWarning("Conversation membership rejected: user is not an active member. UserId={UserId}, ConversationId={ConversationId}, MemberCount={MemberCount}, MemberFound={MemberFound}, LeftAtSequence={LeftAtSequence}",
-                userId, conversationId, conversation.Members.Count, member is not null, member?.LeftAtSequence);
+                userId, conversationId, conversation.Members.Count, member is not null || externalMember is not null, externalMember?.LeftAtSequence ?? member?.LeftAtSequence);
             throw new HubException("FORBIDDEN");
         }
 

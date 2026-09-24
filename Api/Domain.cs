@@ -1,6 +1,13 @@
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace EChat.Api;
+
+public static class GroupLimits
+{
+    public const int MaxMembers = 5000;
+    public const int MaxPageSize = 100;
+    public const int MaxBatchInvite = 100;
+}
 public static class PushPlatforms
 {
     public const string Android = "android";
@@ -170,6 +177,35 @@ public sealed class ConversationMember
     public bool Muted { get; set; }
     public DateTime? LastMessageAtUtc { get; set; }
     public bool Pinned { get; set; }
+}
+
+// Scalable member storage. Conversation.Members remains temporarily for
+// backward compatibility while existing groups are migrated incrementally.
+public sealed class GroupMemberRecord
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string ConversationId { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public MemberRole Role { get; set; } = MemberRole.Member;
+    public long JoinedAtSequence { get; set; }
+    public long? LeftAtSequence { get; set; }
+    public long DeliveredSequence { get; set; }
+    public long ReadSequence { get; set; }
+    public bool Muted { get; set; }
+    public DateTime? LastMessageAtUtc { get; set; }
+    public bool Pinned { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class ConversationKeyEnvelopeEntry
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string ConversationId { get; set; } = "";
+    public int KeyVersion { get; set; } = 1;
+    public string UserId { get; set; } = "";
+    public string DeviceId { get; set; } = "";
+    public string Envelope { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class Conversation
@@ -365,6 +401,7 @@ public sealed record MomentCommentView(string Id, string UserId, string DisplayN
 public sealed record MomentView(string Id, UserView Author, string Text, IReadOnlyList<MediaAssetView> Media, IReadOnlyList<MomentLikeView> Likes, IReadOnlyList<MomentCommentView> Comments, bool LikedByMe, DateTime CreatedAtUtc, MomentVisibility Visibility);
 public sealed record EncryptionDeviceView(string DeviceId, string PublicKeyJwk);
 public sealed record ConversationMemberView(string UserId, string Account, string DisplayName, string AvatarUrl, MemberRole Role, bool Muted, IReadOnlyList<EncryptionDeviceView> EncryptionDevices);
+public sealed record GroupMemberPage(IReadOnlyList<ConversationMemberView> Items, long Total, int Page, int PageSize, int TotalPages);
 public sealed record QrLoginStartRequest(string DeviceName = "Web", string? DeviceId = null);
 public sealed record QrLoginStartResponse(string ChallengeId, string PollToken, string QrPayload, DateTime ExpiresAtUtc);
 public sealed record QrLoginTokenRequest(string ChallengeId, string Token);

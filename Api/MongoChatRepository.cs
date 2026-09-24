@@ -13,7 +13,9 @@ public sealed class MongoChatRepository : IChatRepository
     private readonly IMongoCollection<FriendRequest> _friendRequests;
     private readonly IMongoCollection<ContactRelation> _relations;
     private readonly IMongoCollection<Conversation> _conversations;
+    private readonly IMongoCollection<GroupMemberRecord> _groupMembers;
     private readonly IMongoCollection<ConversationKeyEnvelopeRecord> _conversationKeys;
+    private readonly IMongoCollection<ConversationKeyEnvelopeEntry> _conversationKeyEntries;
     private readonly IMongoCollection<ChatMessage> _messages;
     private readonly IMongoCollection<MediaAsset> _mediaAssets;
     private readonly IMongoCollection<MomentPost> _moments;
@@ -50,7 +52,9 @@ public sealed class MongoChatRepository : IChatRepository
         _friendRequests = db.GetCollection<FriendRequest>("friendRequests");
         _relations = db.GetCollection<ContactRelation>("contactRelations");
         _conversations = db.GetCollection<Conversation>("conversations");
+        _groupMembers = db.GetCollection<GroupMemberRecord>("groupMembers");
         _conversationKeys = db.GetCollection<ConversationKeyEnvelopeRecord>("conversationKeyEnvelopes");
+        _conversationKeyEntries = db.GetCollection<ConversationKeyEnvelopeEntry>("conversationKeyEntries");
         _messages = db.GetCollection<ChatMessage>("messages");
         _mediaAssets = db.GetCollection<MediaAsset>("mediaAssets");
         _moments = db.GetCollection<MomentPost>("moments");
@@ -68,6 +72,11 @@ public sealed class MongoChatRepository : IChatRepository
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.SenderId).Ascending(x => x.ClientMessageId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.Sequence), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _conversationKeys.Indexes.CreateOneAsync(new CreateIndexModel<ConversationKeyEnvelopeRecord>(Builders<ConversationKeyEnvelopeRecord>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.KeyVersion), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
+        await _groupMembers.Indexes.CreateManyAsync([
+            new CreateIndexModel<GroupMemberRecord>(Builders<GroupMemberRecord>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.UserId), new CreateIndexOptions { Unique = true, Name = "conversation_user_unique" }),
+            new CreateIndexModel<GroupMemberRecord>(Builders<GroupMemberRecord>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.LeftAtSequence).Ascending(x => x.CreatedAtUtc), new CreateIndexOptions { Name = "conversation_active_members" })
+        ], ct);
+        await _conversationKeyEntries.Indexes.CreateOneAsync(new CreateIndexModel<ConversationKeyEnvelopeEntry>(Builders<ConversationKeyEnvelopeEntry>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.KeyVersion).Ascending(x => x.UserId).Ascending(x => x.DeviceId), new CreateIndexOptions { Unique = true, Name = "conversation_key_entry_unique" }), cancellationToken: ct);
         await _moments.Indexes.CreateOneAsync(new CreateIndexModel<MomentPost>(Builders<MomentPost>.IndexKeys.Descending(x => x.CreatedAtUtc)), cancellationToken: ct);
         await _momentLikes.Indexes.CreateOneAsync(new CreateIndexModel<MomentLike>(Builders<MomentLike>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.UserId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _momentComments.Indexes.CreateOneAsync(new CreateIndexModel<MomentComment>(Builders<MomentComment>.IndexKeys.Ascending(x => x.MomentId).Ascending(x => x.CreatedAtUtc)), cancellationToken: ct);
@@ -295,12 +304,38 @@ public sealed class MongoChatRepository : IChatRepository
     public async Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default)
     {
         await _conversations.InsertOneAsync(conversation, cancellationToken: ct);
+        if (conversation.Type == ConversationType.Group)
+            foreach (var member in conversation.Members)
+                await UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = conversation.Id, UserId = member.UserId, Role = member.Role, JoinedAtSequence = member.JoinedAtSequence, LeftAtSequence = member.LeftAtSequence, Muted = member.Muted, Pinned = member.Pinned }, ct);
         await UpsertConversationKeyEnvelopesAsync(conversation.Id, Math.Max(1, conversation.KeyVersion), conversation.KeyEnvelopes, ct);
         return conversation;
     }
     public Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default) => _conversations.ReplaceOneAsync(x => x.Id == conversation.Id, conversation, cancellationToken: ct);
     public async Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default) => await _conversations.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
-    public Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default)
+    public Task UpsertGroupMemberAsync(GroupMemberRecord member, CancellationToken ct = default) => _groupMembers.ReplaceOneAsync(x => x.ConversationId == member.ConversationId && x.UserId == member.UserId, member, new ReplaceOptions { IsUpsert = true }, ct);
+    public async Task<GroupMemberRecord?> GetGroupMemberAsync(string conversationId, string userId, CancellationToken ct = default) => await _groupMembers.Find(x => x.ConversationId == conversationId && x.UserId == userId).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<GroupMemberRecord>> GetGroupMembersAsync(string conversationId, string? search, int skip, int limit, CancellationToken ct = default)
+    {
+        var filter = Builders<GroupMemberRecord>.Filter.Eq(x => x.ConversationId, conversationId) & Builders<GroupMemberRecord>.Filter.Eq(x => x.LeftAtSequence, null);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var users = await _users.Find(Builders<UserAccount>.Filter.Regex(x => x.Account, new MongoDB.Bson.BsonRegularExpression(search.Trim(), "i")) | Builders<UserAccount>.Filter.Regex(x => x.DisplayName, new MongoDB.Bson.BsonRegularExpression(search.Trim(), "i"))).Project(x => x.Id).ToListAsync(ct);
+            filter &= Builders<GroupMemberRecord>.Filter.In(x => x.UserId, users);
+        }
+        return await _groupMembers.Find(filter).SortBy(x => x.CreatedAtUtc).Skip(skip).Limit(Math.Clamp(limit, 1, GroupLimits.MaxPageSize)).ToListAsync(ct);
+    }
+    public async Task<long> CountGroupMembersAsync(string conversationId, string? search, CancellationToken ct = default)
+    {
+        var filter = Builders<GroupMemberRecord>.Filter.Eq(x => x.ConversationId, conversationId) & Builders<GroupMemberRecord>.Filter.Eq(x => x.LeftAtSequence, null);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var users = await _users.Find(Builders<UserAccount>.Filter.Regex(x => x.Account, new MongoDB.Bson.BsonRegularExpression(search.Trim(), "i")) | Builders<UserAccount>.Filter.Regex(x => x.DisplayName, new MongoDB.Bson.BsonRegularExpression(search.Trim(), "i"))).Project(x => x.Id).ToListAsync(ct);
+            filter &= Builders<GroupMemberRecord>.Filter.In(x => x.UserId, users);
+        }
+        return await _groupMembers.CountDocumentsAsync(filter, cancellationToken: ct);
+    }
+    public Task RemoveGroupMemberAsync(string conversationId, string userId, long leftAtSequence, CancellationToken ct = default) => _groupMembers.UpdateOneAsync(x => x.ConversationId == conversationId && x.UserId == userId, Builders<GroupMemberRecord>.Update.Set(x => x.LeftAtSequence, leftAtSequence), cancellationToken: ct);
+    public async Task UpsertConversationKeyEnvelopesAsync(string conversationId, int keyVersion, IReadOnlyDictionary<string, string> keyEnvelopes, CancellationToken ct = default)
     {
         var id = $"{conversationId}:{keyVersion}";
         var record = new ConversationKeyEnvelopeRecord
@@ -310,12 +345,21 @@ public sealed class MongoChatRepository : IChatRepository
             KeyVersion = keyVersion,
             KeyEnvelopes = new Dictionary<string, string>(keyEnvelopes)
         };
-        return _conversationKeys.ReplaceOneAsync(x => x.Id == id, record, new ReplaceOptions { IsUpsert = true }, ct);
+        var write = _conversationKeys.ReplaceOneAsync(x => x.Id == id, record, new ReplaceOptions { IsUpsert = true }, ct);
+        foreach (var item in keyEnvelopes)
+        {
+            var parts = item.Key.Split(':', 2);
+            var entry = new ConversationKeyEnvelopeEntry { Id = $"{conversationId}:{keyVersion}:{item.Key}", ConversationId = conversationId, KeyVersion = keyVersion, UserId = parts[0], DeviceId = parts.Length == 2 ? parts[1] : "legacy-primary", Envelope = item.Value };
+            await _conversationKeyEntries.ReplaceOneAsync(x => x.Id == entry.Id, entry, new ReplaceOptions { IsUpsert = true }, ct);
+        }
+        await write;
     }
     public async Task<IReadOnlyDictionary<string, string>?> GetConversationKeyEnvelopesAsync(string conversationId, int keyVersion, CancellationToken ct = default)
     {
         var record = await _conversationKeys.Find(x => x.ConversationId == conversationId && x.KeyVersion == keyVersion).FirstOrDefaultAsync(ct);
-        return record?.KeyEnvelopes;
+        if (record?.KeyEnvelopes is { Count: > 0 }) return record.KeyEnvelopes;
+        var entries = await _conversationKeyEntries.Find(x => x.ConversationId == conversationId && x.KeyVersion == keyVersion).ToListAsync(ct);
+        return entries.Count == 0 ? null : entries.ToDictionary(x => x.DeviceId == "legacy-primary" ? x.UserId : $"{x.UserId}:{x.DeviceId}", x => x.Envelope);
     }
     public async Task<Conversation?> FindDirectConversationAsync(string a, string b, CancellationToken ct = default) => await _conversations.Find(x => x.Type == ConversationType.Direct && x.Members.Any(m => m.UserId == a) && x.Members.Any(m => m.UserId == b)).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default) => await _conversations.Find(x => !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence == null)).SortByDescending(x => x.LastMessageAtUtc).ToListAsync(ct);

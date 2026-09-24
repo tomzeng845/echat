@@ -66,7 +66,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 KeyVersion = 0,
                 Content = "我们已经是好友了，现在可以开始聊天吧"
             }, ct);
-            _ = BroadcastMessageAsync(item.Id, View(welcome), item.Members.Select(member => member.UserId).ToList());
+            _ = BroadcastMessageAsync(item.Id, View(welcome));
             await Task.WhenAll(
                 hub.Clients.Group($"user:{userId}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct),
                 hub.Clients.Group($"user:{peer.Id}").SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct));
@@ -82,7 +82,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var userId = User.UserId();
         var creator = await repository.GetUserByIdAsync(userId, ct);
         if (creator is null || !creator.CanCreateGroup) return StatusCode(403, new { error = "当前账号不允许创建群聊" });
-        if (string.IsNullOrWhiteSpace(request.Name) || request.MemberAccounts.Count is < 2 or > 499) return BadRequest(new { error = "群名称或成员数量无效" });
+        if (string.IsNullOrWhiteSpace(request.Name) || request.MemberAccounts.Count is < 2 or > GroupLimits.MaxMembers - 1) return BadRequest(new { error = $"群名称或成员数量无效，最多支持{GroupLimits.MaxMembers}人" });
         var members = new List<ConversationMember> { new() { UserId = userId, Role = MemberRole.Owner } };
         foreach (var account in request.MemberAccounts.Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -91,6 +91,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
                 members.Add(new ConversationMember { UserId = peer.Id });
         }
         if (members.Count < 3) return BadRequest(new { error = "至少选择两位好友" });
+        if (members.Count > GroupLimits.MaxMembers) return BadRequest(new { error = $"群成员最多{GroupLimits.MaxMembers}人" });
         var item = await repository.AddConversationAsync(new Conversation { Type = ConversationType.Group, Name = request.Name.Trim(), CreatedBy = userId, Members = members, KeyEnvelopes = request.KeyEnvelopes ?? [] }, ct);
         await hub.Clients.Users(members.Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = item.Id, action = "created" }, ct);
         var keyEnvelope = EnvelopeFor(item, userId, CurrentDeviceId());
@@ -147,7 +148,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     public async Task<ActionResult> RotateKey(string id, RotateConversationKeyRequest request, CancellationToken ct)
     {
         var conversation = await RequireMemberAsync(id, ct); if (conversation is null) return Forbid();
-        if (request.KeyVersion != conversation.KeyVersion + 1 || request.KeyEnvelopes.Count is 0 or > 2000)
+        if (request.KeyVersion != conversation.KeyVersion + 1 || request.KeyEnvelopes.Count is 0 or > GroupLimits.MaxMembers)
             return Conflict(new { error = "会话密钥版本已变化，请刷新后重试" });
         var activeMemberIds = conversation.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId).ToHashSet();
         if (request.KeyEnvelopes.Any(item => item.Value.Length is < 32 or > 8192 || !activeMemberIds.Any(userId => item.Key == userId || item.Key.StartsWith(userId + ":", StringComparison.Ordinal))))
@@ -173,9 +174,11 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         if (conversation.Type == ConversationType.Group)
         {
             var member = conversation.Members.First(member => member.UserId == User.UserId());
+            var memberRecord = await repository.GetGroupMemberAsync(id, User.UserId(), ct);
             if (conversation.BlacklistedUserIds.Contains(User.UserId()) || (conversation.MuteAll && member.Role == MemberRole.Member) || member.Muted)
                 return StatusCode(403, new { error = "你当前不能在本群发送消息" });
-            if (member.LastMessageAtUtc is { } last && DateTime.UtcNow - last < TimeSpan.FromSeconds(5))
+            var lastMessageAt = memberRecord?.LastMessageAtUtc ?? member.LastMessageAtUtc;
+            if (lastMessageAt is { } last && DateTime.UtcNow - last < TimeSpan.FromSeconds(5))
             {
                 Response.Headers.RetryAfter = "5";
                 return StatusCode(429, new { error = "群消息发送过于频繁，请至少间隔5秒" });
@@ -216,27 +219,25 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage { ClientMessageId = request.ClientMessageId, ConversationId = id, SenderId = User.UserId(), Kind = request.Kind, Content = plaintext ? filteredContent : "", Ciphertext = plaintext ? "" : request.Ciphertext, Nonce = plaintext ? "" : request.Nonce, Algorithm = plaintext ? "PLAINTEXT" : request.Algorithm, KeyVersion = keyVersion, ReplyToMessageId = request.ReplyToMessageId, Metadata = request.Metadata ?? [] }, ct);
         if (conversation.Type == ConversationType.Group)
         {
-            conversation.Members.First(member => member.UserId == User.UserId()).LastMessageAtUtc = DateTime.UtcNow;
-            await repository.UpdateConversationAsync(conversation, ct);
+            var memberRecord = await repository.GetGroupMemberAsync(id, User.UserId(), ct);
+            if (memberRecord is not null)
+            {
+                memberRecord.LastMessageAtUtc = DateTime.UtcNow;
+                await repository.UpsertGroupMemberAsync(memberRecord, ct);
+            }
         }
         var view = View(message);
-        var memberUserIds = conversation.Members
-            .Where(member => member.LeftAtSequence is null)
-            .Select(member => member.UserId)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        _ = BroadcastMessageAsync(id, view, memberUserIds);
+        _ = BroadcastMessageAsync(id, view);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         return Ok(view);
     }
 
-    private async Task BroadcastMessageAsync(string conversationId, MessageView view, IReadOnlyList<string> memberUserIds)
+    private async Task BroadcastMessageAsync(string conversationId, MessageView view)
     {
         try
         {
-            await Task.WhenAll(memberUserIds.Select(memberUserId =>
-                hub.Clients.Group($"user:{memberUserId}")
-                    .SendAsync("message.created", view, CancellationToken.None)));
+            await hub.Clients.Group($"conversation:{conversationId}")
+                .SendAsync("message.created", view, CancellationToken.None);
         }
         catch (Exception exception)
         {
