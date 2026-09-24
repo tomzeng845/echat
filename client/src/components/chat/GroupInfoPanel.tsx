@@ -32,6 +32,8 @@ type GroupInfo = {
   hideMemberCount: boolean;
   historyVisibleToNewMembers: boolean;
   members: ConversationMember[];
+  memberCount: number;
+  membersPageSize?: number;
   joinRequests: string[];
 };
 
@@ -87,6 +89,7 @@ export default function GroupInfoPanel({
     null
   );
   const [selectedMuteIds, setSelectedMuteIds] = useState<string[]>([]);
+  const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
 
   async function load() {
     try {
@@ -95,6 +98,7 @@ export default function GroupInfoPanel({
       setSelectedMuteIds(
         next.members.filter(member => member.muted).map(member => member.userId)
       );
+      setLoadingMoreMembers(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "群资料加载失败");
     }
@@ -102,6 +106,26 @@ export default function GroupInfoPanel({
   useEffect(() => {
     void load();
   }, [conversationId]);
+  async function loadMoreMembers() {
+    if (!info || loadingMoreMembers || info.members.length >= info.memberCount) return;
+    setLoadingMoreMembers(true);
+    try {
+      const pageSize = info.membersPageSize ?? 100;
+      const page = Math.floor(info.members.length / pageSize) + 1;
+      const next = await api<{ items: ConversationMember[] }>(
+        `/api/groups/${conversationId}/members/page?page=${page}&pageSize=${pageSize}`
+      );
+      setInfo(current =>
+        current
+          ? { ...current, members: [...current.members, ...next.items] }
+          : current
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "群成员加载失败");
+    } finally {
+      setLoadingMoreMembers(false);
+    }
+  }
   async function save(kind: string) {
     if (kind !== "announcement" && !value.trim()) return;
     await api(`/api/groups/${conversationId}/${kind}`, {
@@ -551,6 +575,18 @@ export default function GroupInfoPanel({
                   </div>
                 ))}
               </div>
+              {info.members.length < info.memberCount && (
+                <button
+                  type="button"
+                  onClick={() => void loadMoreMembers()}
+                  disabled={loadingMoreMembers}
+                  className="mt-3 w-full rounded-xl bg-slate-100 py-2 text-xs text-slate-600 disabled:opacity-50"
+                >
+                  {loadingMoreMembers
+                    ? "正在加载成员…"
+                    : `加载更多成员（${info.members.length}/${info.memberCount}）`}
+                </button>
+              )}
             </div>
             {canDissolve && (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">

@@ -14,7 +14,10 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireMember(id, ct);
         if (group is null || group.Type != ConversationType.Group) return Forbid();
-        return Ok(new { group.Id, group.Name, group.AvatarUrl, group.Announcement, group.Remark, group.RequireJoinApproval, group.AllowMemberAddFriend, group.MuteAll, group.DisableRecall, group.DisableNameChange, group.HideMemberCount, group.HistoryVisibleToNewMembers, memberCount = group.HideMemberCount ? 0 : group.Members.Count(x => x.LeftAtSequence is null), members = await MemberViews(group, ct), joinRequests = group.JoinRequests.Keys });
+        await EnsureGroupMemberRecords(group, ct);
+        var memberCount = await repository.CountGroupMembersAsync(id, null, ct);
+        var firstPage = await repository.GetGroupMembersAsync(id, null, 0, GroupLimits.MaxPageSize, ct);
+        return Ok(new { group.Id, group.Name, group.AvatarUrl, group.Announcement, group.Remark, group.RequireJoinApproval, group.AllowMemberAddFriend, group.MuteAll, group.DisableRecall, group.DisableNameChange, group.HideMemberCount, group.HistoryVisibleToNewMembers, memberCount = group.HideMemberCount ? 0 : memberCount, members = await MemberViews(firstPage, ct), membersPageSize = GroupLimits.MaxPageSize, joinRequests = group.JoinRequests.Keys });
     }
 
     [HttpPut("{id}/name")]
@@ -63,23 +66,10 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
     {
         var group = await RequireMember(id, ct); if (group is null || group.Type != ConversationType.Group) return Forbid();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, GroupLimits.MaxPageSize);
+        await EnsureGroupMemberRecords(group, ct);
         var total = await repository.CountGroupMembersAsync(id, search, ct);
         var records = await repository.GetGroupMembersAsync(id, search, (page - 1) * pageSize, pageSize, ct);
-        // Legacy groups are lazily backfilled once, without returning all members.
-        if (total == 0 && group.Members.Count > 0)
-        {
-            foreach (var member in group.Members.Where(x => x.LeftAtSequence is null))
-                await repository.UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = id, UserId = member.UserId, Role = member.Role, JoinedAtSequence = member.JoinedAtSequence, LeftAtSequence = member.LeftAtSequence, Muted = member.Muted, Pinned = member.Pinned }, ct);
-            total = await repository.CountGroupMembersAsync(id, search, ct);
-            records = await repository.GetGroupMembersAsync(id, search, (page - 1) * pageSize, pageSize, ct);
-        }
-        var items = new List<ConversationMemberView>();
-        foreach (var member in records)
-        {
-            var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is null) continue;
-            var devices = (user.DevicePublicKeys ?? []).Where(x => !string.IsNullOrWhiteSpace(x.Value)).Select(x => new EncryptionDeviceView(x.Key, x.Value)).ToList();
-            items.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, member.Muted, devices));
-        }
+        var items = await MemberViews(records, ct);
         return Ok(new GroupMemberPage(items, total, page, pageSize, (int)Math.Ceiling(total / (double)pageSize)));
     }
 
@@ -210,9 +200,10 @@ public sealed class GroupsController(IChatRepository repository, IHubContext<Cha
         if (value.Trim().Length > (manager ? 2000 : 80)) return BadRequest(new { error = "内容长度无效" }); apply(group, value.Trim()); await repository.UpdateConversationAsync(group, ct); await Notify(group, "group-settings-updated", ct); return NoContent();
     }
 
-    private async Task<Conversation?> RequireMember(string id, CancellationToken ct) { var group = await repository.GetConversationAsync(id, ct); return group is not null && !group.IsDissolved && group.Members.Any(x => x.UserId == User.UserId() && x.LeftAtSequence is null) ? group : null; }
-    private async Task<Conversation?> RequireManager(string id, CancellationToken ct) { var group = await RequireMember(id, ct); var role = group?.Members.First(x => x.UserId == User.UserId()).Role; return group?.Type == ConversationType.Group && role is MemberRole.Owner or MemberRole.Admin ? group : null; }
-    private async Task<Conversation?> RequireOwner(string id, CancellationToken ct) { var group = await RequireMember(id, ct); return group?.Type == ConversationType.Group && group.Members.First(x => x.UserId == User.UserId()).Role == MemberRole.Owner ? group : null; }
-    private async Task<IReadOnlyList<ConversationMemberView>> MemberViews(Conversation group, CancellationToken ct) { var list = new List<ConversationMemberView>(); foreach (var member in group.Members.Where(x => x.LeftAtSequence is null)) { var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is not null) list.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, member.Muted, [])); } return list; }
+    private async Task<Conversation?> RequireMember(string id, CancellationToken ct) { var group = await repository.GetConversationAsync(id, ct); if (group is null || group.IsDissolved || !group.Members.Any(x => x.UserId == User.UserId() && x.LeftAtSequence is null)) { if (group?.Type != ConversationType.Group) return null; var external = await repository.GetGroupMemberAsync(id, User.UserId(), ct); return external is { LeftAtSequence: null } ? group : null; } return group; }
+    private async Task<Conversation?> RequireManager(string id, CancellationToken ct) { var group = await RequireMember(id, ct); if (group?.Type != ConversationType.Group) return null; var role = group.Members.FirstOrDefault(x => x.UserId == User.UserId())?.Role ?? (await repository.GetGroupMemberAsync(id, User.UserId(), ct))?.Role; return role is MemberRole.Owner or MemberRole.Admin ? group : null; }
+    private async Task<Conversation?> RequireOwner(string id, CancellationToken ct) { var group = await RequireMember(id, ct); if (group?.Type != ConversationType.Group) return null; var role = group.Members.FirstOrDefault(x => x.UserId == User.UserId())?.Role ?? (await repository.GetGroupMemberAsync(id, User.UserId(), ct))?.Role; return role == MemberRole.Owner ? group : null; }
+    private async Task EnsureGroupMemberRecords(Conversation group, CancellationToken ct) { if (group.Type != ConversationType.Group || await repository.CountGroupMembersAsync(group.Id, null, ct) > 0) return; foreach (var member in group.Members.Where(x => x.LeftAtSequence is null)) await repository.UpsertGroupMemberAsync(new GroupMemberRecord { ConversationId = group.Id, UserId = member.UserId, Role = member.Role, JoinedAtSequence = member.JoinedAtSequence, Muted = member.Muted, Pinned = member.Pinned }, ct); }
+    private async Task<IReadOnlyList<ConversationMemberView>> MemberViews(IReadOnlyList<GroupMemberRecord> records, CancellationToken ct) { var list = new List<ConversationMemberView>(); foreach (var member in records) { var user = await repository.GetUserByIdAsync(member.UserId, ct); if (user is not null) list.Add(new ConversationMemberView(user.Id, user.Account, user.DisplayName, user.AvatarUrl, member.Role, member.Muted, [])); } return list; }
     private Task Notify(Conversation group, string action, CancellationToken ct) => hub.Clients.Users(group.Members.Where(x => x.LeftAtSequence is null).Select(x => x.UserId)).SendAsync("conversation.updated", new { conversationId = group.Id, action, name = group.Name }, ct);
 }
