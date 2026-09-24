@@ -502,6 +502,7 @@ function Messenger({
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
+  const [messagesLoadedFor, setMessagesLoadedFor] = useState<string | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [quotedMessage, setQuotedMessage] = useState<DecryptedMessage | null>(
     null
@@ -569,6 +570,7 @@ function Messenger({
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const conversationScrollPositionsRef = useRef(new Map<string, number>());
   const pendingScrollRestoreRef = useRef<string | null>(null);
+  const messageLoadRequestRef = useRef(0);
   const selectedRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const readFloorRef = useRef(new Map<string, number>());
@@ -608,13 +610,24 @@ function Messenger({
   }, [chatVisible, saveCurrentScrollPosition, selectedId]);
 
   useEffect(() => {
-    if (!chatVisible || !selectedId || pendingScrollRestoreRef.current !== selectedId)
+    if (
+      !chatVisible ||
+      !selectedId ||
+      messagesLoadedFor !== selectedId ||
+      pendingScrollRestoreRef.current !== selectedId
+    )
       return;
     const frame = window.requestAnimationFrame(() => {
       restoreScrollPosition();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chatVisible, messages, restoreScrollPosition, selectedId]);
+  }, [
+    chatVisible,
+    messages,
+    messagesLoadedFor,
+    restoreScrollPosition,
+    selectedId,
+  ]);
 
   useEffect(() => {
     if (!showQuickActions) return;
@@ -928,10 +941,15 @@ function Messenger({
 
   const loadMessages = useCallback(
     async (conversationId: string) => {
+      const requestId = ++messageLoadRequestRef.current;
+      setMessagesLoadedFor(null);
       const encrypted = await api<Message[]>(
         `/api/conversations/${conversationId}/messages?after=0&limit=100`
       );
-      setMessages(await Promise.all(encrypted.map(decrypt)));
+      const decrypted = await Promise.all(encrypted.map(decrypt));
+      if (requestId !== messageLoadRequestRef.current) return;
+      setMessages(decrypted);
+      setMessagesLoadedFor(conversationId);
       if (encrypted.length)
         await markConversationRead(conversationId, Number.MAX_SAFE_INTEGER);
     },
@@ -1198,6 +1216,7 @@ function Messenger({
 
   useEffect(() => {
     if (!selectedId || !chatVisible) {
+      setMessagesLoadedFor(null);
       if (!selectedId) setMessages([]);
       return;
     }
