@@ -198,12 +198,11 @@ const adminUserColumns = [
 ] as const;
 type AdminUserColumnKey = (typeof adminUserColumns)[number][0];
 const defaultHiddenAdminUserColumnKeys = new Set<AdminUserColumnKey>([
-  "balance",
-  "frozenBalance",
-  "bankCardLocked",
-  "enterprise",
-  "redFlagged",
+  "risk1",
   "risk2",
+  "balance",
+  "bankCardLocked",
+  "redFlagged",
 ]);
 type AdminUserPage = {
   items: AdminUser[];
@@ -1142,7 +1141,7 @@ function UsersPanel({
   const [visibleColumns, setVisibleColumns] = useState<Record<AdminUserColumnKey, boolean>>(() => {
     const defaults = Object.fromEntries(adminUserColumns.map(([key]) => [key, !defaultHiddenAdminUserColumnKeys.has(key)])) as Record<AdminUserColumnKey, boolean>;
     try {
-      const saved = JSON.parse(localStorage.getItem("echat-admin-user-columns-v2") || "{}");
+      const saved = JSON.parse(localStorage.getItem("echat-admin-user-columns-v3") || "{}");
       return { ...defaults, ...saved };
     } catch { return defaults; }
   });
@@ -1180,7 +1179,7 @@ function UsersPanel({
     totalPages: 1,
   });
   useEffect(() => {
-    localStorage.setItem("echat-admin-user-columns-v2", JSON.stringify(visibleColumns));
+    localStorage.setItem("echat-admin-user-columns-v3", JSON.stringify(visibleColumns));
   }, [visibleColumns]);
   const columnStyle = (key: AdminUserColumnKey): React.CSSProperties => ({
     display: visibleColumns[key] ? undefined : "none",
@@ -1538,51 +1537,18 @@ function UsersPanel({
                   </th>
                 </tr>
                 <tr className="border-b border-slate-300">
-                  {[
-                    "用户ID",
-                    "风险1",
-                    "风险2",
-                    "用户账号",
-                    "昵称",
-                    "手机号码",
-                    "账户余额",
-                    "冻结金额",
-                    "在线状态",
-                    "账号锁定",
-                    "登录锁定",
-                    "银行卡锁定",
-                    "注销状态",
-                    "实名认证",
-                    "企业认证",
-                    "今日上线",
-                    "红号",
-                    "角色",
-                    "注册来源",
-                    "邀请码来源",
-                    "注册时间",
-                    "登录密码修改时间",
-                    "最后上线时间",
-                    "最后登录地址",
-                    "最后在线IP",
-                    "最后节点IP",
-                    "登录失败次数",
-                    "设备数",
-                    "登录IP限制",
-                    "账户状态",
-                    "头像",
-                    "性别",
-                    "通讯号",
-                    "最后登录IP",
-                    "最后离线时间",
-                    "发送消息",
-                  ].map(label => (
+                  {adminUserColumns.map(([key, label]) => (
                     <th
-                      key={label}
+                      key={key}
+                      style={columnStyle(key)}
                       className="whitespace-nowrap border-l border-slate-200 px-2 py-2 font-medium"
                     >
                       {label}
                     </th>
                   ))}
+                  <th className="whitespace-nowrap border-l border-slate-200 px-2 py-2 font-medium">
+                    发送消息
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1743,36 +1709,36 @@ function UsersPanel({
                         )}
                       </div>
                     </td>
-                    <td className="px-2" title={user.id}>
+                    <td style={columnStyle("id")} className="px-2" title={user.id}>
                       {user.id.slice(0, 8)}
                     </td>
-                    <td className="px-2">{user.riskLevel1}</td>
-                    <td className="px-2">{user.riskLevel2}</td>
-                    <td className="px-2 font-medium">{user.account}</td>
-                    <td className="px-2">{user.displayName}</td>
-                    <td className="px-2">{user.mobilePhone || "—"}</td>
-                    <td className="px-2 tabular-nums">
+                    <td style={columnStyle("risk1")} className="px-2">{user.riskLevel1}</td>
+                    <td style={columnStyle("risk2")} className="px-2">{user.riskLevel2}</td>
+                    <td style={columnStyle("account")} className="px-2 font-medium">{user.account}</td>
+                    <td style={columnStyle("displayName")} className="px-2">{user.displayName}</td>
+                    <td style={columnStyle("mobilePhone")} className="px-2">{user.mobilePhone || "—"}</td>
+                    <td style={columnStyle("balance")} className="px-2 tabular-nums">
                       {Number(user.accountBalance).toFixed(2)}
                     </td>
-                    <td className="px-2 tabular-nums">
+                    <td style={columnStyle("frozenBalance")} className="px-2 tabular-nums">
                       {Number(user.frozenBalance).toFixed(2)}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("online")} className="px-2">
                       {badge(user.online, "在线", "离线")}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("accountLocked")} className="px-2">
                       {badge(user.accountLocked, "已锁定", "未锁定")}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("loginLocked")} className="px-2">
                       {badge(user.loginLocked, "已锁定", "未锁定")}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("bankCardLocked")} className="px-2">
                       {badge(user.bankCardLocked, "已锁定", "未锁定")}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("cancellationEnabled")} className="px-2">
                       {badge(user.cancellationEnabled, "已开启", "正常")}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("realName")} className="px-2">
                       <button
                         onClick={() =>
                           setVerification({ user, type: "RealName" })
@@ -1782,7 +1748,7 @@ function UsersPanel({
                         {badge(user.realNameVerified, "已认证", "未认证")}
                       </button>
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("enterprise")} className="px-2">
                       <button
                         onClick={() =>
                           setVerification({ user, type: "Enterprise" })
@@ -1792,7 +1758,7 @@ function UsersPanel({
                         {badge(user.enterpriseVerified, "已认证", "未认证")}
                       </button>
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("todayOnline")} className="px-2">
                       {badge(
                         new Date(user.lastSeenAtUtc).toDateString() ===
                           new Date().toDateString(),
@@ -1800,11 +1766,11 @@ function UsersPanel({
                         "否"
                       )}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("redFlagged")} className="px-2">
                       {badge(user.redFlagged, "红号", "普通")}
                     </td>
-                    <td className="px-2">{user.role}</td>
-                    <td className="px-2">
+                    <td style={columnStyle("role")} className="px-2">{user.role}</td>
+                    <td style={columnStyle("registrationSource")} className="px-2">
                       <span
                         className={
                           user.registrationSource === "后台开户"
@@ -1815,37 +1781,38 @@ function UsersPanel({
                         {user.registrationSource}
                       </span>
                     </td>
-                    <td className="px-2">{user.inviteSource || "—"}</td>
-                    <td className="px-2 whitespace-nowrap">
+                    <td style={columnStyle("inviteSource")} className="px-2">{user.inviteSource || "—"}</td>
+                    <td style={columnStyle("createdAt")} className="px-2 whitespace-nowrap">
                       {formatTime(user.createdAtUtc)}
                     </td>
-                    <td className="px-2 whitespace-nowrap">
+                    <td style={columnStyle("passwordChanged")} className="px-2 whitespace-nowrap">
                       {formatTime(user.loginPasswordChangedAtUtc)}
                     </td>
-                    <td className="px-2 whitespace-nowrap">
+                    <td style={columnStyle("lastSeen")} className="px-2 whitespace-nowrap">
                       {formatTime(user.lastSeenAtUtc)}
                     </td>
-                    <td className="px-2">{user.lastLoginAddress || "—"}</td>
-                    <td className="px-2">{user.lastOnlineIp || "—"}</td>
-                    <td className="px-2">{user.lastNodeIp || "—"}</td>
-                    <td className="px-2">{user.failedLoginAttempts}</td>
-                    <td className="px-2">{user.activeSessions}</td>
+                    <td style={columnStyle("lastLoginAddress")} className="px-2">{user.lastLoginAddress || "—"}</td>
+                    <td style={columnStyle("lastOnlineIp")} className="px-2">{user.lastOnlineIp || "—"}</td>
+                    <td style={columnStyle("lastNodeIp")} className="px-2">{user.lastNodeIp || "—"}</td>
+                    <td style={columnStyle("failedLogin")} className="px-2">{user.failedLoginAttempts}</td>
+                    <td style={columnStyle("activeSessions")} className="px-2">{user.activeSessions}</td>
                     <td
+                      style={columnStyle("loginIpRestriction")}
                       className="max-w-48 truncate px-2"
                       title={user.loginIpRestriction}
                     >
                       {user.loginIpRestriction || "—"}
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("status")} className="px-2">
                       <Status value={user.status} />
                     </td>
-                    <td className="px-2">
+                    <td style={columnStyle("avatar")} className="px-2">
                       <AdminUserAvatar user={user} />
                     </td>
-                    <td className="px-2">{user.gender || "—"}</td>
-                    <td className="px-2">{user.communicationId || "—"}</td>
-                    <td className="px-2">{user.lastLoginIp || "—"}</td>
-                    <td className="px-2 whitespace-nowrap">{formatTime(user.lastOfflineAtUtc)}</td>
+                    <td style={columnStyle("gender")} className="px-2">{user.gender || "—"}</td>
+                    <td style={columnStyle("communicationId")} className="px-2">{user.communicationId || "—"}</td>
+                    <td style={columnStyle("lastLoginIp")} className="px-2">{user.lastLoginIp || "—"}</td>
+                    <td style={columnStyle("lastOfflineAt")} className="px-2 whitespace-nowrap">{formatTime(user.lastOfflineAtUtc)}</td>
                     <td className="px-2 text-center"><button onClick={() => openOperation(user, "sendMessage")} className="inline-flex items-center gap-1 bg-pink-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-pink-500"><Send size={13} />发送</button></td>
                   </tr>
                 ))}
