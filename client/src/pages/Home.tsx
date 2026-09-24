@@ -517,6 +517,8 @@ function Messenger({
   const [addAccount, setAddAccount] = useState("");
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<"message" | "upload" | "other">("other");
+  const [textSending, setTextSending] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
   const [adminOverview, setAdminOverview] = useState<Record<
     string,
@@ -1351,17 +1353,20 @@ function Messenger({
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || !selectedId || !selected || busy || blockedConversation) {
+    if (!text || !selectedId || !selected || textSending || blockedConversation) {
       if (blockedConversation) toast.warning("该会话已被拉黑，无法发送消息");
       return;
     }
-    setBusy(true);
+    setTextSending(true);
     setDraft("");
+    const sendController = new AbortController();
+    const sendTimer = window.setTimeout(() => sendController.abort(), 30_000);
     try {
       const created = await api<Message>(
         `/api/conversations/${selectedId}/messages`,
         {
           method: "POST",
+          signal: sendController.signal,
           body: JSON.stringify({
             clientMessageId: createUuid(),
             kind: "Text",
@@ -1386,16 +1391,23 @@ function Messenger({
           ? current.map(item => (item.id === value.id ? value : item))
           : [...current, value]
       );
-      await api<void>(
+      void api<void>(
         `/api/conversations/${selectedId}/read/${created.sequence}`,
         { method: "POST" }
-      );
-      await loadData();
+      ).catch(() => undefined);
+      void loadData().catch(() => undefined);
     } catch (cause) {
       setDraft(text);
-      toast.error(cause instanceof Error ? cause.message : "发送失败");
+      toast.error(
+        sendController.signal.aborted
+          ? "文本消息发送超时，请检查 API 服务和网络连接"
+          : cause instanceof Error
+            ? cause.message
+            : "发送失败"
+      );
     } finally {
-      setBusy(false);
+      window.clearTimeout(sendTimer);
+      setTextSending(false);
     }
   }
 
@@ -1406,6 +1418,7 @@ function Messenger({
     }
     const conversationId = selectedId;
     setBusy(true);
+    setBusyKind("message");
     try {
       const created = await api<Message>(
         `/api/conversations/${conversationId}/messages`,
@@ -1437,6 +1450,7 @@ function Messenger({
       toast.error(cause instanceof Error ? cause.message : "表情发送失败");
     } finally {
       setBusy(false);
+      setBusyKind("other");
     }
   }
 
@@ -1450,6 +1464,7 @@ function Messenger({
       return;
     }
     setBusy(true);
+    setBusyKind("upload");
     try {
       const created = await sendChatMedia(selectedId, file, kind, {
         fileName:
@@ -1483,6 +1498,7 @@ function Messenger({
       );
     } finally {
       setBusy(false);
+      setBusyKind("other");
     }
   }
 
@@ -2517,7 +2533,7 @@ function Messenger({
                         event.currentTarget.value = "";
                       }}
                     />
-                    {busy && (
+                    {busyKind === "upload" && (
                       <span className="ml-2 text-[10px] text-teal-600">
                         正在上传…
                       </span>
@@ -2588,7 +2604,7 @@ function Messenger({
                     )}
                     <button
                       aria-label="发送消息"
-                      disabled={!draft.trim() || busy}
+                      disabled={!draft.trim() || textSending}
                       onClick={sendMessage}
                       className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-500 text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-600 active:scale-95 disabled:bg-slate-300 disabled:shadow-none"
                     >

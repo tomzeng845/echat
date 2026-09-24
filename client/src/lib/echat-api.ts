@@ -475,15 +475,29 @@ async function uploadMediaResumable(
   conversationId?: string
 ) {
   const chunkSize = 16 * 1024 * 1024;
+  const requestTimeoutMs = 15 * 60 * 1000;
+  const resumableFetch = async (path: string, init: RequestInit = {}) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      return await authorizedFetch(path, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted)
+        throw new Error("分块上传请求超时，请检查网络后重试；已上传部分可继续续传");
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
   const resumeKey = `echat-resumable:${purpose}:${conversationId || ""}:${fileName}:${file.size}`;
   let uploadId = localStorage.getItem(resumeKey) || "";
   try {
     if (uploadId) {
-      const status = await authorizedFetch(`/api/media/resumable/${uploadId}`);
+      const status = await resumableFetch(`/api/media/resumable/${uploadId}`);
       if (!status.ok) uploadId = "";
     }
     if (!uploadId) {
-      const init = await authorizedFetch("/api/media/resumable/init", {
+      const init = await resumableFetch("/api/media/resumable/init", {
         method: "POST",
         body: JSON.stringify({ fileName, size: file.size, contentType: file.type || "application/octet-stream", purpose, conversationId }),
       });
@@ -491,13 +505,13 @@ async function uploadMediaResumable(
       uploadId = (await init.json()).uploadId;
       localStorage.setItem(resumeKey, uploadId);
     }
-    const status = await authorizedFetch(`/api/media/resumable/${uploadId}`);
+    const status = await resumableFetch(`/api/media/resumable/${uploadId}`);
     if (!status.ok) throw new Error("无法查询断点上传进度");
     let offset = Number((await status.json()).offset || 0);
     logInfo("media-upload", "resumable upload started", { fileName, bytes: file.size, uploadIdSuffix: uploadId.slice(-8), offset });
     while (offset < file.size) {
       const end = Math.min(offset + chunkSize, file.size);
-      const response = await authorizedFetch(`/api/media/resumable/${uploadId}`, {
+      const response = await resumableFetch(`/api/media/resumable/${uploadId}`, {
         method: "PUT",
         headers: { "Content-Range": `bytes ${offset}-${end - 1}/${file.size}` },
         body: file.slice(offset, end),
@@ -506,7 +520,7 @@ async function uploadMediaResumable(
       offset = Number((await response.json()).offset);
       logInfo("media-upload", "resumable chunk uploaded", { fileName, bytes: file.size, offset });
     }
-    const complete = await authorizedFetch(`/api/media/resumable/${uploadId}/complete`, { method: "POST" });
+    const complete = await resumableFetch(`/api/media/resumable/${uploadId}/complete`, { method: "POST" });
     if (!complete.ok) throw new Error(`分块上传完成失败 (${complete.status})`);
     const result = (await complete.json()) as MediaAsset;
     localStorage.removeItem(resumeKey);
