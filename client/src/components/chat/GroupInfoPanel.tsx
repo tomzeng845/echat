@@ -14,7 +14,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { api, type ConversationMember } from "@/lib/echat-api";
+import { api, type Contact, type ConversationMember } from "@/lib/echat-api";
 import { resolveBuiltinAvatar } from "@/lib/builtin-avatars";
 import QrCodeCard from "@/components/qr/QrCodeCard";
 import QrCodeScanner from "@/components/qr/QrCodeScanner";
@@ -46,6 +46,7 @@ type Props = {
   onClear: () => void;
   onLeave: () => void;
   currentUserId: string;
+  contacts: Contact[];
   friendUserIds: string[];
   onMessageMember: (member: ConversationMember) => void;
   onVoiceCallMember: (member: ConversationMember) => void;
@@ -61,13 +62,14 @@ export default function GroupInfoPanel({
   onClear,
   onLeave,
   currentUserId,
+  contacts,
   friendUserIds,
   onMessageMember,
   onVoiceCallMember,
   onAddFriendMember,
 }: Props) {
   const [info, setInfo] = useState<GroupInfo | null>(null);
-  const [page, setPage] = useState<"info" | "manage" | "search">("info");
+  const [page, setPage] = useState<"info" | "manage" | "invite" | "search">("info");
   const [qr, setQr] = useState<{
     qrPayload: string;
     expiresAtUtc: string;
@@ -90,6 +92,9 @@ export default function GroupInfoPanel({
   );
   const [selectedMuteIds, setSelectedMuteIds] = useState<string[]>([]);
   const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
+  const [selectedInviteIds, setSelectedInviteIds] = useState<string[]>([]);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [inviting, setInviting] = useState(false);
 
   async function load() {
     try {
@@ -179,6 +184,29 @@ export default function GroupInfoPanel({
     await load();
     onChanged();
   }
+  async function inviteSelectedFriends() {
+    if (selectedInviteIds.length === 0 || inviting) return;
+    setInviting(true);
+    setError("");
+    try {
+      for (const userId of selectedInviteIds) {
+        await api(`/api/groups/${conversationId}/members`, {
+          method: "POST",
+          body: JSON.stringify({ userId }),
+        });
+      }
+      setSelectedInviteIds([]);
+      setInviteQuery("");
+      await load();
+      onChanged();
+      setPage("info");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "添加群成员失败");
+      await load();
+    } finally {
+      setInviting(false);
+    }
+  }
   async function removeMember(id: string) {
     await api(`/api/groups/${conversationId}/members/${id}`, {
       method: "DELETE",
@@ -224,6 +252,19 @@ export default function GroupInfoPanel({
   const currentMember = info?.members.find(member => member.userId === currentUserId);
   const canManage = currentMember?.role === "Owner" || currentMember?.role === "Admin";
   const canDissolve = canManage;
+  const existingMemberIds = new Set(
+    (info?.members ?? []).map(member => member.userId)
+  );
+  const inviteContacts = contacts
+    .filter(contact => contact.status === "Friend" && !existingMemberIds.has(contact.user.id))
+    .filter(contact => {
+      const keyword = inviteQuery.trim().toLowerCase();
+      if (!keyword) return true;
+      return [contact.user.displayName, contact.user.account, contact.remark]
+        .filter(Boolean)
+        .some(value => value.toLowerCase().includes(keyword));
+    })
+    .sort((a, b) => a.user.displayName.localeCompare(b.user.displayName, "zh-CN"));
   async function dissolve() {
     if (dissolving || !canDissolve || !window.confirm("解散后所有成员将无法继续使用此群聊，确定解散吗？")) return;
     setError("");
@@ -344,7 +385,12 @@ export default function GroupInfoPanel({
                   </div>
                 ))}
                 <button
-                  onClick={() => setPage("manage")}
+                  onClick={() => {
+                    setSelectedInviteIds([]);
+                    setInviteQuery("");
+                    setError("");
+                    setPage("invite");
+                  }}
                   className="grid h-16 place-items-center rounded-xl border border-dashed text-slate-400"
                 >
                   <Plus size={22} />
@@ -628,6 +674,80 @@ export default function GroupInfoPanel({
                 ))}
               </div>
             )}
+          </section>
+        )}
+        {page === "invite" && (
+          <section className="min-h-full bg-[#f3f6f7]">
+            <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white/95 px-4 py-3 backdrop-blur">
+              <button
+                type="button"
+                onClick={() => setPage("info")}
+                className="grid h-9 w-9 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"
+                aria-label="返回群资料"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <h3 className="flex-1 text-center text-lg font-semibold">选择联系人</h3>
+              <button
+                type="button"
+                disabled={selectedInviteIds.length === 0 || inviting}
+                onClick={() => void inviteSelectedFriends()}
+                className="rounded-xl bg-teal-500 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                {inviting ? "添加中…" : `完成${selectedInviteIds.length ? `（${selectedInviteIds.length}）` : ""}`}
+              </button>
+            </div>
+            <div className="p-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={inviteQuery}
+                  onChange={event => setInviteQuery(event.target.value)}
+                  placeholder="搜索好友"
+                  className="w-full rounded-xl bg-white px-10 py-3 text-sm outline-none ring-teal-300 focus:ring-2"
+                />
+              </div>
+              {error && (
+                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
+            </div>
+            <div className="border-y border-slate-100 bg-white px-4 py-3 text-sm font-medium text-slate-700">
+              我的好友（{inviteContacts.length}）
+            </div>
+            <div className="bg-white">
+              {inviteContacts.length ? inviteContacts.map(contact => {
+                const checked = selectedInviteIds.includes(contact.user.id);
+                return (
+                  <button
+                    key={contact.user.id}
+                    type="button"
+                    onClick={() => setSelectedInviteIds(current => checked
+                      ? current.filter(id => id !== contact.user.id)
+                      : [...current, contact.user.id])}
+                    className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${checked ? "border-teal-500 bg-teal-500 text-white" : "border-slate-300 text-transparent"}`}>
+                      <Check size={15} />
+                    </span>
+                    <img
+                      src={resolveBuiltinAvatar(contact.user.avatarUrl)}
+                      alt={contact.user.displayName}
+                      className="h-11 w-11 rounded-xl object-cover"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-800">{contact.user.displayName}</span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-400">{contact.remark || contact.user.account}</span>
+                    </span>
+                  </button>
+                );
+              }) : (
+                <p className="px-4 py-12 text-center text-sm text-slate-400">
+                  {inviteQuery ? "没有找到匹配的好友" : "暂无可添加的好友"}
+                </p>
+              )}
+            </div>
           </section>
         )}
         {page === "search" && (

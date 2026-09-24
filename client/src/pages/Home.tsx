@@ -566,6 +566,9 @@ function Messenger({
   const callManagerRef = useRef<CallManagerHandle>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageScrollRef = useRef<HTMLDivElement>(null);
+  const conversationScrollPositionsRef = useRef(new Map<string, number>());
+  const pendingScrollRestoreRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const readFloorRef = useRef(new Map<string, number>());
@@ -577,6 +580,41 @@ function Messenger({
     (mobileDetail || window.matchMedia("(min-width: 768px)").matches);
   selectedRef.current = chatVisible ? selectedId : null;
   conversationsRef.current = conversations;
+
+  const saveCurrentScrollPosition = useCallback(() => {
+    if (!selectedId || !messageScrollRef.current) return;
+    conversationScrollPositionsRef.current.set(
+      selectedId,
+      messageScrollRef.current.scrollTop
+    );
+  }, [selectedId]);
+
+  const restoreScrollPosition = useCallback(() => {
+    const conversationId = pendingScrollRestoreRef.current;
+    const container = messageScrollRef.current;
+    if (!conversationId || conversationId !== selectedId || !container) return;
+
+    const savedPosition = conversationScrollPositionsRef.current.get(conversationId);
+    container.scrollTop =
+      savedPosition === undefined
+        ? container.scrollHeight
+        : Math.min(savedPosition, container.scrollHeight);
+    pendingScrollRestoreRef.current = null;
+  }, [selectedId]);
+
+  useEffect(() => {
+    pendingScrollRestoreRef.current = chatVisible ? selectedId : null;
+    return () => saveCurrentScrollPosition();
+  }, [chatVisible, saveCurrentScrollPosition, selectedId]);
+
+  useEffect(() => {
+    if (!chatVisible || !selectedId || pendingScrollRestoreRef.current !== selectedId)
+      return;
+    const frame = window.requestAnimationFrame(() => {
+      restoreScrollPosition();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chatVisible, messages, restoreScrollPosition, selectedId]);
 
   useEffect(() => {
     if (!showQuickActions) return;
@@ -2393,7 +2431,11 @@ function Messenger({
                   </button>
                 </div>
               )}
-              <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
+              <div
+                ref={messageScrollRef}
+                onScroll={saveCurrentScrollPosition}
+                className="flex-1 overflow-y-auto px-4 py-6 md:px-8"
+              >
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   {messages.length ? (
                     <>
@@ -2910,6 +2952,7 @@ function Messenger({
               .catch(() => undefined);
           }}
           onClear={clearChatHistory}
+          contacts={contacts}
           friendUserIds={contacts
             .filter(contact => contact.status === "Friend")
             .map(contact => contact.user.id)}
