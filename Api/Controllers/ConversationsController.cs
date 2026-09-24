@@ -13,6 +13,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
     {
         var userId = User.UserId();
         var deviceId = CurrentDeviceId();
+        var currentUser = await repository.GetUserByIdAsync(userId, ct);
+        var currentUserIsAdmin = currentUser?.Role == UserRole.Admin;
         var conversations = await repository.GetConversationsAsync(userId, ct);
         var result = new List<ConversationView>();
         foreach (var item in conversations)
@@ -25,10 +27,11 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
             if (item.Type == ConversationType.Direct)
             {
                 peerId = item.Members.First(x => x.UserId != userId).UserId;
+                var peer = await repository.GetUserByIdAsync(peerId, ct);
                 var relation = await repository.GetRelationAsync(userId, peerId, ct);
                 var reverseRelation = await repository.GetRelationAsync(peerId, userId, ct);
-                if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend) continue;
-                var peer = await repository.GetUserByIdAsync(peerId, ct);
+                var isAdminConversation = currentUserIsAdmin || peer?.Role == UserRole.Admin;
+                if (!isAdminConversation && (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend)) continue;
                 name = peer?.DisplayName ?? "未知用户"; avatar = peer?.AvatarUrl ?? "";
             }
             var keyEnvelope = EnvelopeFor(item, userId, deviceId);

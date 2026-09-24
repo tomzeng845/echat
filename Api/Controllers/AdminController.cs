@@ -8,7 +8,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew, ILogger<AdminController> logger) : ControllerBase
 {
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
@@ -275,19 +275,29 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     {
         var admin = await repository.GetUserByIdAsync(User.UserId(), ct);
         var user = await repository.GetUserByAccountAsync(NormalizeAccount(account), ct);
-        if (admin is null || user is null || user.Role != UserRole.User) return NotFound(new { error = "用户不存在" });
+        if (admin is null || user is null || user.Role != UserRole.User)
+        {
+            logger.LogWarning("Admin message rejected: admin or target user not found. AdminId={AdminId}, TargetAccount={TargetAccount}", User.UserId(), account);
+            return NotFound(new { error = "用户不存在" });
+        }
         var content = request.Content?.Trim() ?? "";
         if (content.Length is < 1 or > 50000) return BadRequest(new { error = "消息内容不能为空且不能超过 50000 个字符" });
-        var conversation = await repository.FindDirectConversationAsync(admin.Id, user.Id, ct)
-            ?? await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = admin.Id, Members = [new() { UserId = admin.Id }, new() { UserId = user.Id }] }, ct);
+        var conversation = await repository.FindDirectConversationAsync(admin.Id, user.Id, ct);
+        var conversationCreated = conversation is null;
+        conversation ??= await repository.AddConversationAsync(new Conversation { Type = ConversationType.Direct, CreatedBy = admin.Id, Members = [new() { UserId = admin.Id }, new() { UserId = user.Id }] }, ct);
+        logger.LogInformation("Admin message conversation ready. AdminId={AdminId}, TargetUserId={TargetUserId}, ConversationId={ConversationId}, Created={Created}", admin.Id, user.Id, conversation.Id, conversationCreated);
         var message = await repository.AddMessageIdempotentlyAsync(new ChatMessage
         {
             ClientMessageId = $"admin:{Guid.NewGuid():N}", ConversationId = conversation.Id, SenderId = admin.Id,
             Kind = MessageKind.Text, Algorithm = "PLAINTEXT", KeyVersion = 0, Content = content
         }, ct);
         var view = new MessageView(message.Id, message.ClientMessageId, message.ConversationId, message.Sequence, message.SenderId, message.Kind, message.Ciphertext, message.Nonce, message.Algorithm, message.KeyVersion, message.ReplyToMessageId, message.Metadata, message.State, message.SentAtUtc, message.RecalledAtUtc, message.Content);
+        await Task.WhenAll(
+            hub.Clients.Group($"user:{admin.Id}").SendAsync("conversation.updated", new { conversationId = conversation.Id, action = conversationCreated ? "created" : "message" }, ct),
+            hub.Clients.Group($"user:{user.Id}").SendAsync("conversation.updated", new { conversationId = conversation.Id, action = conversationCreated ? "created" : "message" }, ct));
         await hub.Clients.Group($"user:{admin.Id}").SendAsync("message.created", view, ct);
         await hub.Clients.Group($"user:{user.Id}").SendAsync("message.created", view, ct);
+        logger.LogInformation("Admin message broadcast completed. MessageId={MessageId}, ConversationId={ConversationId}, TargetUserId={TargetUserId}", message.Id, conversation.Id, user.Id);
         _ = push.SendMessageAsync(conversation, message, CancellationToken.None);
         await AuditAsync("user.message", "user", user.Id, "管理员向用户发送消息", ct);
         return Ok(view);
