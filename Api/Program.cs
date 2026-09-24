@@ -213,7 +213,7 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push, OpenImService openIm) => Results.Ok(new
+app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment environment, GeoIpService geoIp, PushNotificationService push, OpenImService openIm, VideoProcessingService media) => Results.Ok(new
 {
     name = "E聊 API",
     version = "0.9.0",
@@ -224,6 +224,7 @@ app.MapGet("/api/health", (IConfiguration configuration, IHostEnvironment enviro
     geoIp = new { enabled = geoIp.Enabled, provider = geoIp.Provider, cachedEntries = geoIp.CachedEntries },
     push = new { enabled = push.Enabled, provider = push.Provider, androidEnabled = push.AndroidEnabled, iosEnabled = push.IosEnabled },
     openIm = new { configured = openIm.Configured },
+    media = new { available = media.IsAvailable, status = media.Status },
     utcNow = DateTime.UtcNow
 }));
 app.MapFallback(async context =>

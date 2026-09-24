@@ -486,7 +486,7 @@
 - [ ] 接入完整 LiveKit Swift SDK 的 Room/AudioManager，而不是当前仅底层 `LiveKitWebRTC` 包
 - [ ] 将 OpenIM signalingInvite/accept/hangup 与 CallKit/PushKit 生命周期接通
 - [ ] iOS 真机验证锁屏接听、听筒/外放/蓝牙、中断恢复和第二通电话
-- [ ] 群会话中选择一名成员建立一对一通话；不创建多人房间
+- [x] 群会话中选择一名成员建立一对一通话；不创建多人房间
 
 ## 2026-09-15 视频播放优化
 
