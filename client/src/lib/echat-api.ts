@@ -281,12 +281,12 @@ export async function getRealtimeAccessToken(): Promise<string> {
   if (!session?.accessToken) return "";
   const expiresAt = session.expiresAtUtc ? Date.parse(session.expiresAtUtc) : 0;
   const needsRefresh = !Number.isFinite(expiresAt) || expiresAt <= Date.now() + 30_000;
-  if (needsRefresh && session.refreshToken) {
+  if (needsRefresh) {
+    if (!session.refreshToken) return "";
     const refreshed = await refreshSession(session);
-    if (refreshed?.accessToken) return refreshed.accessToken;
-    // refreshSession clears the persisted session on a definitive 401.
-    // Never send the stale token after that failure.
-    if (!getSession()?.accessToken) return "";
+    // An expired token must never be used as a fallback. If refresh failed,
+    // return an empty token so SignalR stops instead of sending stale auth.
+    return refreshed?.accessToken || "";
   }
   return getSession()?.accessToken || session.accessToken;
 }

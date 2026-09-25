@@ -90,7 +90,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         OnAuthenticationFailed = context =>
         {
             var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EChat.JwtAuthentication");
-            logger.LogWarning(context.Exception, "JWT authentication failed. path={Path}, method={Method}, hasAuthorization={HasAuthorization}, hasQueryToken={HasQueryToken}, traceId={TraceId}",
+            // ErrorFileLogger intentionally persists only Error/Critical entries.
+            // Keep the complete validation exception in Logs without recording the token itself.
+            logger.LogError(context.Exception, "JWT authentication failed. failureType={FailureType}, failureMessage={FailureMessage}, path={Path}, method={Method}, hasAuthorization={HasAuthorization}, hasQueryToken={HasQueryToken}, traceId={TraceId}",
+                context.Exception.GetType().FullName,
+                context.Exception.Message,
                 context.HttpContext.Request.Path,
                 context.HttpContext.Request.Method,
                 context.Request.Headers.ContainsKey("Authorization"),
