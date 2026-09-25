@@ -109,13 +109,15 @@ public sealed class QrController(IChatRepository repository, SessionService sess
         if (token is null || !await repository.TryUseContactQrAsync(token.Id, ct)) return BadRequest(new { error = "名片二维码无效或已过期" });
         var senderId = User.UserId();
         if (token.OwnerId == senderId) return BadRequest(new { error = "不能添加自己为好友" });
+        var sender = await repository.GetUserByIdAsync(senderId, ct);
+        var owner = await repository.GetUserByIdAsync(token.OwnerId, ct);
+        if (sender is null || owner is null || !string.Equals(sender.TenantId, owner.TenantId, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { error = "不同租户之间不能添加好友" });
         var relation = await repository.GetRelationAsync(senderId, token.OwnerId, ct);
         var reverse = await repository.GetRelationAsync(token.OwnerId, senderId, ct);
         if (relation?.Status == RelationStatus.Blocked || reverse?.Status == RelationStatus.Blocked) return Forbid();
         if (relation?.Status == RelationStatus.Friend) return Conflict(new { error = "你们已经是好友" });
         var friendRequest = new FriendRequest { RequestId = $"qr-{token.Id}-{senderId}", SenderId = senderId, ReceiverId = token.OwnerId, Note = "通过二维码添加", Source = "qrcode" };
         var item = await repository.AddFriendRequestAsync(friendRequest, ct);
-        var sender = await repository.GetUserByIdAsync(senderId, ct);
         await hub.Clients.Group($"user:{token.OwnerId}").SendAsync("contact.requested", new
         {
             item.Id,
