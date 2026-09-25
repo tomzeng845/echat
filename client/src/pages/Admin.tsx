@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -273,6 +273,25 @@ type Conversation = {
   lastSequence: number;
   lastMessageAtUtc?: string;
   isDissolved: boolean;
+};
+type AdminConversationMessage = {
+  id: string;
+  sequence: number;
+  kind: string;
+  state: string;
+  sentAtUtc: string;
+  senderId: string;
+  account?: string;
+  displayName?: string;
+  content?: string;
+  algorithm?: string;
+  metadata?: Record<string, string>;
+  plaintextAvailable: boolean;
+};
+type AdminConversationMessages = {
+  conversation: Pick<Conversation, "id" | "name" | "type" | "isDissolved">;
+  members: { userId: string; account?: string; displayName?: string; role?: string }[];
+  messages: AdminConversationMessage[];
 };
 
 type Leaf = { id: PageId; label: string };
@@ -3457,6 +3476,7 @@ function ConversationsPanel({
   refresh: number;
   groupsOnly: boolean;
 }) {
+  const [selectedConversationId, setSelectedConversationId] = useState<string>();
   const { data, loading, reload } = useData<Conversation[]>(
     "/api/admin/conversations",
     refresh,
@@ -3504,11 +3524,27 @@ function ConversationsPanel({
                   </p>
                 </div>
                 {x.type === "Group" && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedConversationId(x.id)}
+                      className="admin-action inline-flex items-center gap-2 bg-teal-50 text-teal-700"
+                    >
+                      <MessageCircleMore size={16} /> 查看聊天记录
+                    </button>
+                    <button
+                      onClick={() => action(x)}
+                      className={`admin-action ${x.isDissolved ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
+                    >
+                      {x.isDissolved ? "恢复群聊" : "解散群聊"}
+                    </button>
+                  </div>
+                )}
+                {x.type !== "Group" && (
                   <button
-                    onClick={() => action(x)}
-                    className={`admin-action ${x.isDissolved ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
+                    onClick={() => setSelectedConversationId(x.id)}
+                    className="admin-action inline-flex items-center gap-2 bg-teal-50 text-teal-700"
                   >
-                    {x.isDissolved ? "恢复群聊" : "解散群聊"}
+                    <MessageCircleMore size={16} /> 查看聊天记录
                   </button>
                 )}
               </div>
@@ -3521,7 +3557,88 @@ function ConversationsPanel({
           )}
         </div>
       )}
+      {selectedConversationId && (
+        <AdminChatRecordsPanel
+          conversationId={selectedConversationId}
+          refresh={refresh}
+          onClose={() => setSelectedConversationId(undefined)}
+        />
+      )}
     </div>
+  );
+}
+
+function AdminChatRecordsPanel({
+  conversationId,
+  refresh,
+  onClose,
+}: {
+  conversationId: string;
+  refresh: number;
+  onClose: () => void;
+}) {
+  const { data, loading } = useData<AdminConversationMessages | null>(
+    `/api/admin/conversations/${conversationId}/messages?limit=200`,
+    refresh,
+    null
+  );
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [data]);
+  const memberMap = useMemo(
+    () => new Map((data?.members ?? []).map(member => [member.userId, member])),
+    [data?.members]
+  );
+  return (
+    <Card className="mt-4 overflow-hidden p-0">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+        <div>
+          <h3 className="font-semibold">
+            {data?.conversation.name || "聊天记录"}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            与前台会话框一致的头像、昵称、时间和气泡排版
+          </p>
+        </div>
+        <button onClick={onClose} className="admin-filter-button" aria-label="关闭聊天记录">
+          <X size={16} />
+        </button>
+      </div>
+      <div ref={viewportRef} className="max-h-[620px] min-h-64 space-y-4 overflow-y-auto bg-[#f2f4f6] px-4 py-6 md:px-8">
+        {loading ? (
+          <Loading />
+        ) : data?.messages.length ? (
+          data.messages.map(message => {
+            const member = memberMap.get(message.senderId);
+            const name = message.displayName || member?.displayName || message.account || member?.account || "未知用户";
+            const isRight = data.conversation.type === "Direct" && message.senderId === data.members.at(-1)?.userId;
+            const kindLabel: Record<string, string> = { Image: "[图片]", Video: "[视频]", Voice: "[语音]", File: "[文件]", Emoji: "[表情]" };
+            const content = message.plaintextAvailable && message.content?.trim()
+              ? message.content
+              : kindLabel[message.kind] || (message.state === "Recalled" ? "消息已撤回" : "加密消息");
+            return (
+              <div key={message.id} className={`flex items-end gap-2 ${isRight ? "justify-end" : "justify-start"}`}>
+                {!isRight && <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-300 text-sm font-semibold text-slate-700">{name.slice(0, 1)}</div>}
+                <div className={`flex max-w-[82%] flex-col ${isRight ? "items-end" : "items-start"}`}>
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-500">
+                    <span>{name}</span>
+                    <span>{formatTime(message.sentAtUtc)}</span>
+                  </div>
+                  <div className={`rounded-[20px] px-4 py-3 text-sm leading-6 shadow-sm ${message.state === "Recalled" ? "bg-transparent text-slate-400" : isRight ? "rounded-br-md bg-teal-500 text-white" : "rounded-bl-md bg-white text-slate-800"}`}>
+                    <span className="whitespace-pre-wrap break-words">{content}</span>
+                  </div>
+                </div>
+                {isRight && <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-200 text-sm font-semibold text-teal-800">{name.slice(0, 1)}</div>}
+              </div>
+            );
+          })
+        ) : (
+          <Empty text="暂无聊天记录" />
+        )}
+      </div>
+    </Card>
   );
 }
 
