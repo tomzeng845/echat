@@ -298,7 +298,7 @@ public sealed class AdminModulesController(
     public async Task<ActionResult> Conversations([FromQuery] int limit = 200, CancellationToken ct = default)
     {
         var items = await repository.GetAllConversationsAsync(Math.Clamp(limit, 1, 500), ct);
-        return Ok(items.Select(x => new { x.Id, x.Type, x.Name, x.CreatedBy, memberCount = x.Members.Count(v => v.LeftAtSequence is null), x.LastSequence, x.LastMessageAtUtc, x.IsDissolved }));
+        return Ok(items.Select(x => new { x.Id, tenantId = TenantData.NormalizeStored(x.TenantId), x.Type, x.Name, x.CreatedBy, memberCount = x.Members.Count(v => v.LeftAtSequence is null), x.LastSequence, x.LastMessageAtUtc, x.IsDissolved }));
     }
 
     [HttpPost("conversations/{id}/action")]

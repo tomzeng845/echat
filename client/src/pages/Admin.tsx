@@ -149,6 +149,7 @@ type Overview = {
 };
 type AdminUser = {
   id: string;
+  tenantId?: string;
   account: string;
   displayName: string;
   avatarUrl: string;
@@ -266,6 +267,7 @@ type Audit = {
 };
 type Conversation = {
   id: string;
+  tenantId?: string;
   type: "Direct" | "Group" | "System";
   name: string;
   createdBy: string;
@@ -1306,6 +1308,19 @@ function UsersPanel({
     setMenuId(undefined);
     setStatusMenuId(undefined);
   };
+  const assignUserTenant = async (user: AdminUser, nextTenant: string) => {
+    try {
+      await api(`/api/admin/users/${user.id}/tenant`, {
+        method: "PUT",
+        body: JSON.stringify({ tenantId: nextTenant }),
+      });
+      toast.success("用户后台归属已更新");
+      setMenuId(undefined);
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "用户归属更新失败");
+    }
+  };
   const filter = (key: keyof typeof draft, value: string) =>
     setDraft(current => ({ ...current, [key]: value }));
   const badge = (active: boolean, yes: string, no: string) => (
@@ -1743,6 +1758,19 @@ function UsersPanel({
                               <KeyRound size={14} />
                               登录密码
                             </button>
+                            <label className="flex items-center gap-2 px-3 py-2 text-xs text-slate-600">
+                              <span>所属后台</span>
+                              <select
+                                value={user.tenantId || "unassigned"}
+                                onChange={event => assignUserTenant(user, event.target.value)}
+                                className="min-w-24 rounded border border-slate-200 bg-white px-1 py-1"
+                                aria-label="分配用户后台"
+                              >
+                                <option value="a">A后台</option>
+                                <option value="b">B后台</option>
+                                <option value="unassigned">未分配</option>
+                              </select>
+                            </label>
                             <button
                               onClick={() => openOperation(user, "sendMessage")}
                             >
@@ -3534,6 +3562,18 @@ function ConversationsPanel({
     });
     reload();
   }
+  async function assignTenant(item: Conversation, nextTenant: string) {
+    try {
+      await api(`/api/admin/conversations/${item.id}/tenant`, {
+        method: "PUT",
+        body: JSON.stringify({ tenantId: nextTenant }),
+      });
+      toast.success("群组及历史消息归属已更新");
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "群组归属更新失败");
+    }
+  }
   return (
     <div>
       <PanelTitle
@@ -3563,9 +3603,22 @@ function ConversationsPanel({
                     {x.type} · {x.memberCount} 人 · {x.lastSequence} 条消息 ·{" "}
                     {formatTime(x.lastMessageAtUtc)}
                   </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    当前归属：{x.tenantId === "a" ? "A后台" : x.tenantId === "b" ? "B后台" : "未分配"}
+                  </p>
                 </div>
                 {x.type === "Group" && (
                   <div className="flex flex-wrap gap-2">
+                    <select
+                      value={x.tenantId || "unassigned"}
+                      onChange={event => assignTenant(x, event.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
+                      aria-label="分配群组后台"
+                    >
+                      <option value="a">A后台</option>
+                      <option value="b">B后台</option>
+                      <option value="unassigned">未分配</option>
+                    </select>
                     <button
                       onClick={() => setSelectedConversationId(x.id)}
                       className="admin-action inline-flex items-center gap-2 bg-teal-50 text-teal-700"
