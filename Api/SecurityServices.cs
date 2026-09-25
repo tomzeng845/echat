@@ -11,6 +11,7 @@ public sealed class TokenService(IConfiguration configuration)
     private readonly string _issuer = configuration["Jwt:Issuer"] ?? "EChat";
     private readonly string _audience = configuration["Jwt:Audience"] ?? "EChat.Client";
     private readonly byte[] _key = SHA256.HashData(Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET") ?? "development-only-echat-signing-key-change-me-2026"));
+    private const string SigningKeyId = "echat-jwt-v1";
 
     public (string token, DateTime expires) CreateAccessToken(UserAccount user, TimeSpan? lifetime = null, string scope = "app", string? sessionId = null, string? deviceId = null)
     {
@@ -25,7 +26,8 @@ public sealed class TokenService(IConfiguration configuration)
         };
         if (!string.IsNullOrWhiteSpace(sessionId)) claims.Add(new Claim("session_id", sessionId));
         if (!string.IsNullOrWhiteSpace(deviceId)) claims.Add(new Claim("device_id", deviceId));
-        var credentials = new SigningCredentials(new SymmetricSecurityKey(_key), SecurityAlgorithms.HmacSha256);
+        var signingKey = new SymmetricSecurityKey(_key) { KeyId = SigningKeyId };
+        var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
         var jwt = new JwtSecurityToken(_issuer, _audience, claims, expires: expires, signingCredentials: credentials);
         return (new JwtSecurityTokenHandler().WriteToken(jwt), expires);
     }
@@ -42,7 +44,11 @@ public sealed class TokenService(IConfiguration configuration)
 
     public TokenValidationParameters ValidationParameters() => new()
     {
-        ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(_key),
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(_key) { KeyId = SigningKeyId },
+        // Accept legacy tokens that were issued without a kid while new tokens
+        // carry a stable key id for deterministic key selection.
+        IssuerSigningKeyResolver = (_, _, _, _) => [new SymmetricSecurityKey(_key) { KeyId = SigningKeyId }],
         ValidateIssuer = true, ValidIssuer = _issuer, ValidateAudience = true, ValidAudience = _audience,
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = ClaimTypes.Name, RoleClaimType = ClaimTypes.Role
     };
