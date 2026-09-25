@@ -39,6 +39,7 @@ public static class TenantScopeExtensions
 
 public sealed class TenantContext(IHttpContextAccessor accessor)
 {
+    public bool CanSwitchTenant => accessor.HttpContext?.User?.AdminTenantScope() == TenantIds.All;
     public string CurrentAdminScope
     {
         get

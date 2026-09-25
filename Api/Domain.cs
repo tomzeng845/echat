@@ -42,6 +42,26 @@ public sealed class TenantDefinition
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public sealed class TenantDomain
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = "";
+    public string Domain { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class AppDefinition
+{
+    [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = "";
+    public string PackageName { get; set; } = "";
+    public string Domain { get; set; } = "";
+    public string TenantId { get; set; } = TenantIds.Unassigned;
+    public bool Enabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class UserAccount
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -545,6 +565,9 @@ public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount
 public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator, string TenantId = TenantIds.All);
 public sealed record AdminTenantAssignmentRequest(string TenantId);
 public sealed record AdminTenantCreateRequest(string Name, string Code, string AdminAccount, string AdminPassword, string AdminDisplayName);
+public sealed record AdminTenantUpdateRequest(string Name, bool Enabled);
+public sealed record AdminDomainRequest(string TenantId, string Domain, bool Enabled = true);
+public sealed record AdminAppRequest(string Name, string PackageName, string Domain, string TenantId = TenantIds.Unassigned, bool Enabled = true);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
 public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);
 public sealed record AdminVerificationRequest(string Type, string RealName = "", string IdNumber = "", string EnterpriseName = "", string CreditCode = "", string LegalRepresentative = "", IReadOnlyList<string>? MaterialAssetIds = null, string Note = "");

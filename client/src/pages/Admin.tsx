@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  AppWindow,
   Ban,
   Bot,
   CheckCircle2,
@@ -16,6 +17,7 @@ import {
   FileClock,
   FileWarning,
   Gauge,
+  Globe2,
   Gift,
   History,
   Home,
@@ -97,6 +99,9 @@ type UserOperationKind =
   | "password";
 type PageId =
   | "home"
+  | "platform-tenants"
+  | "platform-domains"
+  | "platform-apps"
   | "account-users"
   | "account-login"
   | "account-offline"
@@ -305,6 +310,16 @@ type MenuGroup = {
   children: Leaf[];
 };
 const groups: MenuGroup[] = [
+  {
+    id: "platform",
+    label: "平台管理",
+    icon: Globe2,
+    children: [
+      { id: "platform-tenants", label: "租户管理" },
+      { id: "platform-domains", label: "域名管理" },
+      { id: "platform-apps", label: "APP管理" },
+    ],
+  },
   {
     id: "account",
     label: "账户系统",
@@ -731,6 +746,9 @@ export default function Admin() {
       })
       .catch(() => undefined);
   }, [session]);
+  useEffect(() => {
+    if (canSwitchTenant) setPage(tenantScope === "*" ? "platform-tenants" : "home");
+  }, [canSwitchTenant, tenantScope]);
   if (!session) return <AdminLogin onAuthenticated={setAdminSession} />;
   const navigate = (id: PageId) => {
     setPage(id);
@@ -772,7 +790,9 @@ export default function Admin() {
             <Home size={18} />
             首页
           </button>
-          {groups.map(group => (
+          {(canSwitchTenant && tenantScope === "*"
+            ? groups.filter(group => group.id === "platform")
+            : groups.filter(group => group.id !== "platform")).map(group => (
             <div key={group.id} className="border-b border-white/[.06]">
               <button
                 onClick={() =>
@@ -884,6 +904,9 @@ export default function Admin() {
 
 function renderPage(page: PageId, refresh: number, currentUserId: string) {
   if (page === "home") return <OverviewPanel refresh={refresh} />;
+  if (page === "platform-tenants") return <PlatformManagementPanel refresh={refresh} tab="tenants" />;
+  if (page === "platform-domains") return <PlatformManagementPanel refresh={refresh} tab="domains" />;
+  if (page === "platform-apps") return <PlatformManagementPanel refresh={refresh} tab="apps" />;
   if (page === "account-users")
     return <UsersPanel refresh={refresh} currentUserId={currentUserId} />;
   if (page === "account-login") return <DocLogsPanel refresh={refresh} />;
@@ -3894,4 +3917,111 @@ function RecordsInline({ data }: { data: ModuleRecord[] }) {
       )}
     </div>
   );
+}
+
+
+type PlatformTenant = {
+  id: string;
+  name: string;
+  code: string;
+  enabled: boolean;
+  defaultAdminAccount: string;
+  userCount: number;
+  createdAtUtc: string;
+};
+type PlatformDomain = { id: string; tenantId: string; domain: string; enabled: boolean; createdAtUtc: string };
+type PlatformApp = { id: string; name: string; packageName: string; domain: string; tenantId: string; enabled: boolean; createdAtUtc: string };
+
+function PlatformManagementPanel({ refresh, tab }: { refresh: number; tab: "tenants" | "domains" | "apps" }) {
+  const tenants = useData<PlatformTenant[]>("/api/admin/platform/tenants", refresh, []);
+  const domains = useData<PlatformDomain[]>("/api/admin/platform/domains", refresh, []);
+  const apps = useData<PlatformApp[]>("/api/admin/platform/apps", refresh, []);
+  const [tenantForm, setTenantForm] = useState({ name: "", code: "", adminAccount: "", adminPassword: "", adminDisplayName: "" });
+  const [domainForm, setDomainForm] = useState({ tenantId: "", domain: "" });
+  const [appForm, setAppForm] = useState({ name: "", packageName: "", domain: "", tenantId: "" });
+
+  useEffect(() => {
+    if (!domainForm.tenantId && tenants.data[0]) setDomainForm(value => ({ ...value, tenantId: tenants.data[0].id }));
+    if (!appForm.tenantId && tenants.data[0]) setAppForm(value => ({ ...value, tenantId: tenants.data[0].id }));
+  }, [tenants.data, domainForm.tenantId, appForm.tenantId]);
+
+  async function reloadAll() {
+    await Promise.all([tenants.reload(), domains.reload(), apps.reload()]);
+  }
+  async function submitTenant(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await api("/api/admin/tenants", { method: "POST", body: JSON.stringify(tenantForm) });
+      setTenantForm({ name: "", code: "", adminAccount: "", adminPassword: "", adminDisplayName: "" });
+      await reloadAll(); toast.success("租户和默认管理员已创建");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "创建租户失败"); }
+  }
+  async function editTenant(item: PlatformTenant) {
+    const name = window.prompt("租户名称", item.name);
+    if (!name) return;
+    try { await api(`/api/admin/platform/tenants/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify({ name, enabled: item.enabled }) }); await tenants.reload(); toast.success("租户已修改"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "修改失败"); }
+  }
+  async function toggleTenant(item: PlatformTenant) {
+    try { await api(`/api/admin/platform/tenants/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify({ name: item.name, enabled: !item.enabled }) }); await tenants.reload(); toast.success(item.enabled ? "租户已禁用" : "租户已启用"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "操作失败"); }
+  }
+  async function deleteTenant(item: PlatformTenant) {
+    if (!window.confirm(`确认删除租户“${item.name}”吗？有用户的租户不能删除。`)) return;
+    try { await api(`/api/admin/platform/tenants/${encodeURIComponent(item.id)}`, { method: "DELETE" }); await reloadAll(); toast.success("租户已删除"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "删除失败"); }
+  }
+  async function submitDomain(event: React.FormEvent) {
+    event.preventDefault();
+    try { await api("/api/admin/platform/domains", { method: "POST", body: JSON.stringify(domainForm) }); setDomainForm(value => ({ ...value, domain: "" })); await domains.reload(); toast.success("域名已添加"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "添加域名失败"); }
+  }
+  async function editDomain(item: PlatformDomain) {
+    const domain = window.prompt("域名", item.domain); if (!domain) return;
+    try { await api(`/api/admin/platform/domains/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify({ tenantId: item.tenantId, domain, enabled: item.enabled }) }); await domains.reload(); toast.success("域名已修改"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "修改失败"); }
+  }
+  async function deleteDomain(item: PlatformDomain) {
+    if (!window.confirm(`确认删除域名 ${item.domain} 吗？`)) return;
+    try { await api(`/api/admin/platform/domains/${encodeURIComponent(item.id)}`, { method: "DELETE" }); await domains.reload(); toast.success("域名已删除"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "删除失败"); }
+  }
+  async function submitApp(event: React.FormEvent) {
+    event.preventDefault();
+    try { await api("/api/admin/platform/apps", { method: "POST", body: JSON.stringify(appForm) }); setAppForm(value => ({ ...value, name: "", packageName: "", domain: "" })); await apps.reload(); toast.success("APP已添加"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "添加 APP 失败"); }
+  }
+  async function editApp(item: PlatformApp) {
+    const name = window.prompt("APP名称", item.name); if (!name) return;
+    const domain = window.prompt("APP域名", item.domain) ?? item.domain;
+    try { await api(`/api/admin/platform/apps/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify({ name, packageName: item.packageName, domain, tenantId: item.tenantId, enabled: item.enabled }) }); await apps.reload(); toast.success("APP已修改"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "修改失败"); }
+  }
+  async function deleteApp(item: PlatformApp) {
+    if (!window.confirm(`确认删除 APP“${item.name}”吗？`)) return;
+    try { await api(`/api/admin/platform/apps/${encodeURIComponent(item.id)}`, { method: "DELETE" }); await apps.reload(); toast.success("APP已删除"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "删除失败"); }
+  }
+  const tenantName = (id: string) => tenants.data.find(item => item.id === id)?.name || id || "未分配";
+  return <div className="grid gap-5">
+    {tab === "tenants" && <>
+      <Card><PanelTitle title="新建租户" description="创建租户时同时生成该租户的默认管理员；默认管理员只能管理本租户。" /><form onSubmit={submitTenant} className="grid gap-3 md:grid-cols-5">
+        <input className="admin-input" placeholder="租户名称" value={tenantForm.name} onChange={e => setTenantForm(v => ({ ...v, name: e.target.value }))} />
+        <input className="admin-input" placeholder="租户代码，如 company01" value={tenantForm.code} onChange={e => setTenantForm(v => ({ ...v, code: e.target.value }))} />
+        <input className="admin-input" placeholder="默认管理员账号" value={tenantForm.adminAccount} onChange={e => setTenantForm(v => ({ ...v, adminAccount: e.target.value }))} />
+        <input className="admin-input" placeholder="默认管理员昵称" value={tenantForm.adminDisplayName} onChange={e => setTenantForm(v => ({ ...v, adminDisplayName: e.target.value }))} />
+        <input className="admin-input" type="password" placeholder="默认管理员密码（至少8位）" value={tenantForm.adminPassword} onChange={e => setTenantForm(v => ({ ...v, adminPassword: e.target.value }))} />
+        <button className="admin-primary md:col-span-5" disabled={!tenantForm.name || !tenantForm.code || !tenantForm.adminAccount || tenantForm.adminPassword.length < 8}>新建租户并生成默认管理员</button>
+      </form></Card>
+      <Card><PanelTitle title="租户列表" description="禁用后可保留数据但停止使用；已有用户的租户不能删除。" /><div className="overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-2">名称</th><th className="p-2">代码</th><th className="p-2">默认管理员</th><th className="p-2">用户数</th><th className="p-2">状态</th><th className="p-2">操作</th></tr></thead><tbody>{tenants.data.map(item => <tr key={item.id} className="border-b"><td className="p-2">{item.name}</td><td className="p-2">{item.code}</td><td className="p-2">{item.defaultAdminAccount}</td><td className="p-2">{item.userCount}</td><td className="p-2">{item.enabled ? "启用" : "禁用"}</td><td className="flex gap-2 p-2"><button className="admin-mini bg-slate-100" onClick={() => editTenant(item)}>修改</button><button className="admin-mini bg-amber-50 text-amber-700" onClick={() => toggleTenant(item)}>{item.enabled ? "禁用" : "启用"}</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => deleteTenant(item)}>删除</button></td></tr>)}</tbody></table></div></Card>
+    </>}
+    {tab === "domains" && <>
+      <Card><PanelTitle title="新增域名" description="将租户域名绑定到指定租户。" /><form onSubmit={submitDomain} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><select className="admin-input" value={domainForm.tenantId} onChange={e => setDomainForm(v => ({ ...v, tenantId: e.target.value }))}>{tenants.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input className="admin-input" placeholder="example.com" value={domainForm.domain} onChange={e => setDomainForm(v => ({ ...v, domain: e.target.value }))} /><button className="admin-primary">添加域名</button></form></Card>
+      <Card><PanelTitle title="域名列表" description="支持修改和删除。" /><div className="grid gap-2">{domains.data.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 border-b p-3"><span className="min-w-[220px] font-medium">{item.domain}</span><span className="text-sm text-slate-500">{tenantName(item.tenantId)}</span><span className="text-sm">{item.enabled ? "启用" : "禁用"}</span><button className="admin-mini ml-auto bg-slate-100" onClick={() => editDomain(item)}>修改</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => deleteDomain(item)}>删除</button></div>)}</div></Card>
+    </>}
+    {tab === "apps" && <>
+      <Card><PanelTitle title="新增 APP" description="维护 APP 名称、包名和绑定域名。" /><form onSubmit={submitApp} className="grid gap-3 md:grid-cols-4"><input className="admin-input" placeholder="APP名称" value={appForm.name} onChange={e => setAppForm(v => ({ ...v, name: e.target.value }))} /><input className="admin-input" placeholder="APP包名，如 com.example.app" value={appForm.packageName} onChange={e => setAppForm(v => ({ ...v, packageName: e.target.value }))} /><input className="admin-input" placeholder="域名" value={appForm.domain} onChange={e => setAppForm(v => ({ ...v, domain: e.target.value }))} /><select className="admin-input" value={appForm.tenantId} onChange={e => setAppForm(v => ({ ...v, tenantId: e.target.value }))}><option value="unassigned">未分配</option>{tenants.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="admin-primary md:col-span-4" disabled={!appForm.name || !appForm.packageName}>新增 APP</button></form></Card>
+      <Card><PanelTitle title="APP列表" description="支持修改和删除。" /><div className="grid gap-2">{apps.data.map(item => <div key={item.id} className="grid gap-2 border-b p-3 md:grid-cols-[1fr_1.2fr_1fr_1fr_auto_auto]"><span>{item.name}</span><span className="text-sm text-slate-500">{item.packageName}</span><span className="text-sm text-slate-500">{item.domain || "—"}</span><span className="text-sm">{tenantName(item.tenantId)}</span><button className="admin-mini bg-slate-100" onClick={() => editApp(item)}>修改</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => deleteApp(item)}>删除</button></div>)}</div></Card>
+    </>}
+  </div>;
 }

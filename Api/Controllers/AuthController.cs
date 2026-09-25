@@ -70,6 +70,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         if (user is null || user.Role != UserRole.Admin)
             if (await curfew.IsBlockedAsync("login", ct)) return StatusCode(403, Fail("当前处于宵禁时段，暂不允许登录"));
         if (user is null) { await LogLoginAsync(request.Account, request.DeviceName, "failed", "账号不存在", null, ct); return Unauthorized(Fail("账号或密码错误")); }
+        if (!await TenantAvailableAsync(user.TenantId, ct)) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "所属租户已禁用", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("所属租户已禁用")); }
         if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion || user.CancellationEnabled) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用或注销", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
         if (user.AccountLocked || user.LoginLocked) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号或登录已锁定", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号登录已被管理员锁定")); }
         var currentIp = CurrentIp();
@@ -139,7 +140,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
         var session = await repository.GetSessionByHashAsync(TokenService.Hash(request.RefreshToken), ct);
         if (session is null) return Unauthorized(Fail("登录状态已失效"));
         var user = await repository.GetUserByIdAsync(session.UserId, ct);
-        if (user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled) return Unauthorized(Fail("账号不可用"));
+        if (user is null || user.Status != UserStatus.Active || user.AccountLocked || user.LoginLocked || user.CancellationEnabled || !await TenantAvailableAsync(user.TenantId, ct)) return Unauthorized(Fail("账号不可用"));
         await repository.RevokeSessionAsync(session.Id, ct);
         return Ok(await sessions.IssueAsync(user, request.DeviceName, request.DeviceId ?? session.DeviceId, ct));
     }
@@ -184,6 +185,12 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     }
     private static string NormalizePhone(string? phone) => (phone ?? "").Trim().Replace(" ", "").Replace("-", "");
     private static UserView View(UserAccount user) => SessionService.View(user);
+    private async Task<bool> TenantAvailableAsync(string tenantId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId) || tenantId == TenantIds.Unassigned) return true;
+        var tenant = await repository.GetTenantAsync(tenantId, ct);
+        return tenant?.Enabled == true;
+    }
     private string CurrentIp() => RequestMetadata.ClientIp(HttpContext);
     private static bool IpAllowed(string restriction, string currentIp) => string.IsNullOrWhiteSpace(restriction)
         || restriction.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

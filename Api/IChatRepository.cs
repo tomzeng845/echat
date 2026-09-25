@@ -5,6 +5,17 @@ public interface IChatRepository
     Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default);
     Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default);
+    Task UpdateTenantAsync(TenantDefinition tenant, CancellationToken ct = default);
+    Task DeleteTenantAsync(string id, CancellationToken ct = default);
+    Task<TenantDomain?> GetTenantDomainAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<TenantDomain>> GetTenantDomainsAsync(string? tenantId = null, CancellationToken ct = default);
+    Task<TenantDomain> AddTenantDomainAsync(TenantDomain domain, CancellationToken ct = default);
+    Task UpdateTenantDomainAsync(TenantDomain domain, CancellationToken ct = default);
+    Task DeleteTenantDomainAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<AppDefinition>> GetAppsAsync(CancellationToken ct = default);
+    Task<AppDefinition> AddAppAsync(AppDefinition app, CancellationToken ct = default);
+    Task UpdateAppAsync(AppDefinition app, CancellationToken ct = default);
+    Task DeleteAppAsync(string id, CancellationToken ct = default);
     Task EnsureSeedDataAsync(CancellationToken ct = default);
     Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default);
     Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default);

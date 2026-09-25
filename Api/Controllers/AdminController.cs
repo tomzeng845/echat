@@ -14,12 +14,12 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> TenantContextInfo(CancellationToken ct)
     {
         var tenants = await repository.GetTenantsAsync(ct);
-        if (tenant.CurrentAdminScope != TenantIds.All)
+        if (!tenant.CanSwitchTenant)
             tenants = tenants.Where(x => x.Id == tenant.CurrentAdminScope).ToList();
         return Ok(new
         {
             current = tenant.CurrentAdminScope,
-            canSwitch = tenant.CurrentAdminScope == TenantIds.All,
+            canSwitch = tenant.CanSwitchTenant,
             tenants = tenants.Select(x => new { id = x.Id, name = x.Name, code = x.Code, enabled = x.Enabled, defaultAdminAccount = x.DefaultAdminAccount })
         });
     }
@@ -53,6 +53,117 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         await repository.AddTenantAsync(definition, ct);
         return Ok(new { tenant = definition, admin = new { admin.Id, admin.Account, admin.DisplayName, scope = admin.AdminTenantScope } });
     }
+
+    [HttpGet("platform/tenants")]
+    public async Task<ActionResult> PlatformTenants(CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var users = await repository.GetUsersAsync(null, null, 10000, ct);
+        return Ok((await repository.GetTenantsAsync(ct)).Select(x => new { x.Id, x.Name, x.Code, x.Enabled, x.DefaultAdminAccount, x.CreatedAtUtc, userCount = users.Count(u => u.TenantId == x.Id) }));
+    }
+
+    [HttpPut("platform/tenants/{id}")]
+    public async Task<ActionResult> UpdatePlatformTenant(string id, AdminTenantUpdateRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var item = await repository.GetTenantAsync(id, ct);
+        if (item is null) return NotFound(new { error = "租户不存在" });
+        item.Name = request.Name.Trim();
+        item.Enabled = request.Enabled;
+        await repository.UpdateTenantAsync(item, ct);
+        return Ok(item);
+    }
+
+    [HttpDelete("platform/tenants/{id}")]
+    public async Task<ActionResult> DeletePlatformTenant(string id, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var item = await repository.GetTenantAsync(id, ct);
+        if (item is null) return NotFound(new { error = "租户不存在" });
+        var users = await repository.GetUsersAsync(null, null, 10000, ct);
+        if (users.Any(x => x.TenantId == item.Id)) return Conflict(new { error = "租户已有用户，不能删除" });
+        await repository.DeleteTenantAsync(item.Id, ct);
+        return NoContent();
+    }
+
+    [HttpGet("platform/domains")]
+    public async Task<ActionResult> PlatformDomains(CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        return Ok(await repository.GetTenantDomainsAsync(null, ct));
+    }
+
+    [HttpPost("platform/domains")]
+    public async Task<ActionResult> AddPlatformDomain(AdminDomainRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var domain = request.Domain.Trim().ToLowerInvariant();
+        if (!IsDomain(domain)) return BadRequest(new { error = "域名格式无效" });
+        if (await repository.GetTenantAsync(request.TenantId, ct) is null) return BadRequest(new { error = "租户不存在" });
+        var item = new TenantDomain { TenantId = request.TenantId, Domain = domain, Enabled = request.Enabled };
+        await repository.AddTenantDomainAsync(item, ct);
+        return Ok(item);
+    }
+
+    [HttpPut("platform/domains/{id}")]
+    public async Task<ActionResult> UpdatePlatformDomain(string id, AdminDomainRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var item = await repository.GetTenantDomainAsync(id, ct);
+        if (item is null) return NotFound(new { error = "域名不存在" });
+        var domain = request.Domain.Trim().ToLowerInvariant();
+        if (!IsDomain(domain)) return BadRequest(new { error = "域名格式无效" });
+        if (await repository.GetTenantAsync(request.TenantId, ct) is null) return BadRequest(new { error = "租户不存在" });
+        item.TenantId = request.TenantId; item.Domain = domain; item.Enabled = request.Enabled;
+        await repository.UpdateTenantDomainAsync(item, ct);
+        return Ok(item);
+    }
+
+    [HttpDelete("platform/domains/{id}")]
+    public async Task<ActionResult> DeletePlatformDomain(string id, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        if (await repository.GetTenantDomainAsync(id, ct) is null) return NotFound(new { error = "域名不存在" });
+        await repository.DeleteTenantDomainAsync(id, ct); return NoContent();
+    }
+
+    [HttpGet("platform/apps")]
+    public async Task<ActionResult> PlatformApps(CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        return Ok(await repository.GetAppsAsync(ct));
+    }
+
+    [HttpPost("platform/apps")]
+    public async Task<ActionResult> AddPlatformApp(AdminAppRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.PackageName)) return BadRequest(new { error = "APP名称和包名不能为空" });
+        if (!string.IsNullOrWhiteSpace(request.TenantId) && request.TenantId != TenantIds.Unassigned && await repository.GetTenantAsync(request.TenantId, ct) is null) return BadRequest(new { error = "租户不存在" });
+        var item = new AppDefinition { Name = request.Name.Trim(), PackageName = request.PackageName.Trim(), Domain = request.Domain.Trim(), TenantId = string.IsNullOrWhiteSpace(request.TenantId) ? TenantIds.Unassigned : request.TenantId, Enabled = request.Enabled };
+        await repository.AddAppAsync(item, ct); return Ok(item);
+    }
+
+    [HttpPut("platform/apps/{id}")]
+    public async Task<ActionResult> UpdatePlatformApp(string id, AdminAppRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var item = (await repository.GetAppsAsync(ct)).FirstOrDefault(x => x.Id == id);
+        if (item is null) return NotFound(new { error = "APP不存在" });
+        if (!string.IsNullOrWhiteSpace(request.TenantId) && request.TenantId != TenantIds.Unassigned && await repository.GetTenantAsync(request.TenantId, ct) is null) return BadRequest(new { error = "租户不存在" });
+        item.Name = request.Name.Trim(); item.PackageName = request.PackageName.Trim(); item.Domain = request.Domain.Trim(); item.TenantId = request.TenantId; item.Enabled = request.Enabled;
+        await repository.UpdateAppAsync(item, ct); return Ok(item);
+    }
+
+    [HttpDelete("platform/apps/{id}")]
+    public async Task<ActionResult> DeletePlatformApp(string id, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        if (!(await repository.GetAppsAsync(ct)).Any(x => x.Id == id)) return NotFound(new { error = "APP不存在" });
+        await repository.DeleteAppAsync(id, ct); return NoContent();
+    }
+
+    private static bool IsDomain(string value) => value.Length is > 2 and < 253 && Uri.TryCreate($"https://{value}", UriKind.Absolute, out var uri) && uri.Host == value && !value.Contains('/');
 
     [HttpPut("users/{id}/tenant")]
     public async Task<ActionResult> AssignUserTenant(string id, AdminTenantAssignmentRequest request, CancellationToken ct)

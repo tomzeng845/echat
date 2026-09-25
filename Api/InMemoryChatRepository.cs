@@ -5,6 +5,8 @@ namespace EChat.Api;
 public sealed class InMemoryChatRepository : IChatRepository
 {
     private readonly ConcurrentDictionary<string, TenantDefinition> _tenants = new();
+    private readonly ConcurrentDictionary<string, TenantDomain> _tenantDomains = new();
+    private readonly ConcurrentDictionary<string, AppDefinition> _apps = new();
     private readonly ConcurrentDictionary<string, UserAccount> _users = new();
     private readonly ConcurrentDictionary<string, InviteCode> _invites = new();
     private readonly ConcurrentDictionary<string, RefreshSession> _sessions = new();
@@ -32,6 +34,17 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default) => Task.FromResult(_tenants.Values.FirstOrDefault(x => x.Id == id || x.Code == id));
     public Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TenantDefinition>>(_tenants.Values.OrderBy(x => x.Name).ToList());
     public Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { _tenants[tenant.Id] = tenant; return Task.FromResult(tenant); }
+    public Task UpdateTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { _tenants[tenant.Id] = tenant; return Task.CompletedTask; }
+    public Task DeleteTenantAsync(string id, CancellationToken ct = default) { _tenants.TryRemove(id, out _); return Task.CompletedTask; }
+    public Task<TenantDomain?> GetTenantDomainAsync(string id, CancellationToken ct = default) => Task.FromResult(_tenantDomains.TryGetValue(id, out var item) ? item : null);
+    public Task<IReadOnlyList<TenantDomain>> GetTenantDomainsAsync(string? tenantId = null, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TenantDomain>>(_tenantDomains.Values.Where(x => string.IsNullOrWhiteSpace(tenantId) || x.TenantId == tenantId).OrderBy(x => x.Domain).ToList());
+    public Task<TenantDomain> AddTenantDomainAsync(TenantDomain domain, CancellationToken ct = default) { _tenantDomains[domain.Id] = domain; return Task.FromResult(domain); }
+    public Task UpdateTenantDomainAsync(TenantDomain domain, CancellationToken ct = default) { _tenantDomains[domain.Id] = domain; return Task.CompletedTask; }
+    public Task DeleteTenantDomainAsync(string id, CancellationToken ct = default) { _tenantDomains.TryRemove(id, out _); return Task.CompletedTask; }
+    public Task<IReadOnlyList<AppDefinition>> GetAppsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AppDefinition>>(_apps.Values.OrderBy(x => x.Name).ToList());
+    public Task<AppDefinition> AddAppAsync(AppDefinition app, CancellationToken ct = default) { _apps[app.Id] = app; return Task.FromResult(app); }
+    public Task UpdateAppAsync(AppDefinition app, CancellationToken ct = default) { _apps[app.Id] = app; return Task.CompletedTask; }
+    public Task DeleteAppAsync(string id, CancellationToken ct = default) { _apps.TryRemove(id, out _); return Task.CompletedTask; }
 
     public Task EnsureSeedDataAsync(CancellationToken ct = default)
     {
