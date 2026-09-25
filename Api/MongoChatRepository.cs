@@ -496,6 +496,7 @@ public sealed class MongoChatRepository : IChatRepository
     public async Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default) => await _tenants.Find(x => x.Id == id || x.Code == id).FirstOrDefaultAsync(ct);
     public async Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default) => await _tenants.Find(FilterDefinition<TenantDefinition>.Empty).SortBy(x => x.Name).ToListAsync(ct);
     public async Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { await _tenants.InsertOneAsync(tenant, cancellationToken: ct); return tenant; }
+    public Task<long> CountUsersByTenantAsync(string tenantId, CancellationToken ct = default) => _users.CountDocumentsAsync(Builders<UserAccount>.Filter.Eq(x => x.TenantId, tenantId), cancellationToken: ct);
     public async Task UpdateTenantAsync(TenantDefinition tenant, CancellationToken ct = default) => await _tenants.ReplaceOneAsync(x => x.Id == tenant.Id, tenant, cancellationToken: ct);
     public async Task DeleteTenantAsync(string id, CancellationToken ct = default) => await _tenants.DeleteOneAsync(x => x.Id == id, ct);
     public async Task<TenantDomain?> GetTenantDomainAsync(string id, CancellationToken ct = default) => await _tenantDomains.Find(x => x.Id == id).FirstOrDefaultAsync(ct);

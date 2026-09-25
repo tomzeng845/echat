@@ -58,8 +58,10 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> PlatformTenants(CancellationToken ct)
     {
         if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
-        var users = await repository.GetUsersAsync(null, null, 10000, ct);
-        return Ok((await repository.GetTenantsAsync(ct)).Select(x => new { x.Id, x.Name, x.Code, x.Enabled, x.DefaultAdminAccount, x.CreatedAtUtc, userCount = users.Count(u => u.TenantId == x.Id) }));
+        var result = new List<object>();
+        foreach (var item in await repository.GetTenantsAsync(ct))
+            result.Add(new { item.Id, item.Name, item.Code, item.Enabled, item.DefaultAdminAccount, item.CreatedAtUtc, userCount = await repository.CountUsersByTenantAsync(item.Id, ct) });
+        return Ok(result);
     }
 
     [HttpPut("platform/tenants/{id}")]
@@ -80,8 +82,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
         var item = await repository.GetTenantAsync(id, ct);
         if (item is null) return NotFound(new { error = "租户不存在" });
-        var users = await repository.GetUsersAsync(null, null, 10000, ct);
-        if (users.Any(x => x.TenantId == item.Id)) return Conflict(new { error = "租户已有用户，不能删除" });
+        if (await repository.CountUsersByTenantAsync(item.Id, ct) > 0) return Conflict(new { error = "租户已有用户，不能删除" });
         await repository.DeleteTenantAsync(item.Id, ct);
         return NoContent();
     }

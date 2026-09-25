@@ -34,6 +34,7 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default) => Task.FromResult(_tenants.Values.FirstOrDefault(x => x.Id == id || x.Code == id));
     public Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TenantDefinition>>(_tenants.Values.OrderBy(x => x.Name).ToList());
     public Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { _tenants[tenant.Id] = tenant; return Task.FromResult(tenant); }
+    public Task<long> CountUsersByTenantAsync(string tenantId, CancellationToken ct = default) => Task.FromResult((long)_users.Values.LongCount(x => x.TenantId == tenantId));
     public Task UpdateTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { _tenants[tenant.Id] = tenant; return Task.CompletedTask; }
     public Task DeleteTenantAsync(string id, CancellationToken ct = default) { _tenants.TryRemove(id, out _); return Task.CompletedTask; }
     public Task<TenantDomain?> GetTenantDomainAsync(string id, CancellationToken ct = default) => Task.FromResult(_tenantDomains.TryGetValue(id, out var item) ? item : null);
