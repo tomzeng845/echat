@@ -78,7 +78,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         {
             if (context.HttpContext.Request.Path.StartsWithSegments("/hubs/chat")
                 || context.HttpContext.Request.Path.StartsWithSegments("/api/media"))
-                context.Token = context.Request.Query["access_token"];
+            {
+                // SignalR uses the Authorization header for negotiate and may use
+                // access_token only for WebSocket/SSE transports. Never replace a
+                // valid Bearer header with an empty query-string value.
+                var queryToken = context.Request.Query["access_token"].FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(queryToken)) context.Token = queryToken;
+            }
+            return Task.CompletedTask;
+        },
+        OnAuthenticationFailed = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("EChat.JwtAuthentication");
+            logger.LogWarning(context.Exception, "JWT authentication failed. path={Path}, method={Method}, hasAuthorization={HasAuthorization}, hasQueryToken={HasQueryToken}, traceId={TraceId}",
+                context.HttpContext.Request.Path,
+                context.HttpContext.Request.Method,
+                context.Request.Headers.ContainsKey("Authorization"),
+                context.HttpContext.Request.Query.ContainsKey("access_token"),
+                context.HttpContext.TraceIdentifier);
             return Task.CompletedTask;
         },
 	        OnChallenge = async context =>
