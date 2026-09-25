@@ -771,7 +771,14 @@ export default function GroupInfoPanel({
                 <div key={item.id} className="rounded-xl bg-white p-3 text-sm">
                   <p>{item.content}</p>
                   <time className="text-xs text-slate-400">
-                    {new Date(item.sentAtUtc).toLocaleString()}
+                    {new Date(item.sentAtUtc).toLocaleString("zh-CN", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).replaceAll("/", "-")}
                   </time>
                 </div>
               ))}

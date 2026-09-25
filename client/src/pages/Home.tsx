@@ -119,6 +119,20 @@ function formatCallDuration(totalSeconds: number) {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
+function formatChatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date
+    .toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replaceAll("/", "-");
+}
 function formatFriendRequestDay(value: string) {
   const date = new Date(value);
   const today = new Date();
@@ -2049,14 +2063,7 @@ function Messenger({
                           {conversationName || "未命名会话"}
                         </span>
                         <time className="shrink-0 text-[11px] text-slate-400">
-                          {item.lastMessageAtUtc
-                            ? new Date(
-                                item.lastMessageAtUtc
-                              ).toLocaleTimeString("zh-CN", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : ""}
+                          {item.lastMessageAtUtc ? formatChatDateTime(item.lastMessageAtUtc) : ""}
                         </time>
                       </div>
                       <div className="mt-1 flex items-center justify-between gap-2">
@@ -3236,10 +3243,7 @@ function MessageBubble({
           className={`mt-1.5 flex items-center gap-2 px-1 text-[10px] text-slate-400 ${mine ? "justify-end" : "justify-start"}`}
         >
           <time>
-            {new Date(message.sentAtUtc).toLocaleTimeString("zh-CN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatChatDateTime(message.sentAtUtc)}
           </time>
           {mine && message.state === "Accepted" && (
             <>
@@ -3288,10 +3292,7 @@ function CallSummaryBubble({ summary }: { summary: CallSummary }) {
         />
         <span>{label}</span>
         <time className="text-[10px] text-slate-400">
-          {new Date(summary.at).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {formatChatDateTime(summary.at)}
         </time>
       </div>
     </div>
