@@ -7,7 +7,7 @@ namespace EChat.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, SmsService sms, CurfewService curfew, IHostEnvironment environment, IConfiguration configuration) : ControllerBase
+public sealed class AuthController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TokenService tokens, TotpService totp, AdminSecretProtector protector, SessionService sessions, GeoIpService geoIp, SmsService sms, CurfewService curfew, IHostEnvironment environment, IConfiguration configuration, LoginDiagnosticLogger loginDiagnostics) : ControllerBase
 {
     [HttpPost("sms/send")]
     public async Task<ActionResult> SendSmsCode(SendSmsCodeRequest request, CancellationToken ct)
@@ -66,23 +66,28 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request, CancellationToken ct)
     {
-        var user = await repository.GetUserByAccountAsync(request.Account.Trim().ToLowerInvariant(), ct);
+        var account = request.Account.Trim().ToLowerInvariant();
+        loginDiagnostics.Write(HttpContext, "received", account, "pending", "login request received");
+        var user = await repository.GetUserByAccountAsync(account, ct);
+        loginDiagnostics.Write(HttpContext, "user-lookup", account, user is null ? "failed" : "success", user is null ? "account not found" : "account found", user);
         if (user is null || user.Role != UserRole.Admin)
             if (await curfew.IsBlockedAsync("login", ct)) return StatusCode(403, Fail("当前处于宵禁时段，暂不允许登录"));
-        if (user is null) { await LogLoginAsync(request.Account, request.DeviceName, "failed", "账号不存在", null, ct); return Unauthorized(Fail("账号或密码错误")); }
-        if (!await TenantAvailableAsync(user.TenantId, ct)) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "所属租户已禁用", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("所属租户已禁用")); }
-        if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion || user.CancellationEnabled) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用或注销", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
-        if (user.AccountLocked || user.LoginLocked) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号或登录已锁定", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号登录已被管理员锁定")); }
+        if (user is null) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", "account not found"); await LogLoginAsync(account, request.DeviceName, "failed", "账号不存在", null, ct); return Unauthorized(Fail("账号或密码错误")); }
+        if (!await TenantAvailableAsync(user.TenantId, ct)) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", "tenant disabled", user); await LogLoginAsync(user.Account, request.DeviceName, "failed", "所属租户已禁用", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("所属租户已禁用")); }
+        if (user.Status is UserStatus.Disabled or UserStatus.PendingDeletion || user.CancellationEnabled) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", "user disabled or cancelled", user); await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号已停用或注销", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号当前不可登录")); }
+        if (user.AccountLocked || user.LoginLocked) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", "account or login locked", user); await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号或登录已锁定", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("账号登录已被管理员锁定")); }
         var currentIp = CurrentIp();
-        if (!IpAllowed(user.LoginIpRestriction, currentIp)) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "来源 IP 不在允许列表", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("当前网络不允许登录此账号")); }
-        if (user.LockoutUntilUtc > DateTime.UtcNow) { await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号锁定", user.Id, ct); return StatusCode(StatusCodes.Status429TooManyRequests, Fail("登录尝试过多，请稍后再试")); }
+        if (!IpAllowed(user.LoginIpRestriction, currentIp)) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", $"ip not allowed: {currentIp}", user); await LogLoginAsync(user.Account, request.DeviceName, "failed", "来源 IP 不在允许列表", user.Id, ct); return StatusCode(StatusCodes.Status403Forbidden, Fail("当前网络不允许登录此账号")); }
+        if (user.LockoutUntilUtc > DateTime.UtcNow) { loginDiagnostics.Write(HttpContext, "complete", account, "failed", "lockout active", user); await LogLoginAsync(user.Account, request.DeviceName, "failed", "账号锁定", user.Id, ct); return StatusCode(StatusCodes.Status429TooManyRequests, Fail("登录尝试过多，请稍后再试")); }
 
         var verified = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        loginDiagnostics.Write(HttpContext, "password-check", account, verified == PasswordVerificationResult.Failed ? "failed" : "success", verified == PasswordVerificationResult.Failed ? "password verification failed" : "password verification passed", user);
         if (verified == PasswordVerificationResult.Failed)
         {
             user.FailedLoginAttempts++;
             if (user.FailedLoginAttempts >= 5) { user.LockoutUntilUtc = DateTime.UtcNow.AddMinutes(Math.Min(30, user.FailedLoginAttempts)); user.FailedLoginAttempts = 0; }
             await repository.UpdateUserAsync(user, ct);
+            loginDiagnostics.Write(HttpContext, "complete", account, "failed", "password verification failed", user);
             await LogLoginAsync(user.Account, request.DeviceName, "failed", "密码错误", user.Id, ct);
             return Unauthorized(Fail("账号或密码错误"));
         }
@@ -111,6 +116,7 @@ public sealed class AuthController(IChatRepository repository, PasswordHasher<Us
             }
         }
         var response = await sessions.IssueAsync(user, request.DeviceName, request.DeviceId, ct);
+        loginDiagnostics.Write(HttpContext, "complete", account, "success", "password login succeeded", user);
         await LogLoginAsync(user.Account, request.DeviceName, "success", "密码登录成功", user.Id, ct);
         return Ok(response);
     }
