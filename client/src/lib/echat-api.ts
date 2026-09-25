@@ -264,6 +264,11 @@ export const getSession = (): AuthResponse | null => {
 export const setSession = (session: AuthResponse | null) =>
   session ? persistSession(JSON.stringify(session)) : clearPersistedSession();
 
+export function forceExpireSession(): void {
+  setSession(null);
+  window.dispatchEvent(new Event("echat-session-expired"));
+}
+
 export const restoreSession = async () => {
   const raw = await restorePersistedSession();
   if (!raw) return null;
@@ -282,10 +287,14 @@ export async function getRealtimeAccessToken(): Promise<string> {
   const expiresAt = session.expiresAtUtc ? Date.parse(session.expiresAtUtc) : 0;
   const needsRefresh = !Number.isFinite(expiresAt) || expiresAt <= Date.now() + 30_000;
   if (needsRefresh) {
-    if (!session.refreshToken) return "";
+    if (!session.refreshToken) {
+      forceExpireSession();
+      return "";
+    }
     const refreshed = await refreshSession(session);
     // An expired token must never be used as a fallback. If refresh failed,
     // return an empty token so SignalR stops instead of sending stale auth.
+    if (!refreshed) forceExpireSession();
     return refreshed?.accessToken || "";
   }
   return getSession()?.accessToken || session.accessToken;

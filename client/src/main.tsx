@@ -7,9 +7,12 @@ import superjson from "superjson";
 import App from "./App";
 import { startLogin } from "./const";
 import "./lib/runtime-diagnostics";
+import { startFrontendVersionGuard } from "./lib/version-guard";
 import "./index.css";
 
 const queryClient = new QueryClient();
+
+startFrontendVersionGuard();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;

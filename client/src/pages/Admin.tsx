@@ -740,6 +740,11 @@ export default function Admin() {
     };
   }, []);
   useEffect(() => {
+    const expire = () => setAdminSession(null);
+    window.addEventListener("echat-session-expired", expire);
+    return () => window.removeEventListener("echat-session-expired", expire);
+  }, []);
+  useEffect(() => {
     if (!session) return;
     api<{ current: string; canSwitch: boolean; tenants: TenantOption[] }>("/api/admin/tenant-context")
       .then(context => {
