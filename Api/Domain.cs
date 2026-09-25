@@ -31,6 +31,17 @@ public enum MomentVisibility { Friends, Private, Selected, Excluded }
 public enum MomentReportStatus { Submitted, Resolved, Rejected }
 public enum CallRecordStatus { Ringing, Active, Rejected, Ended, Missed, Failed }
 
+public sealed class TenantDefinition
+{
+    [BsonId] public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Code { get; set; } = "";
+    public string DefaultAdminUserId { get; set; } = "";
+    public string DefaultAdminAccount { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class UserAccount
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -533,6 +544,7 @@ public sealed record AdminFeedbackSeenRequest(IReadOnlyList<string> Ids);
 public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount, string Subject, string Note = "");
 public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator, string TenantId = TenantIds.All);
 public sealed record AdminTenantAssignmentRequest(string TenantId);
+public sealed record AdminTenantCreateRequest(string Name, string Code, string AdminAccount, string AdminPassword, string AdminDisplayName);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
 public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);
 public sealed record AdminVerificationRequest(string Type, string RealName = "", string IdNumber = "", string EnterpriseName = "", string CreditCode = "", string LegalRepresentative = "", IReadOnlyList<string>? MaterialAssetIds = null, string Note = "");

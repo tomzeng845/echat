@@ -2,6 +2,9 @@ namespace EChat.Api;
 
 public interface IChatRepository
 {
+    Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default);
+    Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default);
     Task EnsureSeedDataAsync(CancellationToken ct = default);
     Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default);
     Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default);

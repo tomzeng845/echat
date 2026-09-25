@@ -212,6 +212,7 @@ type AdminUserPage = {
   pageSize: number;
   totalPages: number;
 };
+type TenantOption = { id: string; name: string; code: string; enabled: boolean; defaultAdminAccount?: string };
 
 function AdminUserAvatar({ user }: { user: AdminUser }) {
   const source = useAuthenticatedImage(user.avatarUrl);
@@ -712,6 +713,7 @@ export default function Admin() {
   });
   const [tenantScope, setTenantScope] = useState(() => localStorage.getItem("echat.admin.tenant") || "*");
   const [canSwitchTenant, setCanSwitchTenant] = useState(false);
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
   useEffect(() => {
     document.title = "E聊管理后台";
     return () => {
@@ -720,9 +722,10 @@ export default function Admin() {
   }, []);
   useEffect(() => {
     if (!session) return;
-    api<{ current: string; canSwitch: boolean }>("/api/admin/tenant-context")
+    api<{ current: string; canSwitch: boolean; tenants: TenantOption[] }>("/api/admin/tenant-context")
       .then(context => {
         setCanSwitchTenant(context.canSwitch);
+        setTenantOptions(context.tenants);
         setTenantScope(context.current);
         if (!context.canSwitch) localStorage.removeItem("echat.admin.tenant");
       })
@@ -861,8 +864,9 @@ export default function Admin() {
               aria-label="选择管理租户"
             >
               <option value="*">全部租户</option>
-              <option value="a">A后台</option>
-              <option value="b">B后台</option>
+              {tenantOptions.map(item => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
               <option value="unassigned">未分配</option>
             </select>
           )}
@@ -3106,6 +3110,17 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
     secret: string;
     provisioningUri: string;
   } | null>(null);
+  const [tenantContext, setTenantContext] = useState<{ canSwitch: boolean; tenants: TenantOption[] }>({ canSwitch: false, tenants: [] });
+  const [newTenant, setNewTenant] = useState({ name: "", code: "", adminAccount: "", adminPassword: "", adminDisplayName: "" });
+  useEffect(() => {
+    api<{ canSwitch: boolean; tenants: TenantOption[] }>("/api/admin/tenant-context")
+      .then(value => {
+        setTenantContext(value);
+        if (value.canSwitch && value.tenants.length && !value.tenants.some(item => item.id === tenantId))
+          setTenantId(value.tenants[0].id);
+      })
+      .catch(() => undefined);
+  }, [refresh]);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -3154,8 +3169,36 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
       toast.error(x instanceof Error ? x.message : "动态密码生成失败");
     }
   }
+  async function createTenant(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await api("/api/admin/tenants", { method: "POST", body: JSON.stringify(newTenant) });
+      setNewTenant({ name: "", code: "", adminAccount: "", adminPassword: "", adminDisplayName: "" });
+      const value = await api<{ canSwitch: boolean; tenants: TenantOption[] }>("/api/admin/tenant-context");
+      setTenantContext(value);
+      toast.success("租户和默认管理员已创建");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建租户失败");
+    }
+  }
   return (
     <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
+      {tenantContext.canSwitch && (
+        <Card className="xl:col-span-2">
+          <PanelTitle title="新建租户" description="总后台创建租户后，会同时生成一个只能管理该租户的默认管理员。" />
+          <form onSubmit={createTenant} className="grid gap-3 md:grid-cols-5">
+            <input value={newTenant.name} onChange={e => setNewTenant(v => ({ ...v, name: e.target.value }))} placeholder="租户名称" className="admin-input" />
+            <input value={newTenant.code} onChange={e => setNewTenant(v => ({ ...v, code: e.target.value }))} placeholder="租户代码，如 acme01" className="admin-input" />
+            <input value={newTenant.adminAccount} onChange={e => setNewTenant(v => ({ ...v, adminAccount: e.target.value }))} placeholder="默认管理员账号" className="admin-input" />
+            <input value={newTenant.adminDisplayName} onChange={e => setNewTenant(v => ({ ...v, adminDisplayName: e.target.value }))} placeholder="管理员昵称" className="admin-input" />
+            <input value={newTenant.adminPassword} onChange={e => setNewTenant(v => ({ ...v, adminPassword: e.target.value }))} type="password" placeholder="默认管理员密码" className="admin-input" />
+            <button disabled={!newTenant.name || !newTenant.code || !newTenant.adminAccount || newTenant.adminPassword.length < 8} className="admin-primary md:col-span-5">创建租户并生成默认管理员</button>
+          </form>
+          <div className="mt-4 overflow-auto">
+            <table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-2">租户</th><th className="p-2">代码</th><th className="p-2">默认管理员</th><th className="p-2">状态</th></tr></thead><tbody>{tenantContext.tenants.map(item => <tr key={item.id} className="border-b"><td className="p-2">{item.name}</td><td className="p-2">{item.code}</td><td className="p-2">{item.defaultAdminAccount || "—"}</td><td className="p-2">{item.enabled ? "已启用" : "已停用"}</td></tr>)}</tbody></table>
+          </div>
+        </Card>
+      )}
       <Card>
         <PanelTitle
           title="新增管理账号"
@@ -3190,15 +3233,10 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
             <option>Operator</option>
             <option>Admin</option>
           </select>
-          <select
-            value={tenantId}
-            onChange={e => setTenantId(e.target.value)}
-            className="admin-input"
-          >
-            <option value="a">所属 A后台</option>
-            <option value="b">所属 B后台</option>
+          {tenantContext.canSwitch && <select value={tenantId} onChange={e => setTenantId(e.target.value)} className="admin-input">
+            {tenantContext.tenants.map(item => <option key={item.id} value={item.id}>所属 {item.name}</option>)}
             <option value="*">所属总后台</option>
-          </select>
+          </select>}
           <button
             disabled={!account || !displayName || password.length < 8}
             className="admin-primary"

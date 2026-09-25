@@ -4,6 +4,7 @@ namespace EChat.Api;
 
 public sealed class MongoChatRepository : IChatRepository
 {
+    private readonly IMongoCollection<TenantDefinition> _tenants;
     private readonly IMongoCollection<UserAccount> _users;
     private readonly IMongoCollection<InviteCode> _invites;
     private readonly IMongoCollection<RefreshSession> _sessions;
@@ -66,6 +67,7 @@ public sealed class MongoChatRepository : IChatRepository
         _calls = db.GetCollection<CallRecord>("calls");
         _adminAudits = db.GetCollection<AdminAuditLog>("adminAudits");
         _adminRecords = db.GetCollection<AdminModuleRecord>("adminModuleRecords");
+        _tenants = db.GetCollection<TenantDefinition>("tenants");
     }
 
     private FilterDefinition<UserAccount> UserScope(FilterDefinition<UserAccount> filter) =>
@@ -88,6 +90,7 @@ public sealed class MongoChatRepository : IChatRepository
 
     public async Task EnsureSeedDataAsync(CancellationToken ct = default)
     {
+        await _tenants.Indexes.CreateOneAsync(new CreateIndexModel<TenantDefinition>(Builders<TenantDefinition>.IndexKeys.Ascending(x => x.Code), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _users.Indexes.CreateOneAsync(new CreateIndexModel<UserAccount>(Builders<UserAccount>.IndexKeys.Ascending(x => x.Account), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.SenderId).Ascending(x => x.ClientMessageId), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
         await _messages.Indexes.CreateOneAsync(new CreateIndexModel<ChatMessage>(Builders<ChatMessage>.IndexKeys.Ascending(x => x.ConversationId).Ascending(x => x.Sequence), new CreateIndexOptions { Unique = true }), cancellationToken: ct);
@@ -484,6 +487,9 @@ public sealed class MongoChatRepository : IChatRepository
         return _adminRecords.CountDocumentsAsync(filter, cancellationToken: ct);
     }
     public Task DeleteAdminRecordAsync(string id, CancellationToken ct = default) => _adminRecords.DeleteOneAsync(RecordScope(Builders<AdminModuleRecord>.Filter.Eq(x => x.Id, id)), ct);
+    public async Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default) => await _tenants.Find(x => x.Id == id || x.Code == id).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default) => await _tenants.Find(FilterDefinition<TenantDefinition>.Empty).SortBy(x => x.Name).ToListAsync(ct);
+    public async Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { await _tenants.InsertOneAsync(tenant, cancellationToken: ct); return tenant; }
     public async Task<IReadOnlyList<RefreshSession>> GetAllSessionsAsync(int limit, CancellationToken ct = default) => await _sessions.Find(FilterDefinition<RefreshSession>.Empty).SortByDescending(x => x.LastSeenAtUtc).Limit(limit).ToListAsync(ct);
     public async Task<IReadOnlyList<Conversation>> GetAllConversationsAsync(int limit, CancellationToken ct = default) => await _conversations.Find(ConversationScope(FilterDefinition<Conversation>.Empty)).SortByDescending(x => x.LastMessageAtUtc).Limit(limit).ToListAsync(ct);
     public async Task<IReadOnlyList<ChatMessage>> GetAllMessagesAsync(int limit, CancellationToken ct = default) => await _messages.Find(MessageScope(FilterDefinition<ChatMessage>.Empty)).SortByDescending(x => x.SentAtUtc).Limit(limit).ToListAsync(ct);

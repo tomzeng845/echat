@@ -11,12 +11,48 @@ namespace EChat.Api.Controllers;
 public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew, ILogger<AdminController> logger, TenantContext tenant) : ControllerBase
 {
     [HttpGet("tenant-context")]
-    public ActionResult TenantContextInfo() => Ok(new
+    public async Task<ActionResult> TenantContextInfo(CancellationToken ct)
     {
-        current = tenant.CurrentAdminScope,
-        canSwitch = tenant.CurrentAdminScope == TenantIds.All,
-        tenants = new[] { new { id = "a", name = "A后台" }, new { id = "b", name = "B后台" }, new { id = TenantIds.Unassigned, name = "未分配" }, new { id = TenantIds.All, name = "全部租户" } }
-    });
+        var tenants = await repository.GetTenantsAsync(ct);
+        if (tenant.CurrentAdminScope != TenantIds.All)
+            tenants = tenants.Where(x => x.Id == tenant.CurrentAdminScope).ToList();
+        return Ok(new
+        {
+            current = tenant.CurrentAdminScope,
+            canSwitch = tenant.CurrentAdminScope == TenantIds.All,
+            tenants = tenants.Select(x => new { id = x.Id, name = x.Name, code = x.Code, enabled = x.Enabled, defaultAdminAccount = x.DefaultAdminAccount })
+        });
+    }
+
+    [HttpPost("tenants")]
+    public async Task<ActionResult> CreateTenant(AdminTenantCreateRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var name = request.Name.Trim();
+        var code = TenantIds.Normalize(request.Code);
+        var account = request.AdminAccount.Trim().ToLowerInvariant();
+        if (name.Length is < 1 or > 80) return BadRequest(new { error = "租户名称需为 1–80 个字符" });
+        if (!TenantIds.IsTenant(code) || code == TenantIds.Unassigned) return BadRequest(new { error = "租户代码需为 2–40 位小写字母、数字、下划线或短横线" });
+        if (request.AdminPassword.Length is < 8 or > 72) return BadRequest(new { error = "默认管理员密码需为 8–72 位" });
+        if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(new { error = "默认管理员账号格式无效" });
+        if (await repository.GetTenantAsync(code, ct) is not null) return Conflict(new { error = "租户代码已存在" });
+        if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(new { error = "默认管理员账号已存在" });
+        var tenantId = code;
+        var admin = new UserAccount
+        {
+            TenantId = tenantId,
+            AdminTenantScope = tenantId,
+            Account = account,
+            DisplayName = request.AdminDisplayName.Trim()[..Math.Min(request.AdminDisplayName.Trim().Length, 60)],
+            Role = UserRole.Admin,
+            RegistrationSource = "总后台创建租户"
+        };
+        admin.PasswordHash = passwordHasher.HashPassword(admin, request.AdminPassword);
+        await repository.AddUserAsync(admin, ct);
+        var definition = new TenantDefinition { Id = tenantId, Code = tenantId, Name = name, DefaultAdminUserId = admin.Id, DefaultAdminAccount = admin.Account };
+        await repository.AddTenantAsync(definition, ct);
+        return Ok(new { tenant = definition, admin = new { admin.Id, admin.Account, admin.DisplayName, scope = admin.AdminTenantScope } });
+    }
 
     [HttpPut("users/{id}/tenant")]
     public async Task<ActionResult> AssignUserTenant(string id, AdminTenantAssignmentRequest request, CancellationToken ct)

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 
 namespace EChat.Api;
 
@@ -16,11 +17,12 @@ public static class TenantIds
             "b" or "b后台" or "b-backend" => "b",
             "unassigned" or "未分配" or "未分配/总后台" => Unassigned,
             "*" or "all" or "总后台" => All,
+            _ when Regex.IsMatch(normalized, "^[a-z0-9][a-z0-9_-]{1,39}$") => normalized,
             _ => ""
         };
     }
 
-    public static bool IsTenant(string? value) => Normalize(value) is "a" or "b" or Unassigned;
+    public static bool IsTenant(string? value) => Normalize(value) is { Length: > 0 } normalized && normalized != All && normalized != Unassigned;
 }
 
 public static class TenantScopeExtensions
@@ -30,11 +32,8 @@ public static class TenantScopeExtensions
         if (!principal.IsInRole(nameof(UserRole.Admin))) return "";
         // A missing claim is treated as the legacy super-admin scope. New tokens
         // always include admin_tenant_scope and therefore cannot inherit this path.
-        return TenantIds.Normalize(principal.FindFirstValue("admin_tenant_scope")) switch
-        {
-            "a" or "b" or TenantIds.Unassigned => principal.FindFirstValue("admin_tenant_scope")!.Trim().ToLowerInvariant(),
-            _ => TenantIds.All
-        };
+        var scope = TenantIds.Normalize(principal.FindFirstValue("admin_tenant_scope"));
+        return string.IsNullOrWhiteSpace(scope) ? TenantIds.All : scope;
     }
 }
 

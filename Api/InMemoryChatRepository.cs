@@ -4,6 +4,7 @@ namespace EChat.Api;
 
 public sealed class InMemoryChatRepository : IChatRepository
 {
+    private readonly ConcurrentDictionary<string, TenantDefinition> _tenants = new();
     private readonly ConcurrentDictionary<string, UserAccount> _users = new();
     private readonly ConcurrentDictionary<string, InviteCode> _invites = new();
     private readonly ConcurrentDictionary<string, RefreshSession> _sessions = new();
@@ -27,6 +28,10 @@ public sealed class InMemoryChatRepository : IChatRepository
     private readonly ConcurrentDictionary<string, AdminModuleRecord> _adminRecords = new();
     private readonly ConcurrentDictionary<string, string> _messageIdempotency = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _conversationLocks = new();
+
+    public Task<TenantDefinition?> GetTenantAsync(string id, CancellationToken ct = default) => Task.FromResult(_tenants.Values.FirstOrDefault(x => x.Id == id || x.Code == id));
+    public Task<IReadOnlyList<TenantDefinition>> GetTenantsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TenantDefinition>>(_tenants.Values.OrderBy(x => x.Name).ToList());
+    public Task<TenantDefinition> AddTenantAsync(TenantDefinition tenant, CancellationToken ct = default) { _tenants[tenant.Id] = tenant; return Task.FromResult(tenant); }
 
     public Task EnsureSeedDataAsync(CancellationToken ct = default)
     {
