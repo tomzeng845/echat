@@ -593,6 +593,8 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     [HttpPost("users/batch")]
     public async Task<ActionResult> BatchCreateUsers(AdminUserBatchCreateRequest request, CancellationToken ct)
     {
+        var startedAt = DateTime.UtcNow;
+        logger.LogInformation("Batch user creation started. accountType={AccountType}, prefix={Prefix}, startIndex={StartIndex}, count={Count}, tenant={Tenant}, admin={Admin}", request.AccountType, request.Prefix, request.StartIndex, request.Count, tenant.CurrentAdminScope, User.Identity?.Name ?? "");
         IReadOnlyList<AdminUserCreateRequest> users;
         try { users = ExpandBatchRequest(request); }
         catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
@@ -604,10 +606,21 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
             {
                 var user = await CreateUserCoreAsync(item, ct);
                 if (user is null) skipped.Add(item.Account); else created.Add(user.Account);
+                logger.LogDebug("Batch user creation item completed. account={Account}, created={Created}, skipped={Skipped}", item.Account, user is not null, user is null);
             }
             catch (ArgumentException) { skipped.Add(item.Account); }
         }
-        await AuditAsync("user.batch-create", "user", "batch", $"created={created.Count}; skipped={skipped.Count}", ct);
+        try
+        {
+            using var auditTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            auditTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+            await AuditAsync("user.batch-create", "user", "batch", $"created={created.Count}; skipped={skipped.Count}", auditTimeout.Token);
+        }
+        catch (Exception error) when (error is OperationCanceledException or TimeoutException or HttpRequestException)
+        {
+            logger.LogWarning(error, "Batch user creation audit skipped after timeout or cancellation. created={Created}, skipped={Skipped}", created.Count, skipped.Count);
+        }
+        logger.LogInformation("Batch user creation completed. created={Created}, skipped={Skipped}, elapsedMs={ElapsedMs}, tenant={Tenant}", created.Count, skipped.Count, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
         return Ok(new { created, skipped });
     }
 

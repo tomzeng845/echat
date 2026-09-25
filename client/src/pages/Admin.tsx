@@ -2485,6 +2485,7 @@ function UserCreateDialog({
   const [canCreateGroup, setCanCreateGroup] = useState(true);
   const [busy, setBusy] = useState(false);
   async function submit() {
+    let batchTimeout: number | undefined;
     setBusy(true);
     try {
       if (mode === "single")
@@ -2502,15 +2503,19 @@ function UserCreateDialog({
           }),
         });
       else {
+        const controller = new AbortController();
+        batchTimeout = window.setTimeout(() => controller.abort(), 5 * 60 * 1000);
         const result = await api<{ created: string[]; skipped: string[] }>(
           "/api/admin/users/batch",
           {
             method: "POST",
-              body: JSON.stringify({
+            signal: controller.signal,
+            body: JSON.stringify({
               accountType: accountType || "username",
               prefix: prefix.trim() || "user",
               startIndex: Number.isFinite(Number(startIndex)) ? Number(startIndex) : 1,
               count: Number.isFinite(Number(count)) && Number(count) > 0 ? Number(count) : 1,
+              sequenceDigits: 3,
               password: batchPassword.trim() || "user123",
               displayNamePrefix,
               mobilePrefix,
@@ -2527,8 +2532,9 @@ function UserCreateDialog({
       toast.success("用户已新增");
       onCreated();
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "新增失败");
+      toast.error(cause instanceof DOMException && cause.name === "AbortError" ? "批量新增超过 5 分钟未完成，请检查 API 日志和数据库连接" : cause instanceof Error ? cause.message : "新增失败");
     } finally {
+      if (batchTimeout !== undefined) window.clearTimeout(batchTimeout);
       setBusy(false);
     }
   }
