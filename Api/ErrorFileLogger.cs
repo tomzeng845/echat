@@ -97,7 +97,9 @@ public sealed class ErrorFileLoggerProvider : ILoggerProvider
         private static int ParseSequence(string path, string prefix)
         {
             var name = Path.GetFileNameWithoutExtension(path);
-            var sequence = name[prefix.Length..];
+            var filePrefix = Path.GetFileName(prefix);
+            if (!name.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase)) return 0;
+            var sequence = name[filePrefix.Length..];
             return int.TryParse(sequence, out var value) ? value : 0;
         }
     }

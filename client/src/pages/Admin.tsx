@@ -2505,6 +2505,8 @@ function UserCreateDialog({
       else {
         const controller = new AbortController();
         batchTimeout = window.setTimeout(() => controller.abort(), 5 * 60 * 1000);
+        const batchStartedAt = performance.now();
+        console.info("[EChat][admin-batch] request-start", { accountType, prefix, startIndex, count, tenant: localStorage.getItem("echat.admin.tenant") || "" });
         const result = await api<{ created: string[]; skipped: string[] }>(
           "/api/admin/users/batch",
           {
@@ -2525,6 +2527,7 @@ function UserCreateDialog({
             }),
           }
         );
+        console.info("[EChat][admin-batch] response-ok", { elapsedMs: Math.round(performance.now() - batchStartedAt), created: result.created.length, skipped: result.skipped.length });
         toast.info(
           `成功 ${result.created.length} 个，跳过 ${result.skipped.length} 个`
         );
@@ -2532,6 +2535,7 @@ function UserCreateDialog({
       toast.success("用户已新增");
       onCreated();
     } catch (cause) {
+      console.error("[EChat][admin-batch] request-failed", cause);
       toast.error(cause instanceof DOMException && cause.name === "AbortError" ? "批量新增超过 5 分钟未完成，请检查 API 日志和数据库连接" : cause instanceof Error ? cause.message : "新增失败");
     } finally {
       if (batchTimeout !== undefined) window.clearTimeout(batchTimeout);

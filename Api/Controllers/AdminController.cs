@@ -594,59 +594,74 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
     public async Task<ActionResult> BatchCreateUsers(AdminUserBatchCreateRequest request, CancellationToken ct)
     {
         var startedAt = DateTime.UtcNow;
-        logger.LogInformation("Batch user creation started. accountType={AccountType}, prefix={Prefix}, startIndex={StartIndex}, count={Count}, tenant={Tenant}, admin={Admin}", request.AccountType, request.Prefix, request.StartIndex, request.Count, tenant.CurrentAdminScope, User.Identity?.Name ?? "");
-        IReadOnlyList<AdminUserCreateRequest> users;
-        try { users = ExpandBatchRequest(request); }
-        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
-        var created = new System.Collections.Concurrent.ConcurrentBag<string>();
-        var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
-        var uniqueUsers = new List<AdminUserCreateRequest>(users.Count);
-        var seenAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in users)
-        {
-            var normalizedAccount = NormalizeAccount(item.Account);
-            if (!seenAccounts.Add(normalizedAccount)) skipped.Add(item.Account);
-            else uniqueUsers.Add(item);
-        }
-        var existing = await repository.GetUsersByAccountsAsync(uniqueUsers.Select(x => NormalizeAccount(x.Account)), ct);
-        var existingAccounts = existing.Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in uniqueUsers.Where(x => existingAccounts.Contains(NormalizeAccount(x.Account))))
-            skipped.Add(item.Account);
-        var candidates = uniqueUsers.Where(x => !existingAccounts.Contains(NormalizeAccount(x.Account))).ToArray();
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
-            CancellationToken = ct
-        };
-        await Parallel.ForEachAsync(candidates, parallelOptions, async (item, token) =>
-        {
-            try
-            {
-                var user = await CreateUserCoreAsync(item, token, checkDuplicate: false);
-                if (user is null) skipped.Add(item.Account); else created.Add(user.Account);
-                logger.LogDebug("Batch user creation item completed. account={Account}, created={Created}, skipped={Skipped}", item.Account, user is not null, user is null);
-            }
-            catch (ArgumentException) { skipped.Add(item.Account); }
-            catch (InvalidOperationException error)
-            {
-                skipped.Add(item.Account);
-                logger.LogWarning(error, "Batch user creation item was rejected during concurrent insert. account={Account}", item.Account);
-            }
-        });
-        var createdList = created.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-        var skippedList = skipped.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var stage = "开始";
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        var operationToken = timeout.Token;
         try
         {
-            using var auditTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            auditTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-            await AuditAsync("user.batch-create", "user", "batch", $"created={createdList.Length}; skipped={skippedList.Length}", auditTimeout.Token);
+            logger.LogInformation("Batch user creation started. accountType={AccountType}, prefix={Prefix}, startIndex={StartIndex}, count={Count}, tenant={Tenant}, admin={Admin}", request.AccountType, request.Prefix, request.StartIndex, request.Count, tenant.CurrentAdminScope, User.Identity?.Name ?? "");
+            stage = "展开账号";
+            IReadOnlyList<AdminUserCreateRequest> users;
+            try { users = ExpandBatchRequest(request); }
+            catch (ArgumentException error) { logger.LogWarning(error, "Batch user creation validation failed"); return BadRequest(new { error = error.Message }); }
+            logger.LogInformation("Batch user creation expanded. count={Count}, elapsedMs={ElapsedMs}", users.Count, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+            var created = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var uniqueUsers = new List<AdminUserCreateRequest>(users.Count);
+            var seenAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in users)
+            {
+                var normalizedAccount = NormalizeAccount(item.Account);
+                if (!seenAccounts.Add(normalizedAccount)) skipped.Add(item.Account);
+                else uniqueUsers.Add(item);
+            }
+            stage = "预查询已存在账号";
+            logger.LogInformation("Batch user creation querying existing accounts. count={Count}", uniqueUsers.Count);
+            var existing = await repository.GetUsersByAccountsAsync(uniqueUsers.Select(x => NormalizeAccount(x.Account)), operationToken);
+            var existingAccounts = existing.Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in uniqueUsers.Where(x => existingAccounts.Contains(NormalizeAccount(x.Account))))
+                skipped.Add(item.Account);
+            var candidates = uniqueUsers.Where(x => !existingAccounts.Contains(NormalizeAccount(x.Account))).ToArray();
+            logger.LogInformation("Batch user creation existing account query completed. candidates={Candidates}, skipped={Skipped}, elapsedMs={ElapsedMs}", candidates.Length, skipped.Count, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+            stage = "并发写入用户";
+            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8), CancellationToken = operationToken };
+            await Parallel.ForEachAsync(candidates, parallelOptions, async (item, token) =>
+            {
+                try
+                {
+                    logger.LogInformation("Batch user creation item started. account={Account}", item.Account);
+                    var user = await CreateUserCoreAsync(item, token, checkDuplicate: false);
+                    if (user is null) skipped.Add(item.Account); else created.Add(user.Account);
+                    logger.LogInformation("Batch user creation item completed. account={Account}, created={Created}", item.Account, user is not null);
+                }
+                catch (ArgumentException error) { skipped.Add(item.Account); logger.LogWarning(error, "Batch user creation item validation failed. account={Account}", item.Account); }
+                catch (InvalidOperationException error) { skipped.Add(item.Account); logger.LogWarning(error, "Batch user creation item insert failed. account={Account}", item.Account); }
+            });
+            var createdList = created.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+            var skippedList = skipped.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+            stage = "审计记录";
+            try
+            {
+                using var auditTimeout = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+                auditTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+                await AuditAsync("user.batch-create", "user", "batch", $"created={createdList.Length}; skipped={skippedList.Length}", auditTimeout.Token);
+            }
+            catch (Exception error) when (error is OperationCanceledException or TimeoutException or HttpRequestException) { logger.LogWarning(error, "Batch user creation audit skipped. created={Created}, skipped={Skipped}", createdList.Length, skippedList.Length); }
+            logger.LogInformation("Batch user creation completed. created={Created}, skipped={Skipped}, elapsedMs={ElapsedMs}, tenant={Tenant}", createdList.Length, skippedList.Length, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
+            stage = "返回结果";
+            return Ok(new { created = createdList, skipped = skippedList });
         }
-        catch (Exception error) when (error is OperationCanceledException or TimeoutException or HttpRequestException)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            logger.LogWarning(error, "Batch user creation audit skipped after timeout or cancellation. created={Created}, skipped={Skipped}", createdList.Length, skippedList.Length);
+            logger.LogError("Batch user creation timed out or was cancelled. stage={Stage}, elapsedMs={ElapsedMs}, tenant={Tenant}", stage, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new { error = $"批量新增超时，卡在：{stage}", stage });
         }
-        logger.LogInformation("Batch user creation completed. created={Created}, skipped={Skipped}, elapsedMs={ElapsedMs}, tenant={Tenant}", createdList.Length, skippedList.Length, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
-        return Ok(new { created = createdList, skipped = skippedList });
+        catch (Exception error)
+        {
+            logger.LogError(error, "Batch user creation failed. stage={Stage}, elapsedMs={ElapsedMs}, tenant={Tenant}", stage, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = $"批量新增失败，卡在：{stage}" });
+        }
     }
 
     [HttpGet("users/export")]
