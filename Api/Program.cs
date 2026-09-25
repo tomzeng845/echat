@@ -61,6 +61,8 @@ builder.Services.AddSingleton<ForbiddenWordService>();
 builder.Services.AddSingleton<CurfewService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 builder.Services.AddSingleton<VideoProcessingService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<TenantContext>();
 
 var mongoConfigured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MONGODB_URI")) || !string.IsNullOrWhiteSpace(builder.Configuration["Mongo:ConnectionString"]);
 if (mongoConfigured) builder.Services.AddSingleton<IChatRepository, MongoChatRepository>();

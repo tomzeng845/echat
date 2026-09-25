@@ -206,6 +206,13 @@ public sealed class InMemoryChatRepository : IChatRepository
         return Task.FromResult(conversation);
     }
     public Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default) { _conversations[conversation.Id] = conversation; return Task.CompletedTask; }
+    public Task<bool> AssignConversationTenantAsync(string conversationId, string tenantId, CancellationToken ct = default)
+    {
+        if (!_conversations.TryGetValue(conversationId, out var conversation)) return Task.FromResult(false);
+        conversation.TenantId = TenantData.NormalizeStored(tenantId);
+        foreach (var message in _messages.Values.Where(x => x.ConversationId == conversationId)) message.TenantId = conversation.TenantId;
+        return Task.FromResult(true);
+    }
     public Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default) => Task.FromResult(_conversations.TryGetValue(id, out var item) ? item : null);
     public Task UpsertGroupMemberAsync(GroupMemberRecord member, CancellationToken ct = default) { _groupMembers[$"{member.ConversationId}:{member.UserId}"] = member; return Task.CompletedTask; }
     public Task<GroupMemberRecord?> GetGroupMemberAsync(string conversationId, string userId, CancellationToken ct = default) => Task.FromResult(_groupMembers.TryGetValue($"{conversationId}:{userId}", out var item) ? item : null);

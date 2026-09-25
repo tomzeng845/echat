@@ -708,12 +708,24 @@ export default function Admin() {
     system: false,
     chat: false,
   });
+  const [tenantScope, setTenantScope] = useState(() => localStorage.getItem("echat.admin.tenant") || "*");
+  const [canSwitchTenant, setCanSwitchTenant] = useState(false);
   useEffect(() => {
     document.title = "E聊管理后台";
     return () => {
       document.title = "E聊";
     };
   }, []);
+  useEffect(() => {
+    if (!session) return;
+    api<{ current: string; canSwitch: boolean }>("/api/admin/tenant-context")
+      .then(context => {
+        setCanSwitchTenant(context.canSwitch);
+        setTenantScope(context.current);
+        if (!context.canSwitch) localStorage.removeItem("echat.admin.tenant");
+      })
+      .catch(() => undefined);
+  }, [session]);
   if (!session) return <AdminLogin onAuthenticated={setAdminSession} />;
   const navigate = (id: PageId) => {
     setPage(id);
@@ -834,6 +846,24 @@ export default function Admin() {
             <RefreshCw size={16} />
             刷新
           </button>
+          {canSwitchTenant && (
+            <select
+              value={tenantScope}
+              onChange={event => {
+                const next = event.target.value;
+                setTenantScope(next);
+                localStorage.setItem("echat.admin.tenant", next);
+                setRefresh(value => value + 1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              aria-label="选择管理租户"
+            >
+              <option value="*">全部租户</option>
+              <option value="a">A后台</option>
+              <option value="b">B后台</option>
+              <option value="unassigned">未分配</option>
+            </select>
+          )}
           <span className="hidden rounded-full bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 sm:inline">
             服务正常
           </span>
@@ -3035,12 +3065,14 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
       displayName: string;
       role: string;
       status: string;
+      tenantId?: string;
     }[]
   >("/api/admin/operators", refresh, []);
   const [account, setAccount] = useState(""),
     [displayName, setDisplayName] = useState(""),
     [password, setPassword] = useState(""),
-    [role, setRole] = useState("Operator");
+    [role, setRole] = useState("Operator"),
+    [tenantId, setTenantId] = useState("a");
   const [totpProvisioning, setTotpProvisioning] = useState<{
     account: string;
     secret: string;
@@ -3062,7 +3094,7 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
         provisioningUri: string;
       }>("/api/admin/operators", {
         method: "POST",
-        body: JSON.stringify({ account, displayName, password, role }),
+        body: JSON.stringify({ account, displayName, password, role, tenantId }),
       });
       setTotpProvisioning({
         account: result.user.account,
@@ -3129,6 +3161,15 @@ function OperatorsPanel({ refresh }: { refresh: number }) {
             <option>Reviewer</option>
             <option>Operator</option>
             <option>Admin</option>
+          </select>
+          <select
+            value={tenantId}
+            onChange={e => setTenantId(e.target.value)}
+            className="admin-input"
+          >
+            <option value="a">所属 A后台</option>
+            <option value="b">所属 B后台</option>
+            <option value="*">所属总后台</option>
           </select>
           <button
             disabled={!account || !displayName || password.length < 8}

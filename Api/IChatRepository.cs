@@ -44,6 +44,7 @@ public interface IChatRepository
     Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default);
     Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default);
     Task UpdateConversationAsync(Conversation conversation, CancellationToken ct = default);
+    Task<bool> AssignConversationTenantAsync(string conversationId, string tenantId, CancellationToken ct = default);
     Task<Conversation?> GetConversationAsync(string id, CancellationToken ct = default);
     Task UpsertGroupMemberAsync(GroupMemberRecord member, CancellationToken ct = default);
     Task<GroupMemberRecord?> GetGroupMemberAsync(string conversationId, string userId, CancellationToken ct = default);

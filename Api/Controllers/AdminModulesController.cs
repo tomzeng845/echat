@@ -15,7 +15,8 @@ public sealed class AdminModulesController(
     AdminSecretProtector protector,
     IMediaStorage mediaStorage,
     IHubContext<ChatHub> hub,
-    GeoIpService geoIp) : ControllerBase
+    GeoIpService geoIp,
+    TenantContext tenant) : ControllerBase
 {
     private static readonly HashSet<string> EditableModules = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -258,7 +259,19 @@ public sealed class AdminModulesController(
         if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(new { error = "账号格式无效" });
         if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" });
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(new { error = "账号已存在" });
-        var user = new UserAccount { Account = account, DisplayName = Trim(request.DisplayName, 50), Role = UserRole.Admin };
+        var requestedTenant = TenantIds.Normalize(request.TenantId);
+        if (tenant.CurrentAdminScope != TenantIds.All)
+            requestedTenant = tenant.CurrentAdminScope;
+        if (!TenantIds.IsTenant(requestedTenant) && requestedTenant != TenantIds.All)
+            return BadRequest(new { error = "后台范围必须为 A后台、B后台或总后台" });
+        var user = new UserAccount
+        {
+            TenantId = requestedTenant == TenantIds.All ? TenantIds.Unassigned : requestedTenant,
+            AdminTenantScope = requestedTenant,
+            Account = account,
+            DisplayName = Trim(request.DisplayName, 50),
+            Role = UserRole.Admin
+        };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         await repository.AddUserAsync(user, ct);
         var secret = TotpService.GenerateSecret();

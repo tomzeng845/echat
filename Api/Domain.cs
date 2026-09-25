@@ -34,6 +34,10 @@ public enum CallRecordStatus { Ringing, Active, Rejected, Ended, Missed, Failed 
 public sealed class UserAccount
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    // Existing records default to unassigned and are visible only to the super-admin
+    // until explicitly assigned to a tenant.
+    public string TenantId { get; set; } = TenantIds.Unassigned;
+    public string AdminTenantScope { get; set; } = TenantIds.All;
     public string Account { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public string DisplayName { get; set; } = "";
@@ -211,6 +215,7 @@ public sealed class ConversationKeyEnvelopeEntry
 public sealed class Conversation
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public ConversationType Type { get; set; }
     public string Name { get; set; } = "";
     public string AvatarUrl { get; set; } = "";
@@ -248,6 +253,7 @@ public sealed class ConversationKeyEnvelopeRecord
 public sealed class ChatMessage
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string ClientMessageId { get; set; } = "";
     public string ConversationId { get; set; } = "";
     public long Sequence { get; set; }
@@ -268,6 +274,7 @@ public sealed class ChatMessage
 public sealed class MediaAsset
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string OwnerId { get; set; } = "";
     public MediaPurpose Purpose { get; set; }
     public string? ConversationId { get; set; }
@@ -343,6 +350,7 @@ public sealed class CallRecord
 public sealed class AdminAuditLog
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string AdminUserId { get; set; } = "";
     public string AdminAccount { get; set; } = "";
     public string Action { get; set; } = "";
@@ -357,6 +365,7 @@ public sealed class AdminAuditLog
 public sealed class AdminModuleRecord
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string Module { get; set; } = "";
     public string Name { get; set; } = "";
     public string Status { get; set; } = "Active";
@@ -420,6 +429,7 @@ public sealed record CallRecordView(string Id, string ConversationId, string Con
 public sealed class AdminUserView
 {
     public string Id { get; set; } = "";
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string Account { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public string MobilePhone { get; set; } = "";
@@ -492,7 +502,7 @@ public sealed class AdminUserQuery
     public int? FailedLoginMax { get; set; }
 }
 public sealed record AdminUserStatusRequest(UserStatus Status, string Reason = "");
-public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User, UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true);
+public sealed record AdminUserCreateRequest(string Account, string Password, string DisplayName, string MobilePhone = "", string InviteSource = "后台开户", UserRole Role = UserRole.User, UserStatus Status = UserStatus.Active, bool CanAddFriend = true, bool CanCreateGroup = true, string TenantId = TenantIds.Unassigned);
 public sealed class AdminUserBatchCreateRequest
 {
     public IReadOnlyList<AdminUserCreateRequest>? Users { get; set; }
@@ -521,7 +531,8 @@ public sealed record AdminModuleRecordRequest(string Name, string Status = "Acti
 public sealed record AdminFeedbackDecisionRequest(string Status, string Reply = "");
 public sealed record AdminFeedbackSeenRequest(IReadOnlyList<string> Ids);
 public sealed record AdminWalletAdjustmentRequest(string Account, decimal Amount, string Subject, string Note = "");
-public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator);
+public sealed record AdminAccountCreateRequest(string Account, string Password, string DisplayName, UserRole Role = UserRole.Operator, string TenantId = TenantIds.All);
+public sealed record AdminTenantAssignmentRequest(string TenantId);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
 public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);
 public sealed record AdminVerificationRequest(string Type, string RealName = "", string IdNumber = "", string EnterpriseName = "", string CreditCode = "", string LegalRepresentative = "", IReadOnlyList<string>? MaterialAssetIds = null, string Note = "");

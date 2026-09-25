@@ -8,8 +8,39 @@ namespace EChat.Api.Controllers;
 
 [ApiController, Authorize(Roles = nameof(UserRole.Admin))]
 [Route("api/admin")]
-public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew, ILogger<AdminController> logger) : ControllerBase
+public sealed class AdminController(IChatRepository repository, PasswordHasher<UserAccount> passwordHasher, TotpService totp, GeoIpService geoIp, IHostEnvironment environment, IConfiguration configuration, IHubContext<ChatHub> hub, PushNotificationService push, ForbiddenWordService forbiddenWords, CurfewService curfew, ILogger<AdminController> logger, TenantContext tenant) : ControllerBase
 {
+    [HttpGet("tenant-context")]
+    public ActionResult TenantContextInfo() => Ok(new
+    {
+        current = tenant.CurrentAdminScope,
+        canSwitch = tenant.CurrentAdminScope == TenantIds.All,
+        tenants = new[] { new { id = "a", name = "A后台" }, new { id = "b", name = "B后台" }, new { id = TenantIds.Unassigned, name = "未分配" }, new { id = TenantIds.All, name = "全部租户" } }
+    });
+
+    [HttpPut("users/{id}/tenant")]
+    public async Task<ActionResult> AssignUserTenant(string id, AdminTenantAssignmentRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var target = TenantIds.Normalize(request.TenantId);
+        if (!TenantIds.IsTenant(target)) return BadRequest(new { error = "租户必须为 A后台、B后台或未分配" });
+        var user = await repository.GetUserByIdAsync(id, ct);
+        if (user is null) return NotFound(new { error = "用户不存在" });
+        user.TenantId = target;
+        await repository.UpdateUserAsync(user, ct);
+        return Ok(new { id = user.Id, tenantId = user.TenantId });
+    }
+
+    [HttpPut("conversations/{id}/tenant")]
+    public async Task<ActionResult> AssignConversationTenant(string id, AdminTenantAssignmentRequest request, CancellationToken ct)
+    {
+        if (tenant.CurrentAdminScope != TenantIds.All) return Forbid();
+        var target = TenantIds.Normalize(request.TenantId);
+        if (!TenantIds.IsTenant(target)) return BadRequest(new { error = "租户必须为 A后台、B后台或未分配" });
+        return await repository.AssignConversationTenantAsync(id, target, ct)
+            ? Ok(new { id, tenantId = target })
+            : NotFound(new { error = "会话不存在" });
+    }
     [HttpGet("overview")]
     public async Task<ActionResult> Overview(CancellationToken ct)
     {
@@ -649,6 +680,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         if (await repository.GetUserByAccountAsync(account, ct) is not null) return null;
         var user = new UserAccount
         {
+            TenantId = tenant.CurrentAdminScope == TenantIds.All ? TenantData.NormalizeStored(request.TenantId) : tenant.CurrentAdminScope,
             Account = account,
             DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? account : Trim(request.DisplayName, 60),
             MobilePhone = Trim(request.MobilePhone, 30),
@@ -705,7 +737,7 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
 
     private static AdminUserView ToView(UserAccount user, IReadOnlyList<RefreshSession> sessions) => new()
     {
-        Id = user.Id, Account = user.Account, DisplayName = user.DisplayName, MobilePhone = user.MobilePhone,
+        Id = user.Id, TenantId = TenantData.NormalizeStored(user.TenantId), Account = user.Account, DisplayName = user.DisplayName, MobilePhone = user.MobilePhone,
         AvatarUrl = user.AvatarUrl, Gender = user.Gender, CommunicationId = user.CommunicationId,
         Role = user.Role, Status = user.Status, RiskLevel1 = user.RiskLevel1, RiskLevel2 = user.RiskLevel2,
         CanAddFriend = user.CanAddFriend, CanCreateGroup = user.CanCreateGroup,

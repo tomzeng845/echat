@@ -19,7 +19,9 @@ public sealed class TokenService(IConfiguration configuration)
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id), new Claim(JwtRegisteredClaimNames.UniqueName, user.Account),
             new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(ClaimTypes.Name, user.DisplayName),
-            new Claim(ClaimTypes.Role, user.Role.ToString()), new Claim("scope", scope), new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
+            new Claim(ClaimTypes.Role, user.Role.ToString()), new Claim("scope", scope), new Claim("tenant_id", TenantData.NormalizeStored(user.TenantId)),
+            new Claim("admin_tenant_scope", user.Role == UserRole.Admin ? (TenantIds.Normalize(user.AdminTenantScope) is var adminScope && !string.IsNullOrWhiteSpace(adminScope) ? adminScope : TenantIds.All) : ""),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
         };
         if (!string.IsNullOrWhiteSpace(sessionId)) claims.Add(new Claim("session_id", sessionId));
         if (!string.IsNullOrWhiteSpace(deviceId)) claims.Add(new Claim("device_id", deviceId));

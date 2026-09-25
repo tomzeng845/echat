@@ -342,6 +342,9 @@ export async function authorizedFetch(
   if (session?.accessToken)
     headers.set("Authorization", `Bearer ${session.accessToken}`);
   headers.set("X-EChat-Device-Id", getDeviceId());
+  const selectedTenant = localStorage.getItem("echat.admin.tenant");
+  if (session?.user?.role === "Admin" && selectedTenant)
+    headers.set("X-EChat-Tenant", selectedTenant);
   const response = await fetch(apiUrl(path), { ...init, headers });
   if (response.status === 401 && retry && session?.refreshToken) {
     // Another request may have already rotated this refresh token. Reuse the
