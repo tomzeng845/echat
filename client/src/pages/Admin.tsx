@@ -102,6 +102,8 @@ type PageId =
   | "platform-tenants"
   | "platform-domains"
   | "platform-apps"
+  | "platform-accounts"
+  | "platform-roles"
   | "account-users"
   | "account-login"
   | "account-offline"
@@ -318,6 +320,8 @@ const groups: MenuGroup[] = [
       { id: "platform-tenants", label: "租户管理" },
       { id: "platform-domains", label: "域名管理" },
       { id: "platform-apps", label: "APP管理" },
+      { id: "platform-accounts", label: "平台账号" },
+      { id: "platform-roles", label: "角色管理" },
     ],
   },
   {
@@ -907,6 +911,8 @@ function renderPage(page: PageId, refresh: number, currentUserId: string) {
   if (page === "platform-tenants") return <PlatformManagementPanel refresh={refresh} tab="tenants" />;
   if (page === "platform-domains") return <PlatformManagementPanel refresh={refresh} tab="domains" />;
   if (page === "platform-apps") return <PlatformManagementPanel refresh={refresh} tab="apps" />;
+  if (page === "platform-accounts") return <PlatformAccessPanel refresh={refresh} tab="accounts" />;
+  if (page === "platform-roles") return <PlatformAccessPanel refresh={refresh} tab="roles" />;
   if (page === "account-users")
     return <UsersPanel refresh={refresh} currentUserId={currentUserId} />;
   if (page === "account-login") return <DocLogsPanel refresh={refresh} />;
@@ -4022,6 +4028,37 @@ function PlatformManagementPanel({ refresh, tab }: { refresh: number; tab: "tena
     {tab === "apps" && <>
       <Card><PanelTitle title="新增 APP" description="维护 APP 名称、包名和绑定域名。" /><form onSubmit={submitApp} className="grid gap-3 md:grid-cols-4"><input className="admin-input" placeholder="APP名称" value={appForm.name} onChange={e => setAppForm(v => ({ ...v, name: e.target.value }))} /><input className="admin-input" placeholder="APP包名，如 com.example.app" value={appForm.packageName} onChange={e => setAppForm(v => ({ ...v, packageName: e.target.value }))} /><input className="admin-input" placeholder="域名" value={appForm.domain} onChange={e => setAppForm(v => ({ ...v, domain: e.target.value }))} /><select className="admin-input" value={appForm.tenantId} onChange={e => setAppForm(v => ({ ...v, tenantId: e.target.value }))}><option value="unassigned">未分配</option>{tenants.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="admin-primary md:col-span-4" disabled={!appForm.name || !appForm.packageName}>新增 APP</button></form></Card>
       <Card><PanelTitle title="APP列表" description="支持修改和删除。" /><div className="grid gap-2">{apps.data.map(item => <div key={item.id} className="grid gap-2 border-b p-3 md:grid-cols-[1fr_1.2fr_1fr_1fr_auto_auto]"><span>{item.name}</span><span className="text-sm text-slate-500">{item.packageName}</span><span className="text-sm text-slate-500">{item.domain || "—"}</span><span className="text-sm">{tenantName(item.tenantId)}</span><button className="admin-mini bg-slate-100" onClick={() => editApp(item)}>修改</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => deleteApp(item)}>删除</button></div>)}</div></Card>
+    </>}
+  </div>;
+}
+
+
+type PlatformRoleItem = { id: string; name: string; description: string; enabled?: boolean; status?: string; platformPermissions: string[]; tenantPermissions: string[] };
+type PlatformAccountItem = { id: string; account: string; displayName: string; status: string; platformRoleId: string };
+const platformPermissionOptions = ["platform:accounts:read", "platform:accounts:write", "platform:roles:read", "platform:roles:write", "platform:tenants:read", "platform:tenants:write", "platform:domains:write", "platform:apps:write"];
+const tenantPermissionOptions = ["users:read", "users:write", "logs:read", "operators:read", "operators:write", "announcements:write", "conversations:read", "groups:write", "robots:write", "audit:read"];
+
+function PlatformAccessPanel({ refresh, tab }: { refresh: number; tab: "accounts" | "roles" }) {
+  const accounts = useData<PlatformAccountItem[]>("/api/admin/platform/accounts", refresh, []);
+  const roles = useData<PlatformRoleItem[]>("/api/admin/platform/roles", refresh, []);
+  const [account, setAccount] = useState({ account: "", password: "", displayName: "", roleId: "" });
+  const [role, setRole] = useState({ name: "", description: "", platformPermissions: [] as string[], tenantPermissions: [] as string[] });
+  const roleName = (id: string) => roles.data.find(x => x.id === id)?.name || "未绑定";
+  const toggle = (key: "platformPermissions" | "tenantPermissions", value: string) => setRole(v => ({ ...v, [key]: v[key].includes(value) ? v[key].filter(x => x !== value) : [...v[key], value] }));
+  async function createAccount(event: React.FormEvent) { event.preventDefault(); try { await api("/api/admin/platform/accounts", { method: "POST", body: JSON.stringify(account) }); setAccount({ account: "", password: "", displayName: "", roleId: "" }); await accounts.reload(); toast.success("平台账号已添加"); } catch (e) { toast.error(e instanceof Error ? e.message : "添加失败"); } }
+  async function editAccount(item: PlatformAccountItem) { const displayName = window.prompt("显示名称", item.displayName); if (!displayName) return; const roleId = window.prompt(`角色 ID（当前：${roleName(item.platformRoleId)}）`, item.platformRoleId) ?? item.platformRoleId; const password = window.prompt("新密码（留空表示不修改）", "") ?? ""; try { await api(`/api/admin/platform/accounts/${item.id}`, { method: "PUT", body: JSON.stringify({ displayName, roleId, password, enabled: item.status === "Active" }) }); await accounts.reload(); toast.success("平台账号已修改"); } catch (e) { toast.error(e instanceof Error ? e.message : "修改失败"); } }
+  async function toggleAccount(item: PlatformAccountItem) { try { await api(`/api/admin/platform/accounts/${item.id}`, { method: "PUT", body: JSON.stringify({ displayName: item.displayName, roleId: item.platformRoleId, enabled: item.status !== "Active" }) }); await accounts.reload(); toast.success("账号状态已更新"); } catch (e) { toast.error(e instanceof Error ? e.message : "操作失败"); } }
+  async function removeAccount(item: PlatformAccountItem) { if (!window.confirm(`确认禁用平台账号 ${item.account} 吗？`)) return; try { await api(`/api/admin/platform/accounts/${item.id}`, { method: "DELETE" }); await accounts.reload(); toast.success("平台账号已禁用"); } catch (e) { toast.error(e instanceof Error ? e.message : "操作失败"); } }
+  async function createRole(event: React.FormEvent) { event.preventDefault(); try { await api("/api/admin/platform/roles", { method: "POST", body: JSON.stringify(role) }); setRole({ name: "", description: "", platformPermissions: [], tenantPermissions: [] }); await roles.reload(); toast.success("平台角色已添加"); } catch (e) { toast.error(e instanceof Error ? e.message : "添加失败"); } }
+  async function editRole(item: PlatformRoleItem) { const name = window.prompt("角色名称", item.name); if (!name) return; try { await api(`/api/admin/platform/roles/${item.id}`, { method: "PUT", body: JSON.stringify({ name, description: item.description, platformPermissions: item.platformPermissions, tenantPermissions: item.tenantPermissions, enabled: item.status !== "Disabled" }) }); await roles.reload(); toast.success("角色已修改"); } catch (e) { toast.error(e instanceof Error ? e.message : "修改失败"); } }
+  async function removeRole(item: PlatformRoleItem) { if (!window.confirm(`确认删除角色“${item.name}”吗？`)) return; try { await api(`/api/admin/platform/roles/${item.id}`, { method: "DELETE" }); await roles.reload(); toast.success("角色已删除"); } catch (e) { toast.error(e instanceof Error ? e.message : "删除失败"); } }
+  return <div className="grid gap-5">
+    {tab === "accounts" ? <>
+      <Card><PanelTitle title="新增平台账号" description="平台账号只能进入总后台；通过角色绑定平台管理权限和租户后台权限。" /><form onSubmit={createAccount} className="grid gap-3 md:grid-cols-4"><input className="admin-input" placeholder="账号" value={account.account} onChange={e => setAccount(v => ({ ...v, account: e.target.value }))} /><input className="admin-input" placeholder="至少 8 位密码" type="password" value={account.password} onChange={e => setAccount(v => ({ ...v, password: e.target.value }))} /><input className="admin-input" placeholder="显示名称" value={account.displayName} onChange={e => setAccount(v => ({ ...v, displayName: e.target.value }))} /><select className="admin-input" value={account.roleId} onChange={e => setAccount(v => ({ ...v, roleId: e.target.value }))}><option value="">未绑定角色</option>{roles.data.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="admin-primary md:col-span-4" disabled={!account.account || account.password.length < 8 || !account.displayName}>添加平台账号</button></form></Card>
+      <Card><PanelTitle title="平台账号列表" description="支持修改显示名称、重新绑定角色、启用/禁用和删除（删除会安全禁用账号）。" /><div className="overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-2">账号</th><th className="p-2">名称</th><th className="p-2">角色</th><th className="p-2">状态</th><th className="p-2">操作</th></tr></thead><tbody>{accounts.data.map(x => <tr key={x.id} className="border-b"><td className="p-2">{x.account}</td><td className="p-2">{x.displayName}</td><td className="p-2">{roleName(x.platformRoleId)}</td><td className="p-2">{x.status === "Active" ? "启用" : "禁用"}</td><td className="flex gap-2 p-2"><button className="admin-mini bg-slate-100" onClick={() => editAccount(x)}>修改</button><button className="admin-mini bg-amber-50 text-amber-700" onClick={() => toggleAccount(x)}>{x.status === "Active" ? "禁用" : "启用"}</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => removeAccount(x)}>删除</button></td></tr>)}</tbody></table></div></Card>
+    </> : <>
+      <Card><PanelTitle title="新增平台角色" description="平台权限控制租户创建、域名、APP、平台账号和角色；租户权限控制进入租户后台后的具体功能。" /><form onSubmit={createRole} className="grid gap-3"><input className="admin-input" placeholder="角色名称" value={role.name} onChange={e => setRole(v => ({ ...v, name: e.target.value }))} /><input className="admin-input" placeholder="角色说明" value={role.description} onChange={e => setRole(v => ({ ...v, description: e.target.value }))} /><fieldset className="rounded-xl border border-slate-200 p-3"><legend className="px-1 text-sm font-semibold">平台管理权限</legend><div className="grid gap-2 md:grid-cols-4">{platformPermissionOptions.map(x => <label key={x} className="flex gap-2 text-sm"><input type="checkbox" checked={role.platformPermissions.includes(x)} onChange={() => toggle("platformPermissions", x)} />{x}</label>)}</div></fieldset><fieldset className="rounded-xl border border-slate-200 p-3"><legend className="px-1 text-sm font-semibold">租户后台权限</legend><div className="grid gap-2 md:grid-cols-4">{tenantPermissionOptions.map(x => <label key={x} className="flex gap-2 text-sm"><input type="checkbox" checked={role.tenantPermissions.includes(x)} onChange={() => toggle("tenantPermissions", x)} />{x}</label>)}</div></fieldset><button className="admin-primary" disabled={!role.name}>添加角色</button></form></Card>
+      <Card><PanelTitle title="平台角色列表" description="角色可修改、删除；已绑定平台账号的角色不能删除。" /><div className="grid gap-3">{roles.data.map(x => <div key={x.id} className="rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between"><b>{x.name}</b><span className="text-sm text-slate-500">平台 {x.platformPermissions.length} 项 · 租户 {x.tenantPermissions.length} 项</span></div><p className="mt-1 text-sm text-slate-500">{x.description || "暂无说明"}</p><div className="mt-3 flex gap-2"><button className="admin-mini bg-slate-100" onClick={() => editRole(x)}>修改</button><button className="admin-mini bg-rose-50 text-rose-700" onClick={() => removeRole(x)}>删除</button></div></div>)}</div></Card>
     </>}
   </div>;
 }

@@ -164,6 +164,89 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         await repository.DeleteAppAsync(id, ct); return NoContent();
     }
 
+    [HttpGet("platform/accounts")]
+    public async Task<ActionResult> PlatformAccounts(CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var users = await repository.GetUsersAsync(null, null, 10000, ct);
+        return Ok(users.Where(x => x.Role == UserRole.Admin && TenantIds.Normalize(x.AdminTenantScope) == TenantIds.All).Select(x => new { x.Id, x.Account, x.DisplayName, x.Status, x.PlatformRoleId, x.LastLoginAtUtc, x.CreatedAtUtc }));
+    }
+
+    [HttpGet("platform/roles")]
+    public async Task<ActionResult> PlatformRoles(CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var records = await repository.GetAdminRecordsAsync("platform.roles", 500, ct);
+        return Ok(records.Select(x => new { x.Id, x.Name, x.Status, x.CreatedAtUtc, description = x.Data.GetValueOrDefault("description", ""), platformPermissions = SplitPermissions(x.Data.GetValueOrDefault("platformPermissions", "")), tenantPermissions = SplitPermissions(x.Data.GetValueOrDefault("tenantPermissions", "")) }));
+    }
+
+    [HttpPost("platform/roles")]
+    public async Task<ActionResult> CreatePlatformRole(PlatformRoleRequest request, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest(new { error = "角色名称不能为空" });
+        var record = new AdminModuleRecord { Module = "platform.roles", Name = request.Name.Trim(), Status = request.Enabled ? "Active" : "Disabled", Data = new Dictionary<string, string> { ["description"] = request.Description.Trim(), ["platformPermissions"] = JoinPermissions(request.PlatformPermissions), ["tenantPermissions"] = JoinPermissions(request.TenantPermissions) } };
+        await repository.UpsertAdminRecordAsync(record, ct); return Ok(record);
+    }
+
+    [HttpPut("platform/roles/{id}")]
+    public async Task<ActionResult> UpdatePlatformRole(string id, PlatformRoleRequest request, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "platform.roles") return NotFound(new { error = "平台角色不存在" });
+        record.Name = request.Name.Trim(); record.Status = request.Enabled ? "Active" : "Disabled"; record.Data["description"] = request.Description.Trim(); record.Data["platformPermissions"] = JoinPermissions(request.PlatformPermissions); record.Data["tenantPermissions"] = JoinPermissions(request.TenantPermissions);
+        await repository.UpsertAdminRecordAsync(record, ct); return Ok(record);
+    }
+
+    [HttpDelete("platform/roles/{id}")]
+    public async Task<ActionResult> DeletePlatformRole(string id, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var record = await repository.GetAdminRecordAsync(id, ct);
+        if (record is null || record.Module != "platform.roles") return NotFound(new { error = "平台角色不存在" });
+        var admins = await repository.GetUsersAsync(null, null, 10000, ct);
+        if (admins.Any(x => x.PlatformRoleId == id)) return Conflict(new { error = "角色已绑定平台账号，不能删除" });
+        await repository.DeleteAdminRecordAsync(id, ct); return NoContent();
+    }
+
+    [HttpPost("platform/accounts")]
+    public async Task<ActionResult> CreatePlatformAccount(PlatformAccountRequest request, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var account = request.Account.Trim().ToLowerInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z][a-z0-9_]{3,19}$")) return BadRequest(new { error = "账号格式无效" });
+        if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" });
+        if (await repository.GetUserByAccountAsync(account, ct) is not null) return Conflict(new { error = "账号已存在" });
+        if (!string.IsNullOrWhiteSpace(request.RoleId) && await repository.GetAdminRecordAsync(request.RoleId, ct) is not { Module: "platform.roles" }) return BadRequest(new { error = "平台角色不存在" });
+        var user = new UserAccount { Account = account, DisplayName = request.DisplayName.Trim(), Role = UserRole.Admin, TenantId = TenantIds.Unassigned, AdminTenantScope = TenantIds.All, PlatformRoleId = request.RoleId ?? "", Status = request.Enabled ? UserStatus.Active : UserStatus.Disabled };
+        user.PasswordHash = passwordHasher.HashPassword(user, request.Password); await repository.AddUserAsync(user, ct); return Ok(new { user.Id, user.Account, user.DisplayName, user.Status, user.PlatformRoleId });
+    }
+
+    [HttpPut("platform/accounts/{id}")]
+    public async Task<ActionResult> UpdatePlatformAccount(string id, PlatformAccountRequest request, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var user = await repository.GetUserByIdAsync(id, ct);
+        if (user is null || user.Role != UserRole.Admin || TenantIds.Normalize(user.AdminTenantScope) != TenantIds.All) return NotFound(new { error = "平台账号不存在" });
+        if (!string.IsNullOrWhiteSpace(request.RoleId) && await repository.GetAdminRecordAsync(request.RoleId, ct) is not { Module: "platform.roles" }) return BadRequest(new { error = "平台角色不存在" });
+        user.DisplayName = request.DisplayName.Trim(); user.PlatformRoleId = request.RoleId ?? ""; user.Status = request.Enabled ? UserStatus.Active : UserStatus.Disabled;
+        if (!string.IsNullOrWhiteSpace(request.Password)) { if (request.Password.Length is < 8 or > 72) return BadRequest(new { error = "密码长度需为 8–72 位" }); user.PasswordHash = passwordHasher.HashPassword(user, request.Password); }
+        await repository.UpdateUserAsync(user, ct); return Ok(new { user.Id, user.Account, user.DisplayName, user.Status, user.PlatformRoleId });
+    }
+
+    [HttpDelete("platform/accounts/{id}")]
+    public async Task<ActionResult> DeletePlatformAccount(string id, CancellationToken ct)
+    {
+        if (!tenant.CanSwitchTenant) return Forbid();
+        var user = await repository.GetUserByIdAsync(id, ct);
+        if (user is null || user.Role != UserRole.Admin || TenantIds.Normalize(user.AdminTenantScope) != TenantIds.All) return NotFound(new { error = "平台账号不存在" });
+        user.Status = UserStatus.Disabled; user.LoginLocked = true; await repository.UpdateUserAsync(user, ct); return NoContent();
+    }
+
+    private static string JoinPermissions(IReadOnlyList<string>? values) => string.Join(',', (values ?? []).Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
+    private static string[] SplitPermissions(string? value) => (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private static bool IsDomain(string value) => value.Length is > 2 and < 253 && Uri.TryCreate($"https://{value}", UriKind.Absolute, out var uri) && uri.Host == value && !value.Contains('/');
 
     [HttpPut("users/{id}/tenant")]

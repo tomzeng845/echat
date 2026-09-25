@@ -69,6 +69,7 @@ public sealed class UserAccount
     // until explicitly assigned to a tenant.
     public string TenantId { get; set; } = TenantIds.Unassigned;
     public string AdminTenantScope { get; set; } = TenantIds.All;
+    public string PlatformRoleId { get; set; } = "";
     public string Account { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public string DisplayName { get; set; } = "";
@@ -568,6 +569,8 @@ public sealed record AdminTenantCreateRequest(string Name, string Code, string A
 public sealed record AdminTenantUpdateRequest(string Name, bool Enabled);
 public sealed record AdminDomainRequest(string TenantId, string Domain, bool Enabled = true);
 public sealed record AdminAppRequest(string Name, string PackageName, string Domain, string TenantId = TenantIds.Unassigned, bool Enabled = true);
+public sealed record PlatformAccountRequest(string Account, string Password = "", string DisplayName = "", string TenantScope = TenantIds.All, string RoleId = "", bool Enabled = true);
+public sealed record PlatformRoleRequest(string Name, string Description = "", IReadOnlyList<string>? PlatformPermissions = null, IReadOnlyList<string>? TenantPermissions = null, bool Enabled = true);
 public sealed record AdminConversationActionRequest(string Action, string Note = "");
 public sealed record AdminBulkMessageRequest(string Audience, string Content, IReadOnlyList<string>? Accounts = null);
 public sealed record AdminVerificationRequest(string Type, string RealName = "", string IdNumber = "", string EnterpriseName = "", string CreditCode = "", string LegalRepresentative = "", IReadOnlyList<string>? MaterialAssetIds = null, string Note = "");
