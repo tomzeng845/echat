@@ -327,8 +327,6 @@ const groups: MenuGroup[] = [
       { id: "chat-service-groups", label: "一键拉群模板" },
       { id: "chat-bulk", label: "群发言" },
       { id: "chat-robots", label: "机器人发信息" },
-      { id: "chat-redpacket", label: "抢红包机器人" },
-      { id: "chat-group-invites", label: "群邀请码" },
     ],
   },
 ];
@@ -712,7 +710,7 @@ export default function Admin() {
     setAdminSession(null);
   };
   return (
-    <main className="min-h-full bg-[#f2f4f6] text-slate-900">
+    <main className="selectable min-h-full bg-[#f2f4f6] text-slate-900">
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-[270px] flex-col bg-[#292d32] text-slate-200 shadow-2xl transition-transform duration-200 lg:translate-x-0 ${drawer ? "translate-x-0" : "-translate-x-full"}`}
       >
