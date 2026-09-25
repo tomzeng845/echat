@@ -276,6 +276,18 @@ export const restoreSession = async () => {
 
 let refreshInFlight: Promise<AuthResponse | null> | null = null;
 
+export async function getRealtimeAccessToken(): Promise<string> {
+  const session = getSession();
+  if (!session?.accessToken) return "";
+  const expiresAt = session.expiresAtUtc ? Date.parse(session.expiresAtUtc) : 0;
+  const needsRefresh = !Number.isFinite(expiresAt) || expiresAt <= Date.now() + 30_000;
+  if (needsRefresh && session.refreshToken) {
+    const refreshed = await refreshSession(session);
+    if (refreshed?.accessToken) return refreshed.accessToken;
+  }
+  return getSession()?.accessToken || session.accessToken;
+}
+
 async function refreshSession(
   session: AuthResponse
 ): Promise<AuthResponse | null> {
@@ -687,7 +699,7 @@ function instrumentRealtimeConnection(connection: signalR.HubConnection) {
 export function connectRealtime(handlers: RealtimeHandlers) {
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(apiUrl("/hubs/chat"), {
-      accessTokenFactory: () => getSession()?.accessToken || "",
+      accessTokenFactory: getRealtimeAccessToken,
     })
     .withAutomaticReconnect([0, 1000, 3000, 8000, 15000])
     .configureLogging(signalR.LogLevel.Warning)
