@@ -190,11 +190,11 @@ type AdminUser = {
 };
 const adminUserColumns = [
   ["id", "用户ID"], ["risk1", "风险1"], ["risk2", "风险2"], ["account", "用户账号"], ["displayName", "昵称"], ["mobilePhone", "手机号码"],
-  ["balance", "账户余额"], ["frozenBalance", "冻结金额"], ["online", "在线状态"], ["accountLocked", "账号锁定"], ["loginLocked", "登录锁定"], ["bankCardLocked", "银行卡锁定"],
+  ["online", "在线状态"], ["accountLocked", "账号锁定"], ["loginLocked", "登录锁定"], ["bankCardLocked", "银行卡锁定"],
   ["cancellationEnabled", "注销状态"], ["realName", "实名认证"], ["enterprise", "企业认证"], ["todayOnline", "今日上线"], ["redFlagged", "红号"], ["role", "角色"],
   ["registrationSource", "注册来源"], ["inviteSource", "邀请码来源"], ["createdAt", "注册时间"], ["passwordChanged", "登录密码修改时间"], ["lastSeen", "最后上线时间"], ["lastLoginAddress", "最后登录地址"],
   ["lastOnlineIp", "最后在线IP"], ["lastNodeIp", "最后节点IP"], ["failedLogin", "登录失败次数"], ["activeSessions", "设备数"], ["loginIpRestriction", "登录IP限制"], ["status", "账户状态"],
-  ["avatar", "头像"], ["gender", "性别"], ["communicationId", "通讯号"], ["lastLoginIp", "最后登录IP"], ["lastOfflineAt", "最后离线时间"],
+  ["avatar", "头像"], ["gender", "性别"], ["communicationId", "通讯号"], ["lastLoginIp", "最后登录IP"], ["lastOfflineAt", "最后离线时间"], ["balance", "账户余额"], ["frozenBalance", "冻结金额"],
 ] as const;
 type AdminUserColumnKey = (typeof adminUserColumns)[number][0];
 const defaultHiddenAdminUserColumnKeys = new Set<AdminUserColumnKey>([
@@ -1524,13 +1524,10 @@ function UsersPanel({
                   <th colSpan={6} className="border-l border-slate-300 p-2">
                     基本资料
                   </th>
-                  <th colSpan={2} className="border-l border-slate-300 p-2">
-                    额度信息
-                  </th>
                   <th colSpan={10} className="border-l border-slate-300 p-2">
                     状态信息
                   </th>
-                  <th colSpan={17} className="border-l border-slate-300 p-2">
+                  <th colSpan={19} className="border-l border-slate-300 p-2">
                     其他信息
                   </th>
                 </tr>
@@ -1715,12 +1712,6 @@ function UsersPanel({
                     <td style={columnStyle("account")} className="px-2 font-medium">{user.account}</td>
                     <td style={columnStyle("displayName")} className="px-2">{user.displayName}</td>
                     <td style={columnStyle("mobilePhone")} className="px-2">{user.mobilePhone || "—"}</td>
-                    <td style={columnStyle("balance")} className="px-2 tabular-nums">
-                      {Number(user.accountBalance).toFixed(2)}
-                    </td>
-                    <td style={columnStyle("frozenBalance")} className="px-2 tabular-nums">
-                      {Number(user.frozenBalance).toFixed(2)}
-                    </td>
                     <td style={columnStyle("online")} className="px-2">
                       {badge(user.online, "在线", "离线")}
                     </td>
@@ -1811,6 +1802,12 @@ function UsersPanel({
                     <td style={columnStyle("communicationId")} className="px-2">{user.communicationId || "—"}</td>
                     <td style={columnStyle("lastLoginIp")} className="px-2">{user.lastLoginIp || "—"}</td>
                     <td style={columnStyle("lastOfflineAt")} className="px-2 whitespace-nowrap">{formatTime(user.lastOfflineAtUtc)}</td>
+                    <td style={columnStyle("balance")} className="px-2 tabular-nums">
+                      {Number(user.accountBalance).toFixed(2)}
+                    </td>
+                    <td style={columnStyle("frozenBalance")} className="px-2 tabular-nums">
+                      {Number(user.frozenBalance).toFixed(2)}
+                    </td>
                     <td className="px-2 text-center"><button onClick={() => openOperation(user, "sendMessage")} className="inline-flex items-center gap-1 bg-pink-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-pink-500"><Send size={13} />发送</button></td>
                   </tr>
                 ))}
