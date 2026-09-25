@@ -637,6 +637,14 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
                 }
                 catch (ArgumentException error) { skipped.Add(item.Account); logger.LogWarning(error, "Batch user creation item validation failed. account={Account}", item.Account); }
                 catch (InvalidOperationException error) { skipped.Add(item.Account); logger.LogWarning(error, "Batch user creation item insert failed. account={Account}", item.Account); }
+                catch (MongoDB.Driver.MongoWriteException error) when (error.WriteError?.Code == 11000)
+                {
+                    // Another concurrent request may have inserted the same account
+                    // after the pre-query. The unique Mongo index is authoritative;
+                    // report this item as skipped instead of failing the whole batch.
+                    skipped.Add(item.Account);
+                    logger.LogInformation("Batch user creation skipped duplicate account detected by unique index. account={Account}", item.Account);
+                }
             });
             var createdList = created.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
             var skippedList = skipped.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
