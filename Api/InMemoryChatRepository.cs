@@ -2,8 +2,9 @@ using System.Collections.Concurrent;
 
 namespace EChat.Api;
 
-public sealed class InMemoryChatRepository : IChatRepository
+public sealed class InMemoryChatRepository(TenantContext? tenant = null) : IChatRepository
 {
+    private readonly TenantContext? _tenant = tenant;
     private readonly ConcurrentDictionary<string, TenantDefinition> _tenants = new();
     private readonly ConcurrentDictionary<string, TenantDomain> _tenantDomains = new();
     private readonly ConcurrentDictionary<string, AppDefinition> _apps = new();
@@ -65,17 +66,19 @@ public sealed class InMemoryChatRepository : IChatRepository
 
     private void Seed(string id, string module, string name, string key, string value) => _adminRecords.TryAdd(id, new AdminModuleRecord { Id = id, Module = module, Name = name, Data = new Dictionary<string, string> { [key] = value } });
 
+    private bool Visible(string tenantId) => _tenant is null || _tenant.CurrentAdminScope == TenantIds.All || TenantData.NormalizeStored(tenantId) == _tenant.CurrentAdminScope;
+
     public Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) =>
-        Task.FromResult(_users.Values.FirstOrDefault(x => x.Account.Equals(account, StringComparison.OrdinalIgnoreCase)));
+        Task.FromResult(_users.Values.FirstOrDefault(x => Visible(x.TenantId) && x.Account.Equals(account, StringComparison.OrdinalIgnoreCase)));
 
     public Task<IReadOnlyList<UserAccount>> GetUsersByAccountsAsync(IEnumerable<string> accounts, CancellationToken ct = default)
     {
         var set = accounts.Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return Task.FromResult<IReadOnlyList<UserAccount>>(_users.Values.Where(x => set.Contains(x.Account)).ToList());
+        return Task.FromResult<IReadOnlyList<UserAccount>>(_users.Values.Where(x => Visible(x.TenantId) && set.Contains(x.Account)).ToList());
     }
 
     public Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default) =>
-        Task.FromResult(_users.TryGetValue(id, out var user) ? user : null);
+        Task.FromResult(_users.TryGetValue(id, out var user) && Visible(user.TenantId) ? user : null);
 
     public Task<bool> TryConsumeInviteAsync(string code, CancellationToken ct = default)
     {
@@ -206,23 +209,25 @@ public sealed class InMemoryChatRepository : IChatRepository
 
     public Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default)
     {
-        var existing = _friendRequests.Values.FirstOrDefault(x => x.SenderId == request.SenderId && x.RequestId == request.RequestId);
+        if (request.TenantId == TenantIds.Unassigned && _users.TryGetValue(request.SenderId, out var sender)) request.TenantId = TenantData.NormalizeStored(sender.TenantId);
+        var existing = _friendRequests.Values.FirstOrDefault(x => Visible(x.TenantId) && x.SenderId == request.SenderId && x.RequestId == request.RequestId);
         if (existing is not null) return Task.FromResult(existing);
         _friendRequests[request.Id] = request;
         return Task.FromResult(request);
     }
 
     public Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => x.ReceiverId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
+        Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => Visible(x.TenantId) && x.ReceiverId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
     public Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => x.SenderId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
-    public Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => Task.FromResult(_friendRequests.TryGetValue(id, out var item) ? item : null);
+        Task.FromResult<IReadOnlyList<FriendRequest>>(_friendRequests.Values.Where(x => Visible(x.TenantId) && x.SenderId == userId).OrderByDescending(x => x.CreatedAtUtc).ToList());
+    public Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => Task.FromResult(_friendRequests.TryGetValue(id, out var item) && Visible(item.TenantId) ? item : null);
     public Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default) { _friendRequests[request.Id] = request; return Task.CompletedTask; }
-    public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) { _relations[relation.Id] = relation; return Task.CompletedTask; }
-    public Task<ContactRelation?> GetRelationAsync(string userId, string peerId, CancellationToken ct = default) => Task.FromResult(_relations.TryGetValue($"{userId}:{peerId}", out var item) ? item : null);
-    public Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ContactRelation>>(_relations.Values.Where(x => x.UserId == userId && x.Status != RelationStatus.Deleted).ToList());
+    public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) { if (relation.TenantId == TenantIds.Unassigned && _users.TryGetValue(relation.UserId, out var user)) relation.TenantId = TenantData.NormalizeStored(user.TenantId); _relations[relation.Id] = relation; return Task.CompletedTask; }
+    public Task<ContactRelation?> GetRelationAsync(string userId, string peerId, CancellationToken ct = default) => Task.FromResult(_relations.TryGetValue($"{userId}:{peerId}", out var item) && Visible(item.TenantId) ? item : null);
+    public Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ContactRelation>>(_relations.Values.Where(x => Visible(x.TenantId) && x.UserId == userId && x.Status != RelationStatus.Deleted).ToList());
     public Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default)
     {
+        if (conversation.TenantId == TenantIds.Unassigned && _users.TryGetValue(conversation.CreatedBy, out var creator)) conversation.TenantId = TenantData.NormalizeStored(creator.TenantId);
         _conversations[conversation.Id] = conversation;
         if (conversation.Type == ConversationType.Group)
             foreach (var member in conversation.Members)
@@ -289,10 +294,10 @@ public sealed class InMemoryChatRepository : IChatRepository
     }
 
     public Task<Conversation?> FindDirectConversationAsync(string userA, string userB, CancellationToken ct = default) =>
-        Task.FromResult(_conversations.Values.FirstOrDefault(x => x.Type == ConversationType.Direct && x.Members.Count == 2 && x.Members.Any(m => m.UserId == userA) && x.Members.Any(m => m.UserId == userB)));
+        Task.FromResult(_conversations.Values.FirstOrDefault(x => Visible(x.TenantId) && x.Type == ConversationType.Direct && x.Members.Count == 2 && x.Members.Any(m => m.UserId == userA) && x.Members.Any(m => m.UserId == userB)));
 
     public Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<Conversation>>(_conversations.Values.Where(x => !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence is null)).OrderByDescending(x => x.LastMessageAtUtc ?? x.CreatedAtUtc).ToList());
+        Task.FromResult<IReadOnlyList<Conversation>>(_conversations.Values.Where(x => Visible(x.TenantId) && !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence is null)).OrderByDescending(x => x.LastMessageAtUtc ?? x.CreatedAtUtc).ToList());
 
     public async Task<ChatMessage> AddMessageIdempotentlyAsync(ChatMessage message, CancellationToken ct = default)
     {

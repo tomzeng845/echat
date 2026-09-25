@@ -29,7 +29,7 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         var sender = await repository.GetUserByIdAsync(senderId, ct);
         if (sender is null || !sender.CanAddFriend) return StatusCode(403, new { error = "当前账号不允许添加好友" });
         var peer = await repository.GetUserByAccountAsync(input.PeerAccount.Trim().ToLowerInvariant(), ct);
-        if (peer is null || peer.Id == senderId) return BadRequest(new { error = "无法添加该账号" });
+        if (peer is null || peer.Id == senderId || !string.Equals(peer.TenantId, sender.TenantId, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { error = "无法添加该账号" });
         var blocked = await repository.GetRelationAsync(peer.Id, senderId, ct);
         if (blocked?.Status == RelationStatus.Blocked) return StatusCode(403, new { error = "暂时无法发送好友申请" });
         var item = await repository.AddFriendRequestAsync(new FriendRequest { RequestId = input.RequestId, SenderId = senderId, ReceiverId = peer.Id, Note = input.Note.Trim(), Source = input.Source }, ct);
@@ -101,6 +101,9 @@ public sealed class ContactsController(IChatRepository repository, IHubContext<C
         var receiverId = User.UserId();
         var item = await repository.GetFriendRequestAsync(id, ct);
         if (item is null || item.ReceiverId != receiverId || item.Status != FriendRequestStatus.Pending) return NotFound(new { error = "好友申请不存在或已处理" });
+        var senderAccount = await repository.GetUserByIdAsync(item.SenderId, ct);
+        var receiverAccount = await repository.GetUserByIdAsync(receiverId, ct);
+        if (senderAccount is null || receiverAccount is null || !string.Equals(senderAccount.TenantId, receiverAccount.TenantId, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { error = "不同租户之间不能建立好友关系" });
         item.Status = FriendRequestStatus.Accepted;
         await repository.UpdateFriendRequestAsync(item, ct);
         await repository.UpsertRelationAsync(new ContactRelation { Id = $"{item.SenderId}:{item.ReceiverId}", UserId = item.SenderId, PeerUserId = item.ReceiverId }, ct);

@@ -46,7 +46,8 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         if (await curfew.IsBlockedAsync("direct-message", ct)) return StatusCode(403, new { error = "当前处于宵禁时段，暂不允许发起私聊" });
         var userId = User.UserId();
         var peer = await repository.GetUserByAccountAsync(request.PeerAccount.Trim().ToLowerInvariant(), ct);
-        if (peer is null || peer.Id == userId) return BadRequest(new { error = "联系人无效" });
+        var owner = await repository.GetUserByIdAsync(userId, ct);
+        if (owner is null || peer is null || peer.Id == userId || !string.Equals(owner.TenantId, peer.TenantId, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { error = "联系人无效" });
         var relation = await repository.GetRelationAsync(userId, peer.Id, ct);
         var reverseRelation = await repository.GetRelationAsync(peer.Id, userId, ct);
         if (relation?.Status != RelationStatus.Friend || reverseRelation?.Status != RelationStatus.Friend) return StatusCode(403, new { error = "只有好友可以创建会话" });
@@ -87,7 +88,7 @@ public sealed class ConversationsController(IChatRepository repository, IHubCont
         foreach (var account in request.MemberAccounts.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var peer = await repository.GetUserByAccountAsync(account.Trim().ToLowerInvariant(), ct);
-            if (peer is not null && peer.Id != userId && (await repository.GetRelationAsync(userId, peer.Id, ct))?.Status == RelationStatus.Friend)
+            if (peer is not null && peer.Id != userId && string.Equals(peer.TenantId, creator.TenantId, StringComparison.OrdinalIgnoreCase) && (await repository.GetRelationAsync(userId, peer.Id, ct))?.Status == RelationStatus.Friend)
                 members.Add(new ConversationMember { UserId = peer.Id });
         }
         if (members.Count < 3) return BadRequest(new { error = "至少选择两位好友" });

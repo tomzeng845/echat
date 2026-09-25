@@ -51,7 +51,13 @@ public sealed class TenantContext(IHttpContextAccessor accessor)
         {
             var user = accessor.HttpContext?.User;
             var baseScope = user?.AdminTenantScope() ?? "";
-            if (baseScope != TenantIds.All) return baseScope;
+            if (baseScope != TenantIds.All)
+            {
+                if (!string.IsNullOrWhiteSpace(baseScope)) return baseScope;
+                return TenantIds.Normalize(user?.FindFirstValue("tenant_id")) is var userTenant && !string.IsNullOrWhiteSpace(userTenant)
+                    ? userTenant
+                    : TenantIds.Unassigned;
+            }
             var requested = TenantIds.Normalize(accessor.HttpContext?.Request.Headers["X-EChat-Tenant"].FirstOrDefault());
             return string.IsNullOrWhiteSpace(requested) ? TenantIds.All : requested;
         }

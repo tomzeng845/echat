@@ -183,6 +183,7 @@ public sealed class ContactQrToken
 public sealed class FriendRequest
 {
     [BsonId] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string RequestId { get; set; } = "";
     public string SenderId { get; set; } = "";
     public string ReceiverId { get; set; } = "";
@@ -195,6 +196,7 @@ public sealed class FriendRequest
 public sealed class ContactRelation
 {
     [BsonId] public string Id { get; set; } = "";
+    public string TenantId { get; set; } = TenantIds.Unassigned;
     public string UserId { get; set; } = "";
     public string PeerUserId { get; set; } = "";
     public RelationStatus Status { get; set; } = RelationStatus.Friend;

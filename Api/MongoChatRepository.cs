@@ -80,6 +80,10 @@ public sealed class MongoChatRepository : IChatRepository
         Scope(filter, _tenant.CurrentAdminScope, x => x.TenantId, "TenantId");
     private FilterDefinition<ChatMessage> MessageScope(FilterDefinition<ChatMessage> filter) =>
         Scope(filter, _tenant.CurrentAdminScope, x => x.TenantId, "TenantId");
+    private FilterDefinition<FriendRequest> FriendRequestScope(FilterDefinition<FriendRequest> filter) =>
+        Scope(filter, _tenant.CurrentAdminScope, x => x.TenantId, "TenantId");
+    private FilterDefinition<ContactRelation> RelationScope(FilterDefinition<ContactRelation> filter) =>
+        Scope(filter, _tenant.CurrentAdminScope, x => x.TenantId, "TenantId");
     private FilterDefinition<AdminModuleRecord> RecordScope(FilterDefinition<AdminModuleRecord> filter) =>
         Scope(filter, _tenant.CurrentAdminScope, x => x.TenantId, "TenantId");
     private static FilterDefinition<T> Scope<T>(FilterDefinition<T> filter, string scope, System.Linq.Expressions.Expression<Func<T, string>> field, string fieldName)
@@ -325,17 +329,24 @@ public sealed class MongoChatRepository : IChatRepository
     }
     public async Task<FriendRequest> AddFriendRequestAsync(FriendRequest request, CancellationToken ct = default)
     {
-        var existing = await _friendRequests.Find(x => x.SenderId == request.SenderId && x.RequestId == request.RequestId).FirstOrDefaultAsync(ct);
+        if (request.TenantId == TenantIds.Unassigned)
+            request.TenantId = TenantData.NormalizeStored((await _users.Find(UserScope(Builders<UserAccount>.Filter.Eq(x => x.Id, request.SenderId))).FirstOrDefaultAsync(ct))?.TenantId);
+        var existing = await _friendRequests.Find(FriendRequestScope(Builders<FriendRequest>.Filter.Eq(x => x.SenderId, request.SenderId) & Builders<FriendRequest>.Filter.Eq(x => x.RequestId, request.RequestId))).FirstOrDefaultAsync(ct);
         if (existing is not null) return existing;
         await _friendRequests.InsertOneAsync(request, cancellationToken: ct); return request;
     }
-    public async Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(x => x.ReceiverId == userId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
-    public async Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(x => x.SenderId == userId).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
-    public async Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => await _friendRequests.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
-    public Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default) => _friendRequests.ReplaceOneAsync(x => x.Id == request.Id, request, cancellationToken: ct);
-    public Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default) => _relations.ReplaceOneAsync(x => x.Id == relation.Id, relation, new ReplaceOptions { IsUpsert = true }, ct);
-    public async Task<ContactRelation?> GetRelationAsync(string userId, string peerId, CancellationToken ct = default) => await _relations.Find(x => x.UserId == userId && x.PeerUserId == peerId).FirstOrDefaultAsync(ct);
-    public async Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default) => await _relations.Find(x => x.UserId == userId && x.Status != RelationStatus.Deleted).ToListAsync(ct);
+    public async Task<IReadOnlyList<FriendRequest>> GetFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(FriendRequestScope(Builders<FriendRequest>.Filter.Eq(x => x.ReceiverId, userId))).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<IReadOnlyList<FriendRequest>> GetSentFriendRequestsAsync(string userId, CancellationToken ct = default) => await _friendRequests.Find(FriendRequestScope(Builders<FriendRequest>.Filter.Eq(x => x.SenderId, userId))).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+    public async Task<FriendRequest?> GetFriendRequestAsync(string id, CancellationToken ct = default) => await _friendRequests.Find(FriendRequestScope(Builders<FriendRequest>.Filter.Eq(x => x.Id, id))).FirstOrDefaultAsync(ct);
+    public Task UpdateFriendRequestAsync(FriendRequest request, CancellationToken ct = default) => _friendRequests.ReplaceOneAsync(Builders<FriendRequest>.Filter.Eq(x => x.Id, request.Id), request, cancellationToken: ct);
+    public async Task UpsertRelationAsync(ContactRelation relation, CancellationToken ct = default)
+    {
+        if (relation.TenantId == TenantIds.Unassigned)
+            relation.TenantId = TenantData.NormalizeStored((await _users.Find(UserScope(Builders<UserAccount>.Filter.Eq(x => x.Id, relation.UserId))).FirstOrDefaultAsync(ct))?.TenantId);
+        await _relations.ReplaceOneAsync(Builders<ContactRelation>.Filter.Eq(x => x.Id, relation.Id), relation, new ReplaceOptions { IsUpsert = true }, ct);
+    }
+    public async Task<ContactRelation?> GetRelationAsync(string userId, string peerId, CancellationToken ct = default) => await _relations.Find(RelationScope(Builders<ContactRelation>.Filter.Eq(x => x.UserId, userId) & Builders<ContactRelation>.Filter.Eq(x => x.PeerUserId, peerId))).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<ContactRelation>> GetRelationsAsync(string userId, CancellationToken ct = default) => await _relations.Find(RelationScope(Builders<ContactRelation>.Filter.Eq(x => x.UserId, userId) & Builders<ContactRelation>.Filter.Ne(x => x.Status, RelationStatus.Deleted))).ToListAsync(ct);
     public async Task<Conversation> AddConversationAsync(Conversation conversation, CancellationToken ct = default)
     {
         if (_tenant.IsAdminRequest && _tenant.CurrentAdminScope != TenantIds.All)
@@ -409,7 +420,7 @@ public sealed class MongoChatRepository : IChatRepository
         return entries.Count == 0 ? null : entries.ToDictionary(x => x.DeviceId == "legacy-primary" ? x.UserId : $"{x.UserId}:{x.DeviceId}", x => x.Envelope);
     }
     public async Task<Conversation?> FindDirectConversationAsync(string a, string b, CancellationToken ct = default) => await _conversations.Find(ConversationScope(Builders<Conversation>.Filter.Where(x => x.Type == ConversationType.Direct && x.Members.Any(m => m.UserId == a) && x.Members.Any(m => m.UserId == b)))).FirstOrDefaultAsync(ct);
-    public async Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default) => await _conversations.Find(x => !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence == null)).SortByDescending(x => x.LastMessageAtUtc).ToListAsync(ct);
+    public async Task<IReadOnlyList<Conversation>> GetConversationsAsync(string userId, CancellationToken ct = default) => await _conversations.Find(ConversationScope(Builders<Conversation>.Filter.Where(x => !x.IsDissolved && x.Members.Any(m => m.UserId == userId && m.LeftAtSequence == null)))).SortByDescending(x => x.LastMessageAtUtc).ToListAsync(ct);
 
     public async Task<ChatMessage> AddMessageIdempotentlyAsync(ChatMessage message, CancellationToken ct = default)
     {
