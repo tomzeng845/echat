@@ -22,7 +22,7 @@ public sealed class AdminBootstrapService(
         var previewMode = RuntimeMode.IsEphemeralPreview(configuration, environment);
         var account = (configuration["Admin:BootstrapAccount"]
             ?? Environment.GetEnvironmentVariable("ADMIN_BOOTSTRAP_ACCOUNT")
-            ?? "E_Admin").Trim().ToLowerInvariant();
+            ?? "e_admin").Trim().ToLowerInvariant();
         var password = configuration["Admin:BootstrapPassword"]
             ?? Environment.GetEnvironmentVariable("ADMIN_BOOTSTRAP_PASSWORD")
             ?? (previewMode ? "Heibai@99" : null);
@@ -33,6 +33,7 @@ public sealed class AdminBootstrapService(
             return;
         }
 
+        var isBuiltInSuperAdmin = account == "e_admin";
         var existing = await repository.GetUserByAccountAsync(account, ct);
         if (existing is not null)
         {
@@ -43,6 +44,13 @@ public sealed class AdminBootstrapService(
                 existing.Status = UserStatus.Active;
                 changed = true;
                 logger.LogWarning("Existing bootstrap account {Account} was promoted to Admin", account);
+            }
+            if (isBuiltInSuperAdmin && (existing.AdminTenantScope != TenantIds.All || existing.TenantId != TenantIds.Unassigned || existing.PlatformRoleId != "platform-role-superadmin"))
+            {
+                existing.AdminTenantScope = TenantIds.All;
+                existing.TenantId = TenantIds.Unassigned;
+                existing.PlatformRoleId = "platform-role-superadmin";
+                changed = true;
             }
 
             if (previewMode)
@@ -64,6 +72,7 @@ public sealed class AdminBootstrapService(
             }
 
             if (changed) await repository.UpdateUserAsync(existing, ct);
+            if (isBuiltInSuperAdmin) await EnsureSuperAdminRoleAsync(ct);
             return;
         }
 
@@ -72,6 +81,9 @@ public sealed class AdminBootstrapService(
             Account = account,
             DisplayName = "E聊管理员",
             Role = UserRole.Admin,
+            TenantId = TenantIds.Unassigned,
+            AdminTenantScope = TenantIds.All,
+            PlatformRoleId = isBuiltInSuperAdmin ? "platform-role-superadmin" : "",
             Status = UserStatus.Active,
             Signature = "E聊系统管理账号",
             AgreementAcceptedAtUtc = DateTime.UtcNow
@@ -80,6 +92,7 @@ public sealed class AdminBootstrapService(
         try
         {
             await repository.AddUserAsync(admin, ct);
+            if (isBuiltInSuperAdmin) await EnsureSuperAdminRoleAsync(ct);
             logger.LogWarning("Preview bootstrap admin {Account} created; configure MongoDB and secure admin credentials before production use", account);
         }
         catch
@@ -87,5 +100,29 @@ public sealed class AdminBootstrapService(
             if (await repository.GetUserByAccountAsync(account, ct) is null) throw;
             // Another instance created the same bootstrap account concurrently.
         }
+    }
+
+    private async Task EnsureSuperAdminRoleAsync(CancellationToken ct)
+    {
+        var permissions = string.Join(',', new[]
+        {
+            "platform:accounts:read", "platform:accounts:write", "platform:roles:read", "platform:roles:write",
+            "platform:tenants:read", "platform:tenants:write", "platform:domains:write", "platform:apps:write",
+            "users:read", "users:write", "logs:read", "operators:read", "operators:write", "announcements:write",
+            "conversations:read", "groups:write", "robots:write", "audit:read"
+        });
+        await repository.UpsertAdminRecordAsync(new AdminModuleRecord
+        {
+            Id = "platform-role-superadmin",
+            Module = "platform.roles",
+            Name = "总后台超级管理员",
+            Status = "Active",
+            Data = new Dictionary<string, string>
+            {
+                ["description"] = "内置 e_admin，全平台及所有租户后台权限",
+                ["platformPermissions"] = permissions,
+                ["tenantPermissions"] = permissions
+            }
+        }, ct);
     }
 }
