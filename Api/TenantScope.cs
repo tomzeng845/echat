@@ -30,6 +30,11 @@ public static class TenantScopeExtensions
     public static string AdminTenantScope(this ClaimsPrincipal principal)
     {
         if (!principal.IsInRole(nameof(UserRole.Admin))) return "";
+        // e_admin is the built-in platform super administrator. Keep this
+        // compatibility path so tokens issued before the bootstrap repair do
+        // not lose the ability to switch to a tenant.
+        var account = principal.FindFirstValue("unique_name")?.Trim().ToLowerInvariant();
+        if (account == "e_admin") return TenantIds.All;
         // A missing claim is treated as the legacy super-admin scope. New tokens
         // always include admin_tenant_scope and therefore cannot inherit this path.
         var scope = TenantIds.Normalize(principal.FindFirstValue("admin_tenant_scope"));

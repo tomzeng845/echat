@@ -369,6 +369,13 @@ export async function api<T>(
 ): Promise<T> {
   const response = await authorizedFetch(path, init, retry);
   if (!response.ok) {
+    if (response.status === 403) {
+      logError("api-forbidden", "API request was rejected with 403", {
+        path,
+        selectedTenant: localStorage.getItem("echat.admin.tenant") || "",
+        method: init.method || "GET",
+      });
+    }
     const contentType = response.headers.get("content-type") || "";
     const problem = contentType.includes("json")
       ? await response

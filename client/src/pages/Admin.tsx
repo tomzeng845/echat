@@ -880,6 +880,7 @@ export default function Admin() {
               value={tenantScope}
               onChange={event => {
                 const next = event.target.value;
+                setPage(next === "*" ? "platform-tenants" : "home");
                 setTenantScope(next);
                 localStorage.setItem("echat.admin.tenant", next);
                 setRefresh(value => value + 1);
