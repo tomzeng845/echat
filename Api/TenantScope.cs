@@ -50,6 +50,10 @@ public sealed class TenantContext(IHttpContextAccessor accessor)
         get
         {
             var user = accessor.HttpContext?.User;
+            // Login and registration requests do not have a token yet. They
+            // must be able to locate an account in its assigned tenant; using
+            // the unassigned scope here made tenant users appear nonexistent.
+            if (user?.Identity?.IsAuthenticated != true) return TenantIds.All;
             var baseScope = user?.AdminTenantScope() ?? "";
             if (baseScope != TenantIds.All)
             {
