@@ -19,6 +19,7 @@ public interface IChatRepository
     Task DeleteAppAsync(string id, CancellationToken ct = default);
     Task EnsureSeedDataAsync(CancellationToken ct = default);
     Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default);
+    Task<IReadOnlyList<UserAccount>> GetUsersByAccountsAsync(IEnumerable<string> accounts, CancellationToken ct = default);
     Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default);
     Task<bool> TryConsumeInviteAsync(string code, CancellationToken ct = default);
     Task<InviteCode> UpsertInviteAsync(InviteCode invite, CancellationToken ct = default);

@@ -174,6 +174,12 @@ public sealed class MongoChatRepository : IChatRepository
     }
 
     public async Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) => await _users.Find(UserScope(Builders<UserAccount>.Filter.Eq(x => x.Account, account.ToLowerInvariant()))).FirstOrDefaultAsync(ct);
+    public async Task<IReadOnlyList<UserAccount>> GetUsersByAccountsAsync(IEnumerable<string> accounts, CancellationToken ct = default)
+    {
+        var normalized = accounts.Select(x => x.Trim().ToLowerInvariant()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (normalized.Length == 0) return [];
+        return await _users.Find(UserScope(Builders<UserAccount>.Filter.In(x => x.Account, normalized))).ToListAsync(ct);
+    }
     public async Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default) => await _users.Find(UserScope(Builders<UserAccount>.Filter.Eq(x => x.Id, id))).FirstOrDefaultAsync(ct);
     public async Task<bool> TryConsumeInviteAsync(string code, CancellationToken ct = default)
     {

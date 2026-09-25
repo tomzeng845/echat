@@ -598,30 +598,55 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         IReadOnlyList<AdminUserCreateRequest> users;
         try { users = ExpandBatchRequest(request); }
         catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
-        var created = new List<string>();
-        var skipped = new List<string>();
+        var created = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var uniqueUsers = new List<AdminUserCreateRequest>(users.Count);
+        var seenAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in users)
+        {
+            var normalizedAccount = NormalizeAccount(item.Account);
+            if (!seenAccounts.Add(normalizedAccount)) skipped.Add(item.Account);
+            else uniqueUsers.Add(item);
+        }
+        var existing = await repository.GetUsersByAccountsAsync(uniqueUsers.Select(x => NormalizeAccount(x.Account)), ct);
+        var existingAccounts = existing.Select(x => x.Account).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in uniqueUsers.Where(x => existingAccounts.Contains(NormalizeAccount(x.Account))))
+            skipped.Add(item.Account);
+        var candidates = uniqueUsers.Where(x => !existingAccounts.Contains(NormalizeAccount(x.Account))).ToArray();
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+            CancellationToken = ct
+        };
+        await Parallel.ForEachAsync(candidates, parallelOptions, async (item, token) =>
         {
             try
             {
-                var user = await CreateUserCoreAsync(item, ct);
+                var user = await CreateUserCoreAsync(item, token, checkDuplicate: false);
                 if (user is null) skipped.Add(item.Account); else created.Add(user.Account);
                 logger.LogDebug("Batch user creation item completed. account={Account}, created={Created}, skipped={Skipped}", item.Account, user is not null, user is null);
             }
             catch (ArgumentException) { skipped.Add(item.Account); }
-        }
+            catch (InvalidOperationException error)
+            {
+                skipped.Add(item.Account);
+                logger.LogWarning(error, "Batch user creation item was rejected during concurrent insert. account={Account}", item.Account);
+            }
+        });
+        var createdList = created.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var skippedList = skipped.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
         try
         {
             using var auditTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             auditTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-            await AuditAsync("user.batch-create", "user", "batch", $"created={created.Count}; skipped={skipped.Count}", auditTimeout.Token);
+            await AuditAsync("user.batch-create", "user", "batch", $"created={createdList.Length}; skipped={skippedList.Length}", auditTimeout.Token);
         }
         catch (Exception error) when (error is OperationCanceledException or TimeoutException or HttpRequestException)
         {
-            logger.LogWarning(error, "Batch user creation audit skipped after timeout or cancellation. created={Created}, skipped={Skipped}", created.Count, skipped.Count);
+            logger.LogWarning(error, "Batch user creation audit skipped after timeout or cancellation. created={Created}, skipped={Skipped}", createdList.Length, skippedList.Length);
         }
-        logger.LogInformation("Batch user creation completed. created={Created}, skipped={Skipped}, elapsedMs={ElapsedMs}, tenant={Tenant}", created.Count, skipped.Count, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
-        return Ok(new { created, skipped });
+        logger.LogInformation("Batch user creation completed. created={Created}, skipped={Skipped}, elapsedMs={ElapsedMs}, tenant={Tenant}", createdList.Length, skippedList.Length, (DateTime.UtcNow - startedAt).TotalMilliseconds, tenant.CurrentAdminScope);
+        return Ok(new { created = createdList, skipped = skippedList });
     }
 
     [HttpGet("users/export")]
@@ -915,13 +940,13 @@ public sealed class AdminController(IChatRepository repository, PasswordHasher<U
         return new AdminUserPage(items, ordered.Count, page, pageSize, Math.Max(1, (int)Math.Ceiling(ordered.Count / (double)pageSize)));
     }
 
-    private async Task<UserAccount?> CreateUserCoreAsync(AdminUserCreateRequest request, CancellationToken ct)
+    private async Task<UserAccount?> CreateUserCoreAsync(AdminUserCreateRequest request, CancellationToken ct, bool checkDuplicate = true)
     {
         if (string.IsNullOrWhiteSpace(request.Account)) throw new ArgumentException("账号不能为空");
         var account = NormalizeAccount(request.Account);
         if (!System.Text.RegularExpressions.Regex.IsMatch(account, "^[a-z0-9]{6,20}$")) throw new ArgumentException("账号需为 6–20 位字母或数字");
         if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length is < 6 or > 72 || !System.Text.RegularExpressions.Regex.IsMatch(request.Password, "^[a-zA-Z0-9]+$")) throw new ArgumentException("密码需为 6–72 位字母或数字");
-        if (await repository.GetUserByAccountAsync(account, ct) is not null) return null;
+        if (checkDuplicate && await repository.GetUserByAccountAsync(account, ct) is not null) return null;
         var user = new UserAccount
         {
             TenantId = tenant.CurrentAdminScope == TenantIds.All ? TenantData.NormalizeStored(request.TenantId) : tenant.CurrentAdminScope,

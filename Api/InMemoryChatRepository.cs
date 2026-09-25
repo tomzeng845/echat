@@ -68,6 +68,12 @@ public sealed class InMemoryChatRepository : IChatRepository
     public Task<UserAccount?> GetUserByAccountAsync(string account, CancellationToken ct = default) =>
         Task.FromResult(_users.Values.FirstOrDefault(x => x.Account.Equals(account, StringComparison.OrdinalIgnoreCase)));
 
+    public Task<IReadOnlyList<UserAccount>> GetUsersByAccountsAsync(IEnumerable<string> accounts, CancellationToken ct = default)
+    {
+        var set = accounts.Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Task.FromResult<IReadOnlyList<UserAccount>>(_users.Values.Where(x => set.Contains(x.Account)).ToList());
+    }
+
     public Task<UserAccount?> GetUserByIdAsync(string id, CancellationToken ct = default) =>
         Task.FromResult(_users.TryGetValue(id, out var user) ? user : null);
 
