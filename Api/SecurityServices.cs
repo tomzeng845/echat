@@ -45,10 +45,11 @@ public sealed class TokenService(IConfiguration configuration)
     public TokenValidationParameters ValidationParameters() => new()
     {
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(_key) { KeyId = SigningKeyId },
-        // Accept legacy tokens that were issued without a kid while new tokens
-        // carry a stable key id for deterministic key selection.
-        IssuerSigningKeyResolver = (_, _, _, _) => [new SymmetricSecurityKey(_key) { KeyId = SigningKeyId }],
+        // Keep the validation key without a KeyId so legacy tokens that were
+        // issued without a kid can still be verified. New tokens carry the
+        // stable kid from CreateAccessToken above.
+        IssuerSigningKey = new SymmetricSecurityKey(_key),
+        IssuerSigningKeyResolver = (_, _, _, _) => [new SymmetricSecurityKey(_key)],
         ValidateIssuer = true, ValidIssuer = _issuer, ValidateAudience = true, ValidAudience = _audience,
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = ClaimTypes.Name, RoleClaimType = ClaimTypes.Role
     };
