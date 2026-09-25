@@ -284,8 +284,18 @@ export async function getRealtimeAccessToken(): Promise<string> {
   if (needsRefresh && session.refreshToken) {
     const refreshed = await refreshSession(session);
     if (refreshed?.accessToken) return refreshed.accessToken;
+    // refreshSession clears the persisted session on a definitive 401.
+    // Never send the stale token after that failure.
+    if (!getSession()?.accessToken) return "";
   }
   return getSession()?.accessToken || session.accessToken;
+}
+
+export async function forceRefreshRealtimeAccessToken(): Promise<string> {
+  const session = getSession();
+  if (!session?.refreshToken) return "";
+  const refreshed = await refreshSession(session);
+  return refreshed?.accessToken || getSession()?.accessToken || "";
 }
 
 async function refreshSession(

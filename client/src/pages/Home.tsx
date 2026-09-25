@@ -16,6 +16,7 @@ import {
   api,
   ApiError,
   connectRealtime,
+  forceRefreshRealtimeAccessToken,
   getDeviceId,
   getSession,
   restoreSession,
@@ -1151,12 +1152,21 @@ function Messenger({
     });
     let disposed = false;
     let retryTimer: number | undefined;
+    let authRetryUsed = false;
     const start = async () => {
       if (disposed || connection.state !== "Disconnected") return;
       try {
         await connection.start();
         if (!disposed) await loadData();
       } catch {
+        if (!disposed && !authRetryUsed) {
+          authRetryUsed = true;
+          const refreshed = await forceRefreshRealtimeAccessToken().catch(() => "");
+          if (refreshed) {
+            retryTimer = window.setTimeout(start, 50);
+            return;
+          }
+        }
         if (!disposed) retryTimer = window.setTimeout(start, 3000);
       }
     };
