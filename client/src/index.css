@@ -154,6 +154,23 @@ button:active {
   box-shadow: 0 0 0 3px rgb(45 212 191 / 0.12);
 }
 
+.auth-page {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 639px) {
+  .auth-page__content {
+    padding-top: max(1.25rem, var(--echat-safe-top));
+    padding-bottom: max(1.25rem, var(--echat-safe-bottom));
+  }
+
+  .auth-page .auth-input {
+    min-height: 2.875rem;
+    font-size: 16px;
+  }
+}
+
 .echat-drawer-shell {
   padding-top: var(--echat-safe-top);
   padding-bottom: var(--echat-safe-bottom);

@@ -287,13 +287,13 @@ function AuthScreen({
   }
 
   return (
-    <main className="min-h-full bg-[#071424] text-white">
+    <main className="auth-page min-h-[100dvh] overflow-y-auto bg-[#071424] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-40 top-[-20rem] h-[42rem] w-[42rem] rounded-full bg-teal-400/10 blur-3xl" />
         <div className="absolute -right-44 bottom-[-22rem] h-[46rem] w-[46rem] rounded-full bg-emerald-400/10 blur-3xl" />
         <div className="absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.4)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.4)_1px,transparent_1px)] [background-size:48px_48px]" />
       </div>
-      <section className="relative mx-auto grid min-h-full max-w-7xl items-center gap-14 px-5 py-10 lg:grid-cols-[1.12fr_.88fr] lg:px-12">
+      <section className="auth-page__content relative mx-auto grid min-h-[100dvh] w-full max-w-7xl items-start gap-5 px-4 py-5 sm:items-center sm:gap-8 sm:px-5 sm:py-10 lg:grid-cols-[1.12fr_.88fr] lg:gap-14 lg:px-12">
         <div className="hidden lg:block">
           <div className="mb-16 flex items-center gap-3">
             <img src={LOGO} alt="E聊" className="h-11 w-11 object-contain" />
@@ -333,16 +333,16 @@ function AuthScreen({
         </div>
 
         <div className="mx-auto w-full max-w-[440px]">
-          <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
+          <div className="mb-5 flex items-center justify-center gap-3 lg:hidden sm:mb-8">
             <img src={LOGO} alt="E聊" className="h-10 w-10 object-contain" />
             <span className="text-2xl font-semibold">E聊</span>
           </div>
-          <div className="auth-card echat-auth-card rounded-[30px] border border-white/10 bg-white/[.07] p-6 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-8">
-            <div className="mb-8">
+          <div className="auth-card echat-auth-card rounded-[24px] border border-white/10 bg-white/[.07] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:rounded-[30px] sm:p-8">
+            <div className="mb-5 sm:mb-8">
               <div className="text-xs font-medium tracking-[.18em] text-teal-300">
                 WELCOME TO E聊
               </div>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">
                 {pendingToken
                   ? "安全验证"
                   : mode === "login"
@@ -358,7 +358,7 @@ function AuthScreen({
               </p>
             </div>
             {!pendingToken && (
-              <div className="mb-7 grid grid-cols-2 rounded-xl bg-black/20 p-1">
+              <div className="mb-5 grid grid-cols-2 rounded-xl bg-black/20 p-1 sm:mb-7">
                 {(["login", "register"] as const).map(item => (
                   <button
                     key={item}
@@ -374,7 +374,7 @@ function AuthScreen({
                 ))}
               </div>
             )}
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-3 sm:space-y-4">
               {pendingToken ? (
                 <label className="block">
                   <span className="mb-2 block text-sm text-slate-300">
