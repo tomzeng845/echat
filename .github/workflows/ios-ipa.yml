@@ -6,12 +6,12 @@ on:
       version:
         description: Marketing version
         required: true
-        default: "0.9.0"
+        default: "0.9.1"
         type: string
       build_number:
-        description: Optional unique numeric build; defaults to 18 followed by the workflow run number
+        description: Optional unique numeric build; defaults to 20 followed by the workflow run number
         required: false
-        default: ""
+        default: "20"
         type: string
       api_url:
         description: Production EChat HTTPS API URL embedded in the app

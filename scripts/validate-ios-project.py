@@ -84,8 +84,8 @@ def main() -> int:
         "echat_call.wav in Resources",
         "echat_ringback.wav in Resources",
         "PRODUCT_BUNDLE_IDENTIFIER = com.tomzeng845.echat;",
-        "MARKETING_VERSION = 0.9.0;",
-        "CURRENT_PROJECT_VERSION = 18;",
+        "MARKETING_VERSION = 0.9.1;",
+        "CURRENT_PROJECT_VERSION = 20;",
         "IPHONEOS_DEPLOYMENT_TARGET = 15.0;",
         "APS_ENVIRONMENT = development;",
         "APS_ENVIRONMENT = production;",
@@ -132,7 +132,7 @@ def main() -> int:
     require((ROOT / "scripts" / "ios-testflight.sh").stat().st_mode & 0o111 != 0, "TestFlight script is not executable")
     require((ROOT / "scripts" / "validate-apple-profile.py").stat().st_mode & 0o111 != 0, "Apple profile validator is not executable")
 
-    print("IOS_STATIC_OK bundle=com.tomzeng845.echat version=0.9.0 build=18 ios_min=15 apns=ready pushkit=ready callkit=ready")
+    print("IOS_STATIC_OK bundle=com.tomzeng845.echat version=0.9.1 build=20 ios_min=15 apns=ready pushkit=ready callkit=ready")
     return 0
 
 
